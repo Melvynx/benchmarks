@@ -89,3 +89,8 @@ dependencies or reproducible framework output. Generated applications retain
 their own `package.json` and pnpm lockfile where available, while `node_modules`,
 build caches, local environment files, and nested Git histories stay outside the
 published repository.
+
+## Deployment
+
+See [`deploy/README.md`](deploy/README.md) for the hardened systemd deployment
+used by `benchmark.melvynx.dev`.
