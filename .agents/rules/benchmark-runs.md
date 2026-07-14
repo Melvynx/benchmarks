@@ -31,7 +31,9 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 - Assign non-standalone GPT apps ports `9100-9199`, Claude apps `9200-9299`, and other apps `9300-9399`.
 - Allocate ports atomically and skip ports already locked, listening, or recorded in `runs/`; concurrency must never produce duplicate ports.
 - Add this sentence to every non-standalone app prompt: `During setup, configure your app and package scripts to use port <port>, then use that port for runtime verification.`
-- Add this sentence to every benchmark task prompt: `Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.`
+- Add this sentence to every generated task prompt: `Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.`
+- Add this sentence to every non-CLI generated task prompt: `Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title.`
+- Keep model-facing prompts neutral: do not mention benchmarks, evaluations, evidence storage, comparison groups, or completion sentinels.
 - Record every assignment in both task metadata and the run-level `ports.json` index.
 
 ## Timing
@@ -60,7 +62,7 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 ## Proof
 
 - Preserve stdout in `transcript.jsonl` and stderr in `stderr.log`; do not replace raw evidence with a summary.
-- Verify the transcript parses as JSONL, contains the session, and ends with `BENCHMARK_COMPLETE` for real task runs or `HARNESS_OK` for smoke checks.
+- Verify the transcript parses as JSONL and contains the session. Real task runs require a non-empty captured final response; smoke checks require `HARNESS_OK`.
 - For standalone HTML, verify an HTML entry file exists and contains document markup.
 - For package apps, use pnpm only; install only when necessary, run the declared build, start on the assigned port, and probe it with HTTP. New pnpm-governed runs must not contain npm lockfiles or npm commands.
 - Record each check and its exit status in `verification.json`; report failures literally.

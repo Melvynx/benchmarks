@@ -29,7 +29,7 @@ Create one independently resumable session per task. Put the app in `benchmarks/
      benchmark-plans/<plan-name>.md
    ```
 
-5. Inspect the printed run directory and each `verification.json`. A completed process is not proof unless the transcript is valid, a session ID was captured, and the expected marker is present.
+5. Inspect the printed run directory and each `verification.json`. A completed process is not proof unless the transcript is valid, a session ID was captured, and a non-empty final response was captured.
 6. Run `scripts/verify-benchmark-run.sh <run-dir>...` for task-appropriate build/runtime checks, then `scripts/validate-benchmark-run.sh <run-dir>...` as the deterministic final gate.
 7. Resume a task using its generated `resume-command.sh`; append new output to a new transcript file rather than overwriting the original.
 
@@ -57,6 +57,8 @@ Create one independently resumable session per task. Put the app in `benchmarks/
 - Never store an app below `runs/`; `app-path.txt` and `metadata.json` must point to the task-local output directory.
 - Do not mark a generated application verified until its build and real serving port have been checked.
 - Every generated-task prompt requires `pnpm` exclusively when dependency installation or package scripts are needed; do not introduce npm commands or npm lockfiles.
+- Keep model-facing prompts neutral: never disclose that the task is a benchmark or evaluation, never mention run evidence, and never expose a completion sentinel.
+- For every non-CLI task, instruct the model to set the browser title and primary visible title to its model name using only identity information already available to it, with no additional title text.
 - Every non-standalone prompt must include its allocated port as a setup, package-script, and runtime-verification requirement.
 - Record each model invocation in task `metadata.json` as `model_timing.started_at`, `model_timing.completed_at`, and `model_timing.duration_ms`. Use `null` for prepared dry runs.
 - Record `benchmark_id` in both `run.json` and every task `metadata.json`. Pass `--benchmark-id` only when several direct runner invocations intentionally belong to the same comparison group; otherwise let the runner generate a fresh ID.

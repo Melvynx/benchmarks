@@ -26,7 +26,7 @@ Read the relevant file before running or adding a benchmark:
 - When the user asks to run a named Markdown benchmark plan, execute only rows whose `enabled` cell is `yes`; treat `tasks: all` as every task in the canonical catalog.
 - Expand every enabled plan row into one run per task and launch all model/task runs concurrently. Allocate ports atomically so parallel apps never share a port.
 - Read canonical task wording from this repository's `prompts/<slug>/` catalog before each supported run. Select the numerically highest local `v<number>.md`, including uncommitted versions, snapshot its exact text and path in the run, and fail instead of fetching the website or silently using generic wording.
-- Never claim a model worked from CLI exit status alone; require a session ID, a parseable transcript, the requested completion marker, and task-appropriate build/runtime verification.
+- Never claim a model worked from CLI exit status alone; require a session ID, a parseable transcript, a non-empty captured final response, and task-appropriate build/runtime verification.
 - Record each task's model invocation timing in `metadata.json` with UTC start/completion timestamps and elapsed milliseconds; prepared dry runs use `null` because no model ran.
 - Categorize every valid transcript in `metadata.json` across context gathering, planning, implementation, and verification. Include percentages totaling 100 and a stacked progress bar; exclude transport noise, signatures, and duplicated tool results.
 - Use pnpm exclusively for package installation and package scripts in benchmark apps and benchmark tooling; do not use npm.

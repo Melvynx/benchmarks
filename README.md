@@ -70,7 +70,7 @@ Run an enabled Markdown matrix:
   benchmark-plans/example.md
 ```
 
-Every real run must have a session ID, parseable transcript, completion marker,
+Every real run must have a session ID, parseable transcript, a captured final response,
 and task-appropriate build/runtime verification. A successful process exit alone
 is not a successful benchmark.
 

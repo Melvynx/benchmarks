@@ -288,13 +288,17 @@ for index in "${!task_list[@]}"; do
   if [[ "$SMOKE" == 1 ]]; then
     prompt="$wording"
   else
+    title_line=""
+    if [[ "$type" != cli ]]; then
+      title_line="Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title."
+    fi
     prompt="$wording
 
-Work only inside: $app_dir
+Work only inside the current working directory.
 $port_line
 Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.
-Run the relevant checks yourself. Do not edit other benchmark results or the run evidence outside the app directory.
-End your final response with exactly BENCHMARK_COMPLETE."
+$title_line
+Run the relevant checks yourself. Do not edit files outside the current working directory."
   fi
   printf '%s\n' "$prompt" > "$data_dir/prompt.md"
 
@@ -370,16 +374,19 @@ End your final response with exactly BENCHMARK_COMPLETE."
   printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' 'jq . "$dir/transcript.jsonl"' > "$view_file"
   chmod +x "$command_file" "$view_file" "$resume_file"
 
-  marker="BENCHMARK_COMPLETE"; [[ "$SMOKE" == 1 ]] && marker="HARNESS_OK"
-  transcript_valid=false; marker_found=false; session_captured=false
+  transcript_valid=false; completion_evidence_found=false; session_captured=false
   if [[ "$DRY_RUN" == 1 ]]; then
     status=prepared
   else
     status=failed
     [[ -n "$session_id" ]] && session_captured=true
     [[ -s "$transcript" ]] && "$JQ_BIN" -e . "$transcript" >/dev/null 2>&1 && transcript_valid=true
-    if grep -q "$marker" "$transcript" "$final" 2>/dev/null; then marker_found=true; fi
-    if [[ "$exit_code" == 0 && "$transcript_valid" == true && "$marker_found" == true && "$session_captured" == true ]]; then status=harness-verified; fi
+    if [[ "$SMOKE" == 1 ]]; then
+      if grep -q HARNESS_OK "$transcript" "$final" 2>/dev/null; then completion_evidence_found=true; fi
+    elif [[ -s "$final" ]]; then
+      completion_evidence_found=true
+    fi
+    if [[ "$exit_code" == 0 && "$transcript_valid" == true && "$completion_evidence_found" == true && "$session_captured" == true ]]; then status=harness-verified; fi
   fi
 
   transcript_analysis_json=null
@@ -399,7 +406,7 @@ End your final response with exactly BENCHMARK_COMPLETE."
   fi
 
   "$JQ_BIN" -n --arg benchmark_id "$BENCHMARK_ID" --arg run_id "$(basename "$run_dir")" --arg task "$task" --arg model "$MODEL" --arg harness "$HARNESS" --arg effort "$EFFORT" --arg type "$type" --arg app_name "$app_name" --arg app_path "$app_dir" --arg status "$status" --arg prompt_catalog_dir "$prompt_catalog_dir" --arg prompt_source "$prompt_source" --arg prompt_public_url "$prompt_public_url" --arg package_manager pnpm --argjson port "$port_json" --argjson model_timing "$model_timing_json" --argjson transcript_analysis "$transcript_analysis_json" --argjson session_usage "$session_usage_json" '{benchmark_id:$benchmark_id,run_id:$run_id,task:$task,model:$model,harness:$harness,effort:$effort,type:$type,app_name:$app_name,app_path:$app_path,port:$port,prompt_catalog_dir:$prompt_catalog_dir,prompt_source:$prompt_source,prompt_public_url:$prompt_public_url,package_manager:$package_manager,model_timing:$model_timing,transcript_analysis:$transcript_analysis,session_usage:$session_usage,status:$status}' > "$data_dir/metadata.json"
-  "$JQ_BIN" -n --arg status "$status" --argjson exit_code "$exit_code" --argjson transcript_valid "$transcript_valid" --argjson marker_found "$marker_found" --argjson session_captured "$session_captured" '{status:$status,harness_exit_code:$exit_code,transcript_jsonl_valid:$transcript_valid,completion_marker_found:$marker_found,session_id_captured:$session_captured,app_build_verified:false,app_runtime_verified:false}' > "$data_dir/verification.json"
+  "$JQ_BIN" -n --arg status "$status" --argjson exit_code "$exit_code" --argjson transcript_valid "$transcript_valid" --argjson completion_evidence_found "$completion_evidence_found" --argjson session_captured "$session_captured" '{status:$status,harness_exit_code:$exit_code,transcript_jsonl_valid:$transcript_valid,completion_evidence_found:$completion_evidence_found,session_id_captured:$session_captured,app_build_verified:false,app_runtime_verified:false}' > "$data_dir/verification.json"
 done
 
 "$JQ_BIN" -n --arg benchmark_id "$BENCHMARK_ID" --arg run_id "$(basename "$run_dir")" --arg model "$MODEL" --arg harness "$HARNESS" --arg effort "$EFFORT" --arg output_name "$app_name" --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg tasks "$TASKS" '{benchmark_id:$benchmark_id,run_id:$run_id,model:$model,harness:$harness,effort:$effort,output_name:$output_name,tasks:($tasks|split(",")),created_at:$created_at}' > "$run_dir/run.json"

@@ -97,9 +97,13 @@ for run_dir in "$@"; do
     while IFS= read -r transcript_file; do
       "$JQ_BIN" -e . "$transcript_file" >/dev/null 2>&1 || fail "invalid transcript JSONL: $transcript_file"
     done < <(find "$data_dir" -maxdepth 1 -type f -name 'transcript*.jsonl' | sort)
-    grep -q BENCHMARK_COMPLETE "$data_dir"/transcript*.jsonl "$data_dir"/final*.txt 2>/dev/null || fail "missing completion marker: $data_dir"
     grep -Fq -- "--model $model" "$data_dir/command.sh" || fail "command model mismatch: $data_dir"
-    "$JQ_BIN" -e '.status=="harness-verified" and .transcript_jsonl_valid and .completion_marker_found and .session_id_captured and .app_build_verified and .app_runtime_verified' "$data_dir/verification.json" >/dev/null || fail "verification incomplete: $data_dir"
+    if "$JQ_BIN" -e 'has("completion_evidence_found")' "$data_dir/verification.json" >/dev/null; then
+      "$JQ_BIN" -e '.status=="harness-verified" and .transcript_jsonl_valid and .completion_evidence_found and .session_id_captured and .app_build_verified and .app_runtime_verified' "$data_dir/verification.json" >/dev/null || fail "verification incomplete: $data_dir"
+    else
+      grep -q BENCHMARK_COMPLETE "$data_dir"/transcript*.jsonl "$data_dir"/final*.txt 2>/dev/null || fail "missing legacy completion marker: $data_dir"
+      "$JQ_BIN" -e '.status=="harness-verified" and .transcript_jsonl_valid and .completion_marker_found and .session_id_captured and .app_build_verified and .app_runtime_verified' "$data_dir/verification.json" >/dev/null || fail "verification incomplete: $data_dir"
+    fi
     prompt_source="$($JQ_BIN -r .prompt_source "$data_dir/metadata.json")"
     prompt_catalog_dir="$($JQ_BIN -r '.prompt_catalog_dir // empty' "$data_dir/metadata.json")"
     prompt_public_url="$($JQ_BIN -r '.prompt_public_url // empty' "$data_dir/metadata.json")"
