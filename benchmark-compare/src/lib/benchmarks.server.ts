@@ -116,6 +116,7 @@ type RunEvidence = {
   runId: string
   promptSlug: string | null
   promptVersion: string | null
+  status: string
 }
 
 function promptIdentity(...values: unknown[]) {
@@ -241,6 +242,7 @@ function recordedMetadata(directory: string) {
     ) as {
       effort?: unknown
       benchmark_id?: unknown
+      status?: unknown
       model_timing?: { duration_ms?: unknown } | null
       prompt_public_url?: unknown
       prompt_source?: unknown
@@ -264,6 +266,7 @@ function recordedMetadata(directory: string) {
         typeof metadata.benchmark_id === "string" && metadata.benchmark_id
           ? metadata.benchmark_id
           : "",
+      status: typeof metadata.status === "string" ? metadata.status : "unknown",
       ...prompt,
     }
   } catch {
@@ -271,6 +274,7 @@ function recordedMetadata(directory: string) {
       effort: "unknown",
       durationMs: null,
       benchmarkId: "",
+      status: "unknown",
       promptSlug: null,
       promptVersion: null,
     }
@@ -309,6 +313,7 @@ function historicalEvidence(
           benchmarkIds.get(`${run.name}/${task}`) ||
           run.name,
         runId: run.name,
+        status: metadata.status,
         promptSlug: metadata.promptSlug,
         promptVersion: metadata.promptVersion,
       }
@@ -352,6 +357,7 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
           benchmark_id?: string
           harness?: string
           model?: string
+          status?: string
           model_timing?: { duration_ms?: unknown } | null
           prompt_public_url?: unknown
           prompt_source?: unknown
@@ -377,6 +383,7 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
             harness: value.harness,
             model: value.model,
             runId: run.name,
+            status: typeof value.status === "string" ? value.status : "unknown",
             ...prompt,
           }
           const previous = metadata.get(appPath)
@@ -465,6 +472,7 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
           benchmarkIds
         )
       const identity = runEvidence || inferredIdentity
+      if (runEvidence?.status === "failed") continue
       const id = `${task.name}/${result.name}`
       entries.push({
         id,

@@ -137,4 +137,35 @@ describe("getBenchmarkEntries", () => {
       }),
     ])
   })
+
+  it("excludes incomplete artifacts from failed runs", () => {
+    root = mkdtempSync(join(tmpdir(), "benchmark-catalog-"))
+    process.env.BENCHMARK_ROOT = root
+    const task = "earthquake-explorer"
+    const result = "2026-07-13-cc-claude-fable-5"
+    const appPath = join(root, "benchmarks", task, result)
+    const dataPath = join(
+      root,
+      "runs",
+      "20260713T120000Z-claude-fable-5-cc",
+      "data",
+      task
+    )
+    mkdirSync(appPath, { recursive: true })
+    mkdirSync(dataPath, { recursive: true })
+    writeFileSync(join(appPath, "index.html"), "<!doctype html>")
+    writeFileSync(join(dataPath, "app-path.txt"), `${appPath}\n`)
+    writeFileSync(
+      join(dataPath, "metadata.json"),
+      JSON.stringify({
+        app_path: appPath,
+        effort: "medium",
+        harness: "cc",
+        model: "claude-fable-5",
+        status: "failed",
+      })
+    )
+
+    expect(getBenchmarkEntries()).toEqual([])
+  })
 })

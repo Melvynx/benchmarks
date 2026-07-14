@@ -42,8 +42,12 @@ Production:
 
 ```bash
 pnpm build
-BENCHMARK_ROOT="$PWD" HOST=127.0.0.1 PORT=9080 pnpm serve
+BENCHMARK_ROOT="$PWD" HOST=127.0.0.1 PORT=9080 pnpm start
 ```
+
+`pnpm build` builds every buildable benchmark preview before building the
+comparison site. `pnpm start` verifies those preview artifacts and starts only
+the comparison site.
 
 ## Run benchmarks
 
