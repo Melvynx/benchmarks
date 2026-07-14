@@ -29,7 +29,6 @@ Historical result directories are evidence. Do not rename or rewrite them.
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
-pnpm setup:python
 pnpm dev
 ```
 
