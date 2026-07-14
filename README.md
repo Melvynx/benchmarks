@@ -10,11 +10,12 @@ workbench.
 - `.agents/rules/benchmark-runs.md` — routing, evidence, naming, and proof rules.
 - `benchmark-compare/` — TanStack Start comparison application.
 - `benchmark-plans/` — reusable model/task matrices.
+- `benchmarks/` — every benchmark task, seed, and generated application.
 - `prompts/` — canonical, immutable versioned task prompts.
 - `prompts.json` — deterministic prompt paths, public URLs, sizes, and hashes.
 - `runs/` — immutable run-level evidence and metadata.
 - `transcripts.json` — portable index of every primary and resumed transcript.
-- `<task>/<date>-<harness>-<model>/` — historical generated applications.
+- `benchmarks/<task>/<date>-<harness>-<model>/` — historical generated applications.
 
 Historical result directories are evidence. Do not rename or rewrite them.
 

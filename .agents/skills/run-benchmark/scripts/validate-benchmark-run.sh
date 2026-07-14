@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+BENCHMARKS_DIR="$ROOT/benchmarks"
 JQ_BIN="$(type -P jq)"
 [[ $# -gt 0 ]] || { echo "Usage: $0 <run-dir>..." >&2; exit 2; }
 ports_file="$(mktemp "${TMPDIR:-/tmp}/benchmark-ports.XXXXXX")"
@@ -26,7 +29,7 @@ for run_dir in "$@"; do
     model="$($JQ_BIN -r .model "$data_dir/metadata.json")"
     harness="$($JQ_BIN -r .harness "$data_dir/metadata.json")"
     app_name="$($JQ_BIN -r .app_name "$data_dir/metadata.json")"
-    app_path="$($JQ_BIN -r .app_path "$data_dir/metadata.json")"
+    recorded_app_path="$($JQ_BIN -r .app_path "$data_dir/metadata.json")"
     package_manager="$($JQ_BIN -r '.package_manager // empty' "$data_dir/metadata.json")"
     benchmark_id="$($JQ_BIN -r '.benchmark_id // empty' "$data_dir/metadata.json")"
     [[ "$benchmark_id" == "$run_benchmark_id" ]] || fail "benchmark ID mismatch: $data_dir"
@@ -84,9 +87,13 @@ for run_dir in "$@"; do
     fi
     expected="$run_output_name"
     [[ "$app_name" == "$expected" ]] || fail "wrong app name: $app_name expected $expected"
-    [[ "$app_path" == "$(pwd)/$task/$app_name" ]] || fail "wrong app path: $app_path"
+    app_path="$BENCHMARKS_DIR/$task/$app_name"
+    case "$recorded_app_path" in
+      "$app_path"|*/"$task"/"$app_name") ;;
+      *) fail "wrong recorded app path: $recorded_app_path" ;;
+    esac
     [[ -d "$app_path" ]] || fail "missing app directory: $app_path"
-    [[ "$(cat "$data_dir/app-path.txt")" == "$app_path" ]] || fail "app-path.txt mismatch: $data_dir"
+    [[ "$(cat "$data_dir/app-path.txt")" == "$recorded_app_path" ]] || fail "app-path.txt mismatch: $data_dir"
     while IFS= read -r transcript_file; do
       "$JQ_BIN" -e . "$transcript_file" >/dev/null 2>&1 || fail "invalid transcript JSONL: $transcript_file"
     done < <(find "$data_dir" -maxdepth 1 -type f -name 'transcript*.jsonl' | sort)
@@ -97,11 +104,11 @@ for run_dir in "$@"; do
     prompt_catalog_dir="$($JQ_BIN -r '.prompt_catalog_dir // empty' "$data_dir/metadata.json")"
     prompt_public_url="$($JQ_BIN -r '.prompt_public_url // empty' "$data_dir/metadata.json")"
     if [[ -n "$prompt_catalog_dir" ]]; then
-      [[ "$prompt_catalog_dir" == "$PWD/prompts/"* || "$prompt_catalog_dir" == /*/content/prompts/* ]] || fail "invalid local prompt catalog directory: $data_dir"
+      [[ "$prompt_catalog_dir" == "$ROOT/prompts/"* || "$prompt_catalog_dir" == /*/content/prompts/* ]] || fail "invalid local prompt catalog directory: $data_dir"
       [[ "$prompt_source" =~ ^${prompt_catalog_dir}/v[0-9]+\.md$ ]] || fail "invalid versioned local prompt source: $data_dir"
       prompt_slug="$(basename "$prompt_catalog_dir")"
       prompt_version="$(basename "$prompt_source" .md)"
-      local_prompt_source="$PWD/prompts/$prompt_slug/$prompt_version.md"
+      local_prompt_source="$ROOT/prompts/$prompt_slug/$prompt_version.md"
       canonical_prompt_source="$prompt_source"
       [[ -f "$canonical_prompt_source" ]] || canonical_prompt_source="$local_prompt_source"
       [[ -f "$canonical_prompt_source" ]] || fail "missing local prompt source: $local_prompt_source"

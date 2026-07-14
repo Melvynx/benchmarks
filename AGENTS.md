@@ -22,7 +22,7 @@ Read the relevant file before running or adding a benchmark:
 ## Universal Rules
 
 - Use `codex` or `ccx` for GPT/OpenAI models, `cc` for Claude models, and `cursor-agent` for other models unless the caller explicitly selects another installed harness. When a GPT model runs through the Claude Code harness family, always use `ccx` and never `cc`. `ccx` supports `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna` with explicit effort.
-- Generated apps live under `<task>/<YYYY-MM-DD>-<harness>-<model>/`; repeated identical model runs use atomic `-2`, `-3`, and later suffixes. `runs/<run-id>/data/` retains only global/final evidence: prompt, source, app path, raw transcript, stderr, session ID, commands, ports, final output, metadata, logs, and verification.
+- Generated apps live under `benchmarks/<task>/<YYYY-MM-DD>-<harness>-<model>/`; repeated identical model runs use atomic `-2`, `-3`, and later suffixes. `runs/<run-id>/data/` retains only global/final evidence: prompt, source, app path, raw transcript, stderr, session ID, commands, ports, final output, metadata, logs, and verification.
 - When the user asks to run a named Markdown benchmark plan, execute only rows whose `enabled` cell is `yes`; treat `tasks: all` as every task in the canonical catalog.
 - Expand every enabled plan row into one run per task and launch all model/task runs concurrently. Allocate ports atomically so parallel apps never share a port.
 - Read canonical task wording from this repository's `prompts/<slug>/` catalog before each supported run. Select the numerically highest local `v<number>.md`, including uncommitted versions, snapshot its exact text and path in the run, and fail instead of fetching the website or silently using generic wording.

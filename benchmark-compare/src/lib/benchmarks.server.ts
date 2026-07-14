@@ -72,6 +72,10 @@ function benchmarkRoot() {
   return resolve(process.env.BENCHMARK_ROOT || join(process.cwd(), ".."))
 }
 
+function benchmarkResultsRoot(root: string) {
+  return join(root, "benchmarks")
+}
+
 function isWithinRoot(root: string, target: string) {
   const pathFromRoot = relative(root, target)
   return (
@@ -92,7 +96,7 @@ function resolveRecordedAppPath(root: string, task: string, recorded: string) {
     return recordedPath
   }
 
-  return resolve(root, task, basename(recordedPath))
+  return resolve(benchmarkResultsRoot(root), task, basename(recordedPath))
 }
 
 function transcriptFiles(directory: string) {
@@ -419,18 +423,21 @@ function inferIdentity(result: string) {
 
 export function getBenchmarkEntries(): BenchmarkEntry[] {
   const root = benchmarkRoot()
+  const resultsRoot = benchmarkResultsRoot(root)
   const benchmarkIds = benchmarkIdsByRun(root)
   const evidence = metadataByAppPath(root, benchmarkIds)
   const entries: BenchmarkEntry[] = []
 
-  for (const task of readdirSync(root, { withFileTypes: true })) {
+  if (!existsSync(resultsRoot)) return entries
+
+  for (const task of readdirSync(resultsRoot, { withFileTypes: true })) {
     if (
       !task.isDirectory() ||
       task.name.startsWith(".") ||
       ignored.has(task.name)
     )
       continue
-    const taskDirectory = join(root, task.name)
+    const taskDirectory = join(resultsRoot, task.name)
     for (const result of readdirSync(taskDirectory, { withFileTypes: true })) {
       if (
         !result.isDirectory() ||
@@ -667,8 +674,8 @@ export function getBenchmarkAsset(splat: string) {
   const root = benchmarkRoot()
   const outputDirectory =
     entry.source === "build"
-      ? join(root, task, result, "dist")
-      : join(root, task, result)
+      ? join(benchmarkResultsRoot(root), task, result, "dist")
+      : join(benchmarkResultsRoot(root), task, result)
   const requested = assetParts.length ? assetParts.join("/") : "index.html"
   const file = safeJoin(outputDirectory, requested)
   if (!file || !existsSync(file) || !statSync(file).isFile()) return null

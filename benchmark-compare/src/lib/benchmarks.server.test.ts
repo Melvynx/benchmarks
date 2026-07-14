@@ -26,7 +26,7 @@ describe("getBenchmarkEntries", () => {
 
     for (const model of ["gpt-5.6-terra", "gpt-5.6-luna"]) {
       const result = `2026-07-13-codex-${model}`
-      const appPath = join(root, task, result)
+      const appPath = join(root, "benchmarks", task, result)
       const runId = `20260713T120000Z-${model}-codex`
       const dataPath = join(root, "runs", runId, "data", task)
       mkdirSync(appPath, { recursive: true })
@@ -73,7 +73,7 @@ describe("getBenchmarkEntries", () => {
 
     for (const run of runs) {
       const result = `2026-07-13-${run.harness}-${run.model}`
-      const appPath = join(root, task, result)
+      const appPath = join(root, "benchmarks", task, result)
       const dataPath = join(root, "runs", run.id, "data", task)
       mkdirSync(appPath, { recursive: true })
       mkdirSync(dataPath, { recursive: true })
@@ -103,7 +103,7 @@ describe("getBenchmarkEntries", () => {
     process.env.BENCHMARK_ROOT = root
     const task = "car-crash"
     const result = "2026-07-13-codex-gpt-5-6-terra"
-    const appPath = join(root, task, result)
+    const appPath = join(root, "benchmarks", task, result)
     const dataPath = join(
       root,
       "runs",
@@ -131,7 +131,7 @@ describe("getBenchmarkEntries", () => {
 
     expect(getBenchmarkEntries()).toEqual([
       expect.objectContaining({
-        appPath: `${task}/${result}`,
+        appPath: `benchmarks/${task}/${result}`,
         benchmarkId: "portable-benchmark",
         hasTranscript: true,
       }),

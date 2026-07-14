@@ -13,17 +13,17 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 - Run all enabled model/task pairs concurrently. A Markdown row with two tasks produces two independent run directories.
 - For reusable matrices, use `benchmark-plans/*.md`; each enabled table row creates one normal run and may select one task, a comma-separated task list, or `all`.
 - Never execute rows marked `no`. Preserve the plan file unchanged as the user's reusable configuration.
-- Treat `${CODE_MELVYNX_REPO:-$HOME/Developer/saas/code.melvynx.dev}/content/prompts` as the canonical prompt source. Read the numerically highest local `v<number>.md`, including uncommitted versions, then snapshot the exact prompt path, content, and public versioned URL into the run. Do not fetch the website or replace a missing local prompt with generic wording.
+- Treat this repository's `prompts/<slug>/` directory as the canonical prompt source. Read the numerically highest local `v<number>.md`, including uncommitted versions, then snapshot the exact prompt path, content, and public versioned URL into the run. Do not fetch the website or replace a missing local prompt with generic wording.
 
 ## Naming and layout
 
 - Generate one `benchmark_id` per user-triggered benchmark operation. A plan shares that ID across every enabled model/task pair; a direct runner invocation creates a fresh ID unless its caller explicitly passes the shared `--benchmark-id`.
 - Store `benchmark_id` in each run's `run.json` and every task's `metadata.json`. Keep `run_id` separate: it identifies one physical `runs/<run-id>` evidence directory, while `benchmark_id` identifies the comparison group.
 - Generate run IDs as `<UTC timestamp>-<model slug>-<harness>`; append a numeric suffix on collision.
-- Generate each app at `<task>/<YYYY-MM-DD>-<harness>-<model>/`. When the same model/harness/task appears again, allocate `-2`, `-3`, and so on atomically so one benchmark group may contain repeated identical model runs without overwriting evidence.
+- Generate each app at `benchmarks/<task>/<YYYY-MM-DD>-<harness>-<model>/`. When the same model/harness/task appears again, allocate `-2`, `-3`, and so on atomically so one benchmark group may contain repeated identical model runs without overwriting evidence.
 - Write all evidence below `runs/<run-id>/data/<task>/`.
 - Store no app copy under `runs/`. Store `app-path.txt`, `prompt.md`, `command.sh`, `transcript.jsonl`, `stderr.log`, `final.txt`, `session-id.txt`, `view-transcript.sh`, `resume-command.sh`, `metadata.json`, verification logs, `screenshot.png`, render metadata, and `verification.json` there.
-- Do not rename historical directories. New result naming is owned by the centralized run directory.
+- Do not rename individual historical result directories. Keep every task and its results below `benchmarks/<task>/`.
 
 ## Ports
 

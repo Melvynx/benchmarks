@@ -24,6 +24,7 @@ describe("prompt catalog", () => {
     const promptDirectory = join(root, "prompts", "earthquake-explorer")
     const appDirectory = join(
       root,
+      "benchmarks",
       "earthquake-explorer",
       "2026-07-14-codex-gpt-5-6-terra"
     )

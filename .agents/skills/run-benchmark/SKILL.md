@@ -5,7 +5,7 @@ description: Run reproducible coding-model benchmarks from a model name, CLI har
 
 # Run Benchmark
 
-Create one independently resumable session per task. Put the app in `<task>/<YYYY-MM-DD>-<harness>-<model>/` (with `-2`, `-3`, and so on for repeated identical runs) and final/global evidence in `runs/<run-id>/data/`. Every invocation gets a unique `benchmark_id`; a Markdown plan generates it once and shares it across every enabled model/task run so the comparison UI can recover the exact benchmark group.
+Create one independently resumable session per task. Put the app in `benchmarks/<task>/<YYYY-MM-DD>-<harness>-<model>/` (with `-2`, `-3`, and so on for repeated identical runs) and final/global evidence in `runs/<run-id>/data/`. Every invocation gets a unique `benchmark_id`; a Markdown plan generates it once and shares it across every enabled model/task run so the comparison UI can recover the exact benchmark group.
 
 ## Workflow
 

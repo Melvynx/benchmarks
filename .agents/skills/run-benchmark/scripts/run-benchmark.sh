@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 source "$SCRIPT_DIR/benchmark-id.sh"
+BENCHMARKS_DIR="$ROOT/benchmarks"
 PROMPT_CONTENT_DIR="${BENCHMARK_PROMPTS_DIR:-$ROOT/prompts}"
 PROMPT_PUBLIC_ROOT="${BENCHMARK_PROMPT_PUBLIC_ROOT:-https://benchmark.melvynx.dev/prompts}"
 TRANSCRIPT_ANALYZER="$ROOT/.agents/skills/run-benchmark/scripts/analyze-transcript.py"
@@ -157,6 +158,7 @@ app_name="$base_app_name"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 run_id="${stamp}-${slug}-${HARNESS}"
 mkdir -p "$ROOT/runs"
+mkdir -p "$BENCHMARKS_DIR"
 run_base="$ROOT/runs/$run_id"
 run_dir="$run_base"
 suffix=2
@@ -197,7 +199,7 @@ if [[ "$SMOKE" == 0 ]]; then
 
     for task in "${task_list[@]}"; do
       task="$(printf '%s' "$task" | xargs)"
-      target="$ROOT/$task/$candidate_app_name"
+      target="$BENCHMARKS_DIR/$task/$candidate_app_name"
       if [[ -e "$target" ]]; then
         candidate_available=false
         break
@@ -256,13 +258,13 @@ for index in "${!task_list[@]}"; do
   if [[ "$SMOKE" == 1 ]]; then
     app_dir="$(mktemp -d "${TMPDIR:-/tmp}/run-benchmark-smoke.XXXXXX")"
   else
-    app_dir="$ROOT/$task/$app_name"
+    app_dir="$BENCHMARKS_DIR/$task/$app_name"
   fi
   mkdir -p "$data_dir"
   [[ "$DRY_RUN" == 1 ]] || mkdir -p "$app_dir"
   printf '%s\n' "$app_dir" > "$data_dir/app-path.txt"
-  if [[ "$DRY_RUN" == 0 && "$task" == thumbfast ]]; then cp -R "$ROOT/thumbfast/base-repo/." "$app_dir/"; fi
-  if [[ "$DRY_RUN" == 0 && "$task" == openclaw-benchmark ]]; then cp -R "$ROOT/openclaw-benchmark/." "$app_dir/"; fi
+  if [[ "$DRY_RUN" == 0 && "$task" == thumbfast ]]; then cp -R "$BENCHMARKS_DIR/thumbfast/base-repo/." "$app_dir/"; fi
+  if [[ "$DRY_RUN" == 0 && "$task" == openclaw-benchmark ]]; then cp -R "$BENCHMARKS_DIR/openclaw-benchmark/." "$app_dir/"; fi
 
   port_json=null
   port_line=""

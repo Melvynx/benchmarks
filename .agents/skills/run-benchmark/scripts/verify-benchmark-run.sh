@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+BENCHMARKS_DIR="$ROOT/benchmarks"
 JQ_BIN="$(type -P jq)"
 [[ $# -gt 0 ]] || { echo "Usage: $0 <run-dir>..." >&2; exit 2; }
-mkdir -p .benchmark-verification-port-locks
+mkdir -p "$ROOT/.benchmark-verification-port-locks"
 
 for run_dir in "$@"; do
   [[ -f "$run_dir/run.json" ]] || { echo "Missing run.json: $run_dir" >&2; exit 1; }
   while IFS= read -r data_dir; do
     metadata="$data_dir/metadata.json"
     verification="$data_dir/verification.json"
-    app_path="$($JQ_BIN -r .app_path "$metadata")"
+    recorded_app_path="$($JQ_BIN -r .app_path "$metadata")"
+    task="$($JQ_BIN -r .task "$metadata")"
+    app_name="$($JQ_BIN -r .app_name "$metadata")"
+    app_path="$BENCHMARKS_DIR/$task/$app_name"
+    case "$recorded_app_path" in
+      "$app_path"|*/"$task"/"$app_name") ;;
+      *) echo "Invalid recorded app path: $recorded_app_path" >&2; exit 1 ;;
+    esac
     type="$($JQ_BIN -r .type "$metadata")"
     port="$($JQ_BIN -r '.port // empty' "$metadata")"
     [[ -d "$app_path" ]] || { echo "Missing app: $app_path" >&2; exit 1; }
@@ -22,7 +32,7 @@ for run_dir in "$@"; do
       [[ -s "$entry" ]] || { echo "Missing standalone index.html: $app_path" >&2; exit 1; }
       grep -Eiq '<!doctype html>|<html' "$entry"
       verify_port=9400
-      while lsof -nP -iTCP:"$verify_port" -sTCP:LISTEN >/dev/null 2>&1 || ! mkdir ".benchmark-verification-port-locks/$verify_port" 2>/dev/null; do verify_port=$((verify_port + 1)); done
+      while lsof -nP -iTCP:"$verify_port" -sTCP:LISTEN >/dev/null 2>&1 || ! mkdir "$ROOT/.benchmark-verification-port-locks/$verify_port" 2>/dev/null; do verify_port=$((verify_port + 1)); done
       (cd "$app_path" && python3 -m http.server "$verify_port" --bind 127.0.0.1) > "$data_dir/runtime.log" 2>&1 &
       server_pid=$!
       trap 'kill "$server_pid" 2>/dev/null || true' EXIT

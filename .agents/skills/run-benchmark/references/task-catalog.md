@@ -12,10 +12,10 @@ Canonical names are stable CLI identifiers. Historical directories remain unchan
 | `figma-clone` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/mini-figma-clone` |
 | `rocket-launch` | standalone HTML/3D | empty | Canonical: `https://benchmark.melvynx.dev/prompts/rocket-launch-animation` |
 | `simulation-life` | web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/ecosystem-evolution-simulator` |
-| `thumbfast` | cloned SaaS app | `thumbfast/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/thumbfast-drawing-inspiration-editor` |
+| `thumbfast` | cloned SaaS app | `benchmarks/thumbfast/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/thumbfast-drawing-inspiration-editor` |
 | `timezone-checker` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/timezone-checker` |
 | `youtube-thumbnail` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/youtube-thumbnail-generator` |
-| `openclaw-benchmark` | CLI evaluation suite | `openclaw-benchmark` | Run or extend the existing OpenClaw CLI benchmark suite; this is not a generated web app and has no port. |
+| `openclaw-benchmark` | CLI evaluation suite | `benchmarks/openclaw-benchmark` | Run or extend the existing OpenClaw CLI benchmark suite; this is not a generated web app and has no port. |
 
 ## Type rules
 
