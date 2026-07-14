@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router"
 import {
   CalendarDaysIcon,
+  CheckIcon,
   Columns2Icon,
   CopyIcon,
   ExternalLinkIcon,
@@ -228,6 +229,10 @@ function BenchmarkCompare() {
   }, [entries])
   const selectedBenchmarkGroup = benchmarkGroups.find(
     (group) => group.id === run
+  )
+  const comparableBenchmarkGroups = useMemo(
+    () => benchmarkGroups.filter((group) => group.count > 1),
+    [benchmarkGroups]
   )
   const filteredEntries = useMemo(() => {
     const model = modelQuery.trim().toLowerCase()
@@ -512,7 +517,7 @@ function BenchmarkCompare() {
                 >
                   <SelectGroup>
                     <SelectItem value="all">All benchmark groups</SelectItem>
-                    {benchmarkGroups.map((group) => (
+                    {comparableBenchmarkGroups.map((group) => (
                       <SelectItem key={group.id} value={group.id}>
                         <span className="text-xs">
                           {benchmarkGroupLabel(group)}
@@ -592,14 +597,22 @@ function BenchmarkCompare() {
                     <Button
                       key={entry.id}
                       variant="ghost"
-                      className="h-auto w-full justify-start rounded-none px-2 py-3 text-left disabled:opacity-40"
-                      disabled={unavailable}
+                      className={`h-auto w-full justify-start rounded-none px-3 py-3 text-left transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
+                        selected
+                          ? "border-l-2 border-l-primary bg-primary/15 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-primary)_35%,transparent)] disabled:opacity-100"
+                          : "border-l-2 border-l-transparent hover:bg-muted/50 disabled:opacity-40"
+                      }`}
+                      disabled={selected || unavailable}
                       aria-pressed={selected}
-                      aria-label={`${selected ? "Remove" : unavailable ? "Selection full:" : "Add"} ${entry.model}, ${harnessLabel(entry.harness)}, ${effortLabel(entry.effort)}`}
+                      aria-label={`${selected ? "Selected" : unavailable ? "Selection full:" : "Add"} ${entry.model}, ${harnessLabel(entry.harness)}, ${effortLabel(entry.effort)}`}
                       onClick={() => toggleResult(entry.id)}
                     >
                       <span className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
-                        <span className="text-xs text-muted-foreground">
+                        <span
+                          className={`text-xs ${
+                            selected ? "text-primary" : "text-muted-foreground"
+                          }`}
+                        >
                           {entry.task}
                         </span>
                         <span className="w-full truncate text-sm font-medium">
@@ -622,8 +635,15 @@ function BenchmarkCompare() {
                           </span>
                         </span>
                       </span>
-                      <span className="ml-2 text-xs text-primary">
-                        {selected ? "Remove" : "Add"}
+                      <span
+                        className={`ml-2 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${
+                          selected
+                            ? "bg-primary text-primary-foreground"
+                            : "text-primary"
+                        }`}
+                      >
+                        {selected && <CheckIcon className="size-3" />}
+                        {selected ? "Selected" : "Add"}
                       </span>
                     </Button>
                   )
