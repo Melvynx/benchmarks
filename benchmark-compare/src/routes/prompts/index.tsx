@@ -1,9 +1,14 @@
 import { Link, createFileRoute } from "@tanstack/react-router"
-import { ArrowRightIcon, FlaskConicalIcon, Layers3Icon } from "lucide-react"
+import { ArrowRightIcon, ImagesIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
 import { loadPromptCatalog } from "@/lib/prompts"
+
+const featuredPromptSlug = "elysian-taste-challenge"
+const promptOnlyPreviewSlugs = new Set([
+  "thumbfast-drawing-inspiration-editor",
+  "youtube-thumbnail-generator",
+])
 
 export const Route = createFileRoute("/prompts/")({
   loader: () => loadPromptCatalog(),
@@ -25,6 +30,12 @@ function PromptCatalog() {
     (total, prompt) => total + prompt.versions.length,
     0
   )
+  const featuredPrompt = prompts.find(
+    (prompt) => prompt.slug === featuredPromptSlug
+  )
+  const galleryPrompts = featuredPrompt
+    ? [featuredPrompt, ...prompts.filter((prompt) => prompt !== featuredPrompt)]
+    : prompts
 
   return (
     <main className="mx-auto min-h-svh w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
@@ -40,14 +51,15 @@ function PromptCatalog() {
 
       <header className="max-w-3xl">
         <div className="mb-4 flex size-11 items-center justify-center rounded-xl border bg-card">
-          <FlaskConicalIcon className="size-5 text-primary" />
+          <ImagesIcon className="size-5 text-primary" />
         </div>
         <h1 className="font-heading text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
           Benchmark prompts
         </h1>
         <p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg">
-          The exact, versioned task specifications used to compare coding
-          models. Every new run snapshots the latest local version.
+          See the challenge before you read it. Each preview comes from a real
+          benchmark output, paired with the exact versioned specification used
+          to create it.
         </p>
         <div className="mt-6 flex flex-wrap gap-2 text-sm text-muted-foreground">
           <span>{prompts.length} prompt families</span>
@@ -56,47 +68,78 @@ function PromptCatalog() {
         </div>
       </header>
 
-      <section className="mt-12 grid gap-3 md:grid-cols-2" aria-label="Prompts">
-        {prompts.map((prompt) => (
-          <Card
-            key={prompt.slug}
-            className="group transition-colors hover:border-primary/40"
-          >
-            <CardContent className="flex h-full items-start gap-4 p-5">
-              <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                <Layers3Icon className="size-4 text-muted-foreground" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="font-heading font-medium">{prompt.title}</h2>
-                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                      {prompt.slug}
-                    </p>
-                  </div>
-                  <Badge variant="secondary">{prompt.latestVersion}</Badge>
+      <section
+        className="mt-12 grid gap-4 md:grid-cols-2"
+        aria-label="Prompt gallery"
+      >
+        {galleryPrompts.map((prompt) => {
+          const isFeatured = prompt.slug === featuredPromptSlug
+          const isPromptOnlyPreview = promptOnlyPreviewSlugs.has(prompt.slug)
+
+          return (
+            <Link
+              key={prompt.slug}
+              to="/prompts/$name/$version"
+              params={{
+                name: prompt.slug,
+                version: prompt.latestVersion,
+              }}
+              className={`group overflow-hidden rounded-xl border bg-card transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none ${
+                isFeatured ? "md:col-span-2" : ""
+              }`}
+            >
+              <div
+                className={`relative overflow-hidden border-b bg-muted ${
+                  isFeatured ? "aspect-[16/7]" : "aspect-video"
+                }`}
+              >
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 flex items-center justify-center p-6 text-center font-mono text-xs text-muted-foreground"
+                >
+                  Preview unavailable
                 </div>
-                <div className="mt-5 flex items-center justify-between gap-3">
-                  <span className="text-xs text-muted-foreground">
+                <img
+                  src={`/prompt-previews/${prompt.slug}.jpg`}
+                  alt={`Preview for ${prompt.title}`}
+                  width={1280}
+                  height={720}
+                  className="absolute inset-0 size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.015] motion-reduce:transform-none motion-reduce:transition-none"
+                />
+                <span className="absolute top-3 left-3 border border-white/15 bg-black/80 px-2 py-1 font-mono text-[10px] tracking-wide text-white uppercase">
+                  {isPromptOnlyPreview ? "Prompt preview" : "Live output"}
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between gap-4 p-4 sm:p-5">
+                <div className="min-w-0">
+                  <h2
+                    className={`font-heading font-medium tracking-tight ${
+                      isFeatured ? "text-xl sm:text-2xl" : "text-base"
+                    }`}
+                  >
+                    {prompt.title}
+                  </h2>
+                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                    {prompt.slug}
+                  </p>
+                  <p className="mt-3 text-xs text-muted-foreground">
                     {prompt.versions.length}{" "}
                     {prompt.versions.length === 1 ? "version" : "versions"}
-                  </span>
-                  <Link
-                    to="/prompts/$name/$version"
-                    params={{
-                      name: prompt.slug,
-                      version: prompt.latestVersion,
-                    }}
-                    className="inline-flex items-center gap-1.5 text-sm font-medium text-primary"
-                  >
+                  </p>
+                </div>
+
+                <div className="flex shrink-0 flex-col items-end gap-4">
+                  <Badge variant="secondary">{prompt.latestVersion}</Badge>
+                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-primary">
                     Read prompt
                     <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-                  </Link>
+                  </span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            </Link>
+          )
+        })}
       </section>
     </main>
   )
