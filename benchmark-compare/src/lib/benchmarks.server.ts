@@ -32,6 +32,9 @@ export type BenchmarkEntry = {
   runId: string
   appPath: string
   hasTranscript: boolean
+  promptSlug: string | null
+  promptVersion: string | null
+  promptUrl: string | null
   source: "build" | "standalone"
   url: string
 }
@@ -107,6 +110,19 @@ type RunEvidence = {
   durationMs: number | null
   benchmarkId: string
   runId: string
+  promptSlug: string | null
+  promptVersion: string | null
+}
+
+function promptIdentity(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value !== "string") continue
+    const match = /(?:^|\/)prompts\/([^/]+)\/(v\d+)(?:\.md)?(?:$|[?#])/.exec(
+      value
+    )
+    if (match) return { promptSlug: match[1], promptVersion: match[2] }
+  }
+  return { promptSlug: null, promptVersion: null }
 }
 
 function normalizeRunToken(value: string) {
@@ -222,7 +238,13 @@ function recordedMetadata(directory: string) {
       effort?: unknown
       benchmark_id?: unknown
       model_timing?: { duration_ms?: unknown } | null
+      prompt_public_url?: unknown
+      prompt_source?: unknown
     }
+    const prompt = promptIdentity(
+      metadata.prompt_source,
+      metadata.prompt_public_url
+    )
     return {
       effort:
         typeof metadata.effort === "string" && metadata.effort
@@ -238,9 +260,16 @@ function recordedMetadata(directory: string) {
         typeof metadata.benchmark_id === "string" && metadata.benchmark_id
           ? metadata.benchmark_id
           : "",
+      ...prompt,
     }
   } catch {
-    return { effort: "unknown", durationMs: null, benchmarkId: "" }
+    return {
+      effort: "unknown",
+      durationMs: null,
+      benchmarkId: "",
+      promptSlug: null,
+      promptVersion: null,
+    }
   }
 }
 
@@ -276,6 +305,8 @@ function historicalEvidence(
           benchmarkIds.get(`${run.name}/${task}`) ||
           run.name,
         runId: run.name,
+        promptSlug: metadata.promptSlug,
+        promptVersion: metadata.promptVersion,
       }
     })
     .filter((candidate) => existsSync(candidate.directory))
@@ -318,8 +349,14 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
           harness?: string
           model?: string
           model_timing?: { duration_ms?: unknown } | null
+          prompt_public_url?: unknown
+          prompt_source?: unknown
         }
         if (value.harness && value.model) {
+          const prompt = promptIdentity(
+            value.prompt_source,
+            value.prompt_public_url
+          )
           const candidate = {
             directory: taskData,
             effort: value.effort || "unknown",
@@ -336,6 +373,7 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
             harness: value.harness,
             model: value.model,
             runId: run.name,
+            ...prompt,
           }
           const previous = metadata.get(appPath)
           const candidateHasTranscript =
@@ -439,6 +477,12 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
         hasTranscript: Boolean(
           runEvidence && transcriptFiles(runEvidence.directory).length > 0
         ),
+        promptSlug: runEvidence?.promptSlug || null,
+        promptVersion: runEvidence?.promptVersion || null,
+        promptUrl:
+          runEvidence?.promptSlug && runEvidence.promptVersion
+            ? `/prompts/${encodeURIComponent(runEvidence.promptSlug)}/${encodeURIComponent(runEvidence.promptVersion)}`
+            : null,
         source: outputDirectory === distDirectory ? "build" : "standalone",
         url: `/view/${id.split("/").map(encodeURIComponent).join("/")}/`,
       })

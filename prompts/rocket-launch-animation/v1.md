@@ -1,0 +1,105 @@
+<instructions>
+Generate a single, self-contained HTML file. No external dependencies, no separate JS files, no frameworks, no libraries. One `.html` file that works when opened directly in a browser.
+
+Create a cinematic rocket launch animation set on a tropical island. The rocket must launch, leave the viewport, and after 5 seconds smoothly return to its initial position — then the cycle repeats.
+</instructions>
+
+<scene>
+**Setting: Tropical Launch Island**
+- A small tropical island in the lower portion of the screen: palm trees, sandy beach, green vegetation
+- Ocean water surrounding the island with gentle waves
+- A launch pad on the island with metal structure / scaffolding / support tower
+- Sky background: gradient from warm horizon (orange/pink) to deep blue/dark sky at the top, with stars visible in the upper portion
+- A few clouds scattered across the sky
+
+**The Rocket (ultra-detailed)**
+- Tall, slender multi-stage rocket (inspired by SpaceX Falcon 9 or Saturn V proportions)
+- Distinct rocket stages: first stage (largest, bottom), second stage (middle), payload fairing / nose cone (top)
+- Surface details: panel lines, rivets/segments drawn with subtle lines, an access hatch, small painted flag or logo
+- Color scheme: primarily white body with black/dark gray accent stripes, a colored logo band, and the nose cone in a contrasting shade
+- Fins at the base of the first stage (3-4 stabilizer fins)
+- Engine nozzles visible at the very bottom (cluster of small circles/bells)
+- The rocket should be the visual centerpiece — spend time on its geometry
+</scene>
+
+<animation-sequence>
+**Phase 1 — Pre-launch (0s to 1.5s)**
+- Rocket sits on the pad, engines ignite
+- A growing orange/yellow glow appears beneath the rocket
+- Initial smoke/steam clouds billow outward from the base — thick, white/gray, expanding horizontally along the island surface
+- Subtle camera shake / screen vibration effect
+- Engine flames flicker with randomized intensity
+
+**Phase 2 — Liftoff (1.5s to 4s)**
+- Rocket slowly lifts off the pad with realistic acceleration (starts very slow, gradually speeds up)
+- Massive exhaust plume: bright white-yellow core flame, surrounded by orange glow, transitioning to thick gray/white smoke trail
+- Smoke trail expands and lingers behind the rocket as it rises
+- The smoke at the base continues spreading across the island and over the water
+- As the rocket gains altitude, the flame elongates and the smoke trail stretches
+- Subtle particle effects: sparks, embers flying outward from the exhaust
+
+**Phase 3 — Ascent & Exit (4s to 7s)**
+- Rocket accelerates rapidly, moving faster and faster upward
+- The exhaust trail thins as the rocket reaches higher altitude
+- Rocket becomes smaller as it gains distance (slight scale reduction)
+- The rocket exits the top of the viewport
+- The lingering smoke trail on screen slowly fades and disperses
+
+**Phase 4 — Calm & Reset (7s to 12s)**
+- Scene is peaceful: smoke fully dissipates, island sits quietly
+- At the 5-second mark after exit (~12s), the rocket gently descends back into frame
+- It returns slowly, smoothly, almost floating — no engines firing, no drama
+- It softly settles back onto the launch pad in its exact original position
+- Brief pause, then the entire cycle restarts seamlessly
+</animation-sequence>
+
+<smoke-and-effects>
+- Smoke is critical to the visual quality. Use a particle system or layered animated shapes:
+  - Dozens of individual smoke "puffs" that expand, fade in opacity, and drift slightly with a breeze
+  - Smoke color: starts white/light gray near the flame, darkens to medium gray as it cools
+  - Smoke expands in a mushroom-cloud-like pattern at the base during liftoff
+  - Each puff has slight random drift (wind effect), rotation, and independent fade timing
+- Exhaust flame: layered shapes (inner bright yellow/white, outer orange, outermost faint red) with flickering animation
+- Heat haze effect near the exhaust: subtle wavy distortion of the background behind the flame
+- Water ripple effect on the ocean surface near the island during launch
+- Stars in the upper sky should faintly twinkle
+</smoke-and-effects>
+
+<visual>
+- Background: gradient sky — warm sunset tones at horizon fading to deep navy/black at top
+- Ocean: dark blue with animated wave motion (simple sine-wave surface)
+- Island: lush greens, sandy tan, 2-3 palm trees with gentle sway
+- Canvas: fullscreen, responsive
+- Animation: 60fps via requestAnimationFrame
+- All rendering via HTML5 Canvas 2D context — no WebGL required
+- Color palette: rich, cinematic — warm launch glow contrasting against cool sky
+</visual>
+
+<constraints>
+- Output ONLY a complete HTML file — nothing else
+- Everything must be drawn programmatically on a `<canvas>` — no images, no SVGs, no external assets
+- The animation must loop seamlessly: launch → exit → calm return → repeat
+- The rocket must be visually impressive and detailed — not a simple triangle
+- Smoke must look volumetric and organic, not like static shapes
+- Performance must stay smooth at 60fps despite the particle count
+- The return descent must feel gentle and peaceful — stark contrast to the violent launch
+</constraints>
+
+<thinking>
+Before coding, reason through:
+1. How to construct the rocket from canvas drawing primitives (rectangles, arcs, lines) with enough detail to be visually impressive
+2. Particle system architecture: how to manage hundreds of smoke/ember particles efficiently (object pooling, lifecycle management)
+3. The acceleration curve for realistic launch physics (slow start, exponential ramp-up)
+4. How to layer the drawing order: background sky → stars → clouds → smoke trail → rocket → exhaust flame → foreground island → base smoke
+5. Timing system: how to manage the 4 animation phases with smooth transitions between them
+6. How to make the return descent feel physically different from the launch (no exhaust, gentle easing, floating quality)
+7. How to make smoke look organic: randomized spawn positions, varied sizes, Perlin-like drift, opacity curves
+</thinking>
+
+<important>
+* You MUST write the result directly into a file named "index.html" on the user's computer. The user should not have to see or handle the code — just write the file and finish your task.
+* Title of the page is your model name. For example "GPT 5" or "Opus 5"
+* Title inside the page shows your model name.
+</important>
+</content>
+</invoke>

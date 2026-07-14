@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 source "$SCRIPT_DIR/benchmark-id.sh"
-PROMPT_REPO="${CODE_MELVYNX_REPO:-$HOME/Developer/saas/code.melvynx.dev}"
-PROMPT_CONTENT_DIR="$PROMPT_REPO/content/prompts"
+PROMPT_CONTENT_DIR="${BENCHMARK_PROMPTS_DIR:-$ROOT/prompts}"
+PROMPT_PUBLIC_ROOT="${BENCHMARK_PROMPT_PUBLIC_ROOT:-https://benchmark.melvynx.dev/prompts}"
 TRANSCRIPT_ANALYZER="$ROOT/.agents/skills/run-benchmark/scripts/analyze-transcript.py"
 SESSION_USAGE_ANALYZER="$ROOT/.agents/skills/run-benchmark/scripts/analyze-session-usage.py"
 MODEL=""
@@ -242,7 +242,7 @@ for index in "${!task_list[@]}"; do
         exit 1
       }
       prompt_version="$(basename "$prompt_source" .md)"
-      prompt_public_url="https://code.melvynx.dev/prompts/$slug_value/$prompt_version"
+      prompt_public_url="$PROMPT_PUBLIC_ROOT/$slug_value/$prompt_version"
       wording="$(cat "$prompt_source")"
     else
       prompt_catalog_dir=""

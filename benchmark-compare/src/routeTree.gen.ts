@@ -10,13 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PromptsIndexRouteImport } from './routes/prompts/index'
 import { Route as ViewSplatRouteImport } from './routes/view/$'
 import { Route as ApiCatalogRouteImport } from './routes/api/catalog'
+import { Route as PromptsNameIndexRouteImport } from './routes/prompts/$name/index'
+import { Route as PromptsNameVersionRouteImport } from './routes/prompts/$name/$version'
 import { Route as ApiEvidenceSplatRouteImport } from './routes/api/evidence/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PromptsIndexRoute = PromptsIndexRouteImport.update({
+  id: '/prompts/',
+  path: '/prompts/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ViewSplatRoute = ViewSplatRouteImport.update({
@@ -29,6 +37,16 @@ const ApiCatalogRoute = ApiCatalogRouteImport.update({
   path: '/api/catalog',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PromptsNameIndexRoute = PromptsNameIndexRouteImport.update({
+  id: '/prompts/$name/',
+  path: '/prompts/$name/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PromptsNameVersionRoute = PromptsNameVersionRouteImport.update({
+  id: '/prompts/$name/$version',
+  path: '/prompts/$name/$version',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiEvidenceSplatRoute = ApiEvidenceSplatRouteImport.update({
   id: '/api/evidence/$',
   path: '/api/evidence/$',
@@ -39,34 +57,68 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/view/$': typeof ViewSplatRoute
+  '/prompts/': typeof PromptsIndexRoute
   '/api/evidence/$': typeof ApiEvidenceSplatRoute
+  '/prompts/$name/$version': typeof PromptsNameVersionRoute
+  '/prompts/$name/': typeof PromptsNameIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/view/$': typeof ViewSplatRoute
+  '/prompts': typeof PromptsIndexRoute
   '/api/evidence/$': typeof ApiEvidenceSplatRoute
+  '/prompts/$name/$version': typeof PromptsNameVersionRoute
+  '/prompts/$name': typeof PromptsNameIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/view/$': typeof ViewSplatRoute
+  '/prompts/': typeof PromptsIndexRoute
   '/api/evidence/$': typeof ApiEvidenceSplatRoute
+  '/prompts/$name/$version': typeof PromptsNameVersionRoute
+  '/prompts/$name/': typeof PromptsNameIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/catalog' | '/view/$' | '/api/evidence/$'
+  fullPaths:
+    | '/'
+    | '/api/catalog'
+    | '/view/$'
+    | '/prompts/'
+    | '/api/evidence/$'
+    | '/prompts/$name/$version'
+    | '/prompts/$name/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/catalog' | '/view/$' | '/api/evidence/$'
-  id: '__root__' | '/' | '/api/catalog' | '/view/$' | '/api/evidence/$'
+  to:
+    | '/'
+    | '/api/catalog'
+    | '/view/$'
+    | '/prompts'
+    | '/api/evidence/$'
+    | '/prompts/$name/$version'
+    | '/prompts/$name'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/catalog'
+    | '/view/$'
+    | '/prompts/'
+    | '/api/evidence/$'
+    | '/prompts/$name/$version'
+    | '/prompts/$name/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiCatalogRoute: typeof ApiCatalogRoute
   ViewSplatRoute: typeof ViewSplatRoute
+  PromptsIndexRoute: typeof PromptsIndexRoute
   ApiEvidenceSplatRoute: typeof ApiEvidenceSplatRoute
+  PromptsNameVersionRoute: typeof PromptsNameVersionRoute
+  PromptsNameIndexRoute: typeof PromptsNameIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -76,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prompts/': {
+      id: '/prompts/'
+      path: '/prompts'
+      fullPath: '/prompts/'
+      preLoaderRoute: typeof PromptsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/view/$': {
@@ -92,6 +151,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCatalogRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/prompts/$name/': {
+      id: '/prompts/$name/'
+      path: '/prompts/$name'
+      fullPath: '/prompts/$name/'
+      preLoaderRoute: typeof PromptsNameIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prompts/$name/$version': {
+      id: '/prompts/$name/$version'
+      path: '/prompts/$name/$version'
+      fullPath: '/prompts/$name/$version'
+      preLoaderRoute: typeof PromptsNameVersionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/evidence/$': {
       id: '/api/evidence/$'
       path: '/api/evidence/$'
@@ -106,7 +179,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiCatalogRoute: ApiCatalogRoute,
   ViewSplatRoute: ViewSplatRoute,
+  PromptsIndexRoute: PromptsIndexRoute,
   ApiEvidenceSplatRoute: ApiEvidenceSplatRoute,
+  PromptsNameVersionRoute: PromptsNameVersionRoute,
+  PromptsNameIndexRoute: PromptsNameIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

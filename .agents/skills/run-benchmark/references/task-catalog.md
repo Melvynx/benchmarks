@@ -1,20 +1,20 @@
 # Benchmark Task Catalog
 
-Canonical names are stable CLI identifiers. Historical directories remain unchanged. Resolve every listed slug under `${CODE_MELVYNX_REPO:-$HOME/Developer/saas/code.melvynx.dev}/content/prompts/<slug>/` and select its numerically highest `v<number>.md` locally.
+Canonical names are stable CLI identifiers. Historical directories remain unchanged. Resolve every listed slug under the repository-owned `prompts/<slug>/` catalog and select its numerically highest `v<number>.md` locally.
 
 | Task | Type | Seed | Benchmark wording |
 |---|---|---|---|
-| `3d-sponge-bob` | standalone HTML/WebGL | empty | Canonical: `https://code.melvynx.dev/prompts/spongebob-3d-world-threejs` |
-| `bouncing-ball` | standalone HTML/canvas | empty | Canonical: `https://code.melvynx.dev/prompts/bouncing-ball-polygon` |
-| `car-crash` | standalone HTML/canvas | empty | Canonical: `https://code.melvynx.dev/prompts/car-brick-wall-crash` |
-| `earthquake-explorer` | package web app | empty | Canonical: `https://code.melvynx.dev/prompts/earthquake-explorer` |
-| `elysian-taste-challenge` | standalone HTML | empty | Canonical: `https://code.melvynx.dev/prompts/elysian-taste-challenge` |
-| `figma-clone` | package web app | empty | Canonical: `https://code.melvynx.dev/prompts/mini-figma-clone` |
-| `rocket-launch` | standalone HTML/3D | empty | Canonical: `https://code.melvynx.dev/prompts/rocket-launch-animation` |
-| `simulation-life` | web app | empty | Canonical: `https://code.melvynx.dev/prompts/ecosystem-evolution-simulator` |
-| `thumbfast` | cloned SaaS app | `thumbfast/base-repo` | Canonical: `https://code.melvynx.dev/prompts/thumbfast-drawing-inspiration-editor` |
-| `timezone-checker` | package web app | empty | Canonical: `https://code.melvynx.dev/prompts/timezone-checker` |
-| `youtube-thumbnail` | package web app | empty | Canonical: `https://code.melvynx.dev/prompts/youtube-thumbnail-generator` |
+| `3d-sponge-bob` | standalone HTML/WebGL | empty | Canonical: `https://benchmark.melvynx.dev/prompts/spongebob-3d-world-threejs` |
+| `bouncing-ball` | standalone HTML/canvas | empty | Canonical: `https://benchmark.melvynx.dev/prompts/bouncing-ball-polygon` |
+| `car-crash` | standalone HTML/canvas | empty | Canonical: `https://benchmark.melvynx.dev/prompts/car-brick-wall-crash` |
+| `earthquake-explorer` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/earthquake-explorer` |
+| `elysian-taste-challenge` | standalone HTML | empty | Canonical: `https://benchmark.melvynx.dev/prompts/elysian-taste-challenge` |
+| `figma-clone` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/mini-figma-clone` |
+| `rocket-launch` | standalone HTML/3D | empty | Canonical: `https://benchmark.melvynx.dev/prompts/rocket-launch-animation` |
+| `simulation-life` | web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/ecosystem-evolution-simulator` |
+| `thumbfast` | cloned SaaS app | `thumbfast/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/thumbfast-drawing-inspiration-editor` |
+| `timezone-checker` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/timezone-checker` |
+| `youtube-thumbnail` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/youtube-thumbnail-generator` |
 | `openclaw-benchmark` | CLI evaluation suite | `openclaw-benchmark` | Run or extend the existing OpenClaw CLI benchmark suite; this is not a generated web app and has no port. |
 
 ## Type rules

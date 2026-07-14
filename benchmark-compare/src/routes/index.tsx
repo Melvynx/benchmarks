@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { Link, createFileRoute } from "@tanstack/react-router"
 import {
   CalendarDaysIcon,
   Columns2Icon,
@@ -408,6 +408,13 @@ function BenchmarkCompare() {
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Select up to four generated apps.
               </p>
+              <Link
+                to="/prompts"
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary"
+              >
+                <FileTextIcon className="size-3.5" />
+                Browse prompts
+              </Link>
             </div>
           </div>
           <FieldGroup className="grid grid-cols-2 gap-2">

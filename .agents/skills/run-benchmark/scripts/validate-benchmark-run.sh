@@ -97,13 +97,16 @@ for run_dir in "$@"; do
     prompt_catalog_dir="$($JQ_BIN -r '.prompt_catalog_dir // empty' "$data_dir/metadata.json")"
     prompt_public_url="$($JQ_BIN -r '.prompt_public_url // empty' "$data_dir/metadata.json")"
     if [[ -n "$prompt_catalog_dir" ]]; then
-      [[ "$prompt_catalog_dir" == /*/content/prompts/* ]] || fail "invalid local prompt catalog directory: $data_dir"
+      [[ "$prompt_catalog_dir" == "$PWD/prompts/"* || "$prompt_catalog_dir" == /*/content/prompts/* ]] || fail "invalid local prompt catalog directory: $data_dir"
       [[ "$prompt_source" =~ ^${prompt_catalog_dir}/v[0-9]+\.md$ ]] || fail "invalid versioned local prompt source: $data_dir"
-      [[ -f "$prompt_source" ]] || fail "missing local prompt source: $prompt_source"
       prompt_slug="$(basename "$prompt_catalog_dir")"
       prompt_version="$(basename "$prompt_source" .md)"
-      [[ "$prompt_public_url" == "https://code.melvynx.dev/prompts/$prompt_slug/$prompt_version" ]] || fail "prompt public URL mismatch: $data_dir"
-      if ! python3 - "$prompt_source" "$data_dir/prompt.md" <<'PY'
+      local_prompt_source="$PWD/prompts/$prompt_slug/$prompt_version.md"
+      canonical_prompt_source="$prompt_source"
+      [[ -f "$canonical_prompt_source" ]] || canonical_prompt_source="$local_prompt_source"
+      [[ -f "$canonical_prompt_source" ]] || fail "missing local prompt source: $local_prompt_source"
+      [[ "$prompt_public_url" == "https://benchmark.melvynx.dev/prompts/$prompt_slug/$prompt_version" || "$prompt_public_url" == "https://code.melvynx.dev/prompts/$prompt_slug/$prompt_version" ]] || fail "prompt public URL mismatch: $data_dir"
+      if ! python3 - "$canonical_prompt_source" "$data_dir/prompt.md" <<'PY'
 import sys
 from pathlib import Path
 
@@ -117,7 +120,7 @@ PY
         fail "prompt does not match local canonical source: $data_dir"
       fi
     else
-      [[ "$prompt_source" == local-catalog || "$prompt_source" == https://code.melvynx.dev/prompts/* ]] || fail "noncanonical legacy prompt source: $data_dir"
+      [[ "$prompt_source" == local-catalog || "$prompt_source" == https://code.melvynx.dev/prompts/* || "$prompt_source" == https://benchmark.melvynx.dev/prompts/* ]] || fail "noncanonical legacy prompt source: $data_dir"
     fi
     if [[ "$package_manager" == pnpm ]]; then
       if ! grep -Fq 'Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.' "$data_dir/prompt.md" \

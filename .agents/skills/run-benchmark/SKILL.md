@@ -10,7 +10,7 @@ Create one independently resumable session per task. Put the app in `<task>/<YYY
 ## Workflow
 
 1. Read [references/task-catalog.md](references/task-catalog.md) for task names, application types, and seed sources.
-2. Read canonical prompts locally from `${CODE_MELVYNX_REPO:-$HOME/Developer/saas/code.melvynx.dev}/content/prompts/<slug>/`. Select the numerically highest `v<number>.md`, including uncommitted local versions, and fail closed if the repository or version is missing. Save the exact file path, public versioned URL, and prompt in the immutable run snapshot; do not fetch the website.
+2. Read canonical prompts locally from `<benchmark-repository>/prompts/<slug>/` (or `BENCHMARK_PROMPTS_DIR` when explicitly overridden). Select the numerically highest `v<number>.md`, including uncommitted local versions, and fail closed if the version is missing. Save the exact local file path, `https://benchmark.melvynx.dev/prompts/<slug>/<version>`, and prompt in the immutable run snapshot; do not fetch either website.
 3. Confirm the requested model exists in the chosen harness when the harness exposes a model catalog. Never substitute a model silently.
 4. Run:
 
@@ -63,3 +63,4 @@ Create one independently resumable session per task. Put the app in `<task>/<YYY
 - Analyze each valid transcript with `scripts/analyze-transcript.py`. Store a stacked progress bar and percentages for `context_gathering`, `planning`, `implementation`, and `verification` under `transcript_analysis` in task metadata. Exclude transport noise, encrypted signatures, and duplicated tool results.
 - Extract the terminal harness usage record with `scripts/analyze-session-usage.py` and persist normalized input, output, cache, reasoning, total, cost, duration, turn, and raw model-usage details under `session_usage`. Use `null` only for prepared dry runs and an explicit `unavailable` object when usage cannot be recovered.
 - Keep the exact raw JSONL. Redact secrets if a harness unexpectedly emits them before sharing or committing artifacts.
+- Treat `prompts/<slug>/v<number>.md` as immutable after use. Add changes as a new numeric version and run `pnpm index:prompts` before committing.

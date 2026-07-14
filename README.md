@@ -10,6 +10,8 @@ workbench.
 - `.agents/rules/benchmark-runs.md` — routing, evidence, naming, and proof rules.
 - `benchmark-compare/` — TanStack Start comparison application.
 - `benchmark-plans/` — reusable model/task matrices.
+- `prompts/` — canonical, immutable versioned task prompts.
+- `prompts.json` — deterministic prompt paths, public URLs, sizes, and hashes.
 - `runs/` — immutable run-level evidence and metadata.
 - `transcripts.json` — portable index of every primary and resumed transcript.
 - `<task>/<date>-<harness>-<model>/` — historical generated applications.
@@ -21,7 +23,6 @@ Historical result directories are evidence. Do not rename or rewrite them.
 - Node.js 22 or newer
 - pnpm 10.12.1 through Corepack
 - One or more supported harnesses: `codex`, `ccx`, `cc`, `cursor-agent`
-- A local checkout of `code.melvynx.dev` containing canonical prompt versions
 
 ## Install and open the comparison app
 
@@ -34,6 +35,8 @@ pnpm dev
 
 The comparison app opens on `http://127.0.0.1:9080` and reads benchmark data
 from the repository root. Override the data directory with `BENCHMARK_ROOT`.
+Canonical prompts are available at `/prompts` and each immutable version at
+`/prompts/<slug>/v<number>`.
 
 Production:
 
@@ -79,6 +82,7 @@ pnpm typecheck
 pnpm lint
 pnpm build
 pnpm validate:skill
+pnpm verify:prompts
 pnpm verify:transcripts
 ```
 
