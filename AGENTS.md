@@ -9,7 +9,7 @@ This repository compares coding models on reproducible visual, application, and 
 - `.agents/skills/run-benchmark/scripts/verify-benchmark-run.sh runs/<run-id>...` - build and HTTP-probe completed apps
 - `.agents/skills/run-benchmark/scripts/validate-benchmark-run.sh runs/<run-id>...` - enforce layout, naming, prompt, model, port, transcript, screenshot, and runtime evidence
 - `.agents/skills/run-benchmark/scripts/run-benchmark.sh --list-tasks` - list canonical task names and types
-- `python3 /Users/melvynx/.agents/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/run-benchmark` - validate the benchmark skill
+- `pnpm validate:skill` - validate the benchmark skill with the repository-owned validator
 - `cd benchmark-compare && pnpm start` - open the local 2-4 panel HTML comparison workbench at `http://127.0.0.1:9080`
 
 ## Rules
