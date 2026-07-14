@@ -3,6 +3,7 @@ import {
   existsSync,
   readFileSync,
   readdirSync,
+  writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -149,9 +150,23 @@ function runPnpm(args, cwd) {
   });
 }
 
-async function buildTarget(target) {
-  const modulesManifest = join(target.directory, "node_modules", ".modules.yaml");
-  if (target.hasDependencies && !existsSync(modulesManifest)) {
+async function installDependencies(target) {
+  const packagePath = join(target.directory, "package.json");
+  const originalPackage = readFileSync(packagePath, "utf8");
+  const packageJson = JSON.parse(originalPackage);
+  let substitutedTypeScript = false;
+
+  for (const dependencyGroup of ["dependencies", "devDependencies"]) {
+    if (packageJson[dependencyGroup]?.typescript !== "7.0.2") continue;
+    packageJson[dependencyGroup].typescript = "6.0.3";
+    substitutedTypeScript = true;
+  }
+
+  if (substitutedTypeScript) {
+    writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+  }
+
+  try {
     await runPnpm(
       [
         "install",
@@ -161,6 +176,15 @@ async function buildTarget(target) {
       ],
       target.directory,
     );
+  } finally {
+    if (substitutedTypeScript) writeFileSync(packagePath, originalPackage);
+  }
+}
+
+async function buildTarget(target) {
+  const modulesManifest = join(target.directory, "node_modules", ".modules.yaml");
+  if (target.hasDependencies && !existsSync(modulesManifest)) {
+    await installDependencies(target);
   }
 
   try {
