@@ -1,0 +1,1222 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Bikini Bottom 3D Benchmark</title>
+        <style>
+            body {
+                margin: 0;
+                overflow: hidden;
+                background-color: #031530;
+                font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+                touch-action: none;
+            }
+            #ui {
+                position: absolute;
+                width: 100vw;
+                height: 100vh;
+                pointer-events: none;
+                z-index: 10;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                background: #031530;
+                color: #fff;
+                transition: opacity 1.5s ease-out;
+            }
+            .loader {
+                width: 50px;
+                height: 50px;
+                border: 5px solid rgba(255, 255, 255, 0.2);
+                border-top: 5px solid #28d9ff;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                box-shadow: 0 0 20px #28d9ff;
+            }
+            h2 {
+                margin-top: 20px;
+                font-weight: 300;
+                letter-spacing: 3px;
+                color: #87e2ff;
+                text-shadow: 0 0 10px rgba(135, 226, 255, 0.5);
+            }
+            .hint {
+                margin-top: 10px;
+                font-size: 12px;
+                color: #888;
+            }
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+        <script
+            async
+            src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"
+        ></script>
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                }
+            }
+        </script>
+    </head>
+    <body>
+        <div id="ui">
+            <div class="loader"></div>
+            <h2>DESCENDING TO BIKINI BOTTOM</h2>
+            <div class="hint">
+                Generating procedural textures & geometries...
+            </div>
+        </div>
+
+        <script type="module">
+            import * as THREE from "three";
+            import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+            import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+            import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+            import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+            import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+
+            // --- GLOBAL VARIABLES ---
+            let scene, camera, renderer, composer, controls, clock;
+            let animatedObjects = [];
+            let causticsMaterial, godRaysMaterial, waterDistortionPass;
+
+            // --- COLOR PALETTE ---
+            const C = {
+                bg: 0x06285c,
+                fog: 0x06285c,
+                sand: 0xd4c375,
+                caustics: 0x28d9ff,
+                spongebob: 0xfce138,
+                pants: 0x7a4b2c,
+                shirt: 0xffffff,
+                tie: 0xd32f2f,
+                shoes: 0x222222,
+                squidwardTeal: 0x5e9b96,
+                squidwardShirt: 0x8a6b4e,
+                patrickPink: 0xff8ca8,
+                patrickPants: 0xa9cc47,
+                wood: 0x6e4a2d,
+                leaves: 0x4caf50,
+                pineapple: 0xf29111,
+                metal: 0x78909c,
+                glass: 0xb3e5fc,
+                jellyPink: 0xff66bb,
+            };
+
+            // --- PROCEDURAL TEXTURE GENERATORS ---
+            function createPatternCanvas(width, height, drawFn) {
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                drawFn(canvas.getContext("2d"), width, height);
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                tex.colorSpace = THREE.SRGBColorSpace;
+                return tex;
+            }
+
+            const txPineapple = createPatternCanvas(512, 512, (ctx, w, h) => {
+                ctx.fillStyle = "#f29111";
+                ctx.fillRect(0, 0, w, h);
+                ctx.strokeStyle = "#a85b00";
+                ctx.lineWidth = 4;
+                for (let i = -w; i < w * 2; i += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(i, 0);
+                    ctx.lineTo(i + w, h);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(i, h);
+                    ctx.lineTo(i + w, 0);
+                    ctx.stroke();
+                }
+            });
+
+            const txWood = createPatternCanvas(512, 512, (ctx, w, h) => {
+                ctx.fillStyle = "#6e4a2d";
+                ctx.fillRect(0, 0, w, h);
+                ctx.fillStyle = "#52341d";
+                for (let i = 0; i < 150; i++)
+                    ctx.fillRect(
+                        Math.random() * w,
+                        Math.random() * h,
+                        Math.random() * 80 + 20,
+                        Math.random() * 5 + 1,
+                    );
+                ctx.strokeStyle = "#382212";
+                ctx.lineWidth = 4;
+                for (let i = 0; i < h; i += 64) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(w, i);
+                    ctx.stroke();
+                }
+            });
+
+            const txPatrickPants = createPatternCanvas(
+                512,
+                512,
+                (ctx, w, h) => {
+                    ctx.fillStyle = "#a9cc47";
+                    ctx.fillRect(0, 0, w, h);
+                    ctx.fillStyle = "#8e44ad";
+                    for (let i = 0; i < 18; i++) {
+                        ctx.beginPath();
+                        ctx.arc(
+                            Math.random() * w,
+                            Math.random() * h,
+                            Math.random() * 25 + 15,
+                            0,
+                            Math.PI * 2,
+                        );
+                        ctx.fill();
+                    }
+                },
+            );
+
+            const txGaryShell = createPatternCanvas(512, 512, (ctx, w, h) => {
+                ctx.fillStyle = "#ff8ca8";
+                ctx.fillRect(0, 0, w, h);
+                ctx.strokeStyle = "#c21b4d";
+                ctx.lineWidth = 20;
+                ctx.lineCap = "round";
+                ctx.beginPath();
+                let x = w / 2,
+                    y = h / 2,
+                    angle = 0,
+                    radius = 0;
+                ctx.moveTo(x, y);
+                for (let i = 0; i < 150; i++) {
+                    angle += 0.25;
+                    radius += 1.5;
+                    ctx.lineTo(
+                        x + Math.cos(angle) * radius,
+                        y + Math.sin(angle) * radius,
+                    );
+                }
+                ctx.stroke();
+            });
+
+            const txSign = createPatternCanvas(512, 256, (ctx, w, h) => {
+                ctx.fillStyle = "#e5cca3";
+                ctx.fillRect(0, 0, w, h);
+                ctx.fillStyle = "#d32f2f";
+                ctx.font = "bold 70px Impact, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("THE KRUSTY KRAB", w / 2, h / 2);
+                ctx.strokeStyle = "#8a6532";
+                ctx.lineWidth = 10;
+                ctx.strokeRect(0, 0, w, h);
+            });
+
+            const txSand = createPatternCanvas(1024, 1024, (ctx, w, h) => {
+                ctx.fillStyle = "#d4c375";
+                ctx.fillRect(0, 0, w, h);
+                ctx.fillStyle = "#c2ae59";
+                for (let i = 0; i < 50000; i++)
+                    ctx.fillRect(
+                        Math.random() * w,
+                        Math.random() * h,
+                        Math.random() * 4 + 1,
+                        Math.random() * 4 + 1,
+                    );
+            });
+
+            // --- SHARED MATERIALS ---
+            const M = {
+                spongebob: new THREE.MeshStandardMaterial({
+                    color: C.spongebob,
+                    roughness: 0.8,
+                }),
+                pants: new THREE.MeshStandardMaterial({
+                    color: C.pants,
+                    roughness: 0.9,
+                }),
+                shirt: new THREE.MeshStandardMaterial({
+                    color: C.shirt,
+                    roughness: 0.9,
+                }),
+                tie: new THREE.MeshStandardMaterial({
+                    color: C.tie,
+                    roughness: 0.7,
+                }),
+                shoes: new THREE.MeshStandardMaterial({
+                    color: C.shoes,
+                    roughness: 0.5,
+                }),
+                eyeWhite: new THREE.MeshStandardMaterial({
+                    color: 0xffffff,
+                    roughness: 0.2,
+                }),
+                pupil: new THREE.MeshStandardMaterial({
+                    color: 0x000000,
+                    roughness: 0.2,
+                }),
+                squidTeal: new THREE.MeshStandardMaterial({
+                    color: C.squidwardTeal,
+                    roughness: 0.6,
+                }),
+                squidShirt: new THREE.MeshStandardMaterial({
+                    color: C.squidwardShirt,
+                    roughness: 0.9,
+                }),
+                patrickBody: new THREE.MeshStandardMaterial({
+                    color: C.patrickPink,
+                    roughness: 0.8,
+                }),
+                patrickShorts: new THREE.MeshStandardMaterial({
+                    map: txPatrickPants,
+                    roughness: 0.9,
+                }),
+                garyBody: new THREE.MeshStandardMaterial({
+                    color: 0x87ceeb,
+                    roughness: 0.5,
+                }),
+                garyShell: new THREE.MeshStandardMaterial({
+                    map: txGaryShell,
+                    roughness: 0.4,
+                }),
+                pineapple: new THREE.MeshStandardMaterial({
+                    map: txPineapple,
+                    roughness: 0.7,
+                }),
+                wood: new THREE.MeshStandardMaterial({
+                    map: txWood,
+                    roughness: 0.8,
+                }),
+                leaves: new THREE.MeshStandardMaterial({
+                    color: C.leaves,
+                    roughness: 0.9,
+                }),
+                metal: new THREE.MeshStandardMaterial({
+                    color: C.metal,
+                    roughness: 0.3,
+                    metalness: 0.6,
+                }),
+                glass: new THREE.MeshPhysicalMaterial({
+                    color: C.glass,
+                    transmission: 0.9,
+                    opacity: 1,
+                    transparent: true,
+                    roughness: 0.1,
+                    ior: 1.5,
+                }),
+                rock: new THREE.MeshStandardMaterial({
+                    color: 0x6e5c47,
+                    roughness: 1.0,
+                }),
+                jelly: new THREE.MeshPhysicalMaterial({
+                    color: C.jellyPink,
+                    emissive: 0xff1166,
+                    emissiveIntensity: 0.2,
+                    transmission: 0.9,
+                    transparent: true,
+                    opacity: 1,
+                    roughness: 0.2,
+                }),
+                sand: new THREE.MeshStandardMaterial({
+                    map: txSand,
+                    roughness: 0.9,
+                    metalness: 0.1,
+                }),
+            };
+
+            // --- HELPER FUNCTIONS ---
+            function makeMesh(geo, mat, castShadow = true) {
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.castShadow = castShadow;
+                mesh.receiveShadow = true;
+                return mesh;
+            }
+
+            // --- SHADERS ---
+            const CausticsShader = {
+                uniforms: { time: { value: 0 } },
+                vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`,
+                fragmentShader: `
+                  uniform float time; varying vec2 vUv;
+                  void main() {
+                      vec2 p = vUv * 40.0;
+                      for(int i=1; i<4; i++) {
+                          vec2 newp = p + time * 0.4;
+                          newp.x += 0.8 / float(i) * sin(float(i) * p.y + time + 0.3);
+                          newp.y += 0.8 / float(i) * cos(float(i) * p.x + time + 0.3);
+                          p = newp;
+                      }
+                      float col = max(0.0, 1.0 - length(vec2(sin(p.x), sin(p.y))));
+                      col = smoothstep(0.8, 1.0, col);
+                      gl_FragColor = vec4(0.15, 0.85, 1.0, col * 0.4);
+                  }
+              `,
+            };
+
+            const GodRaysShader = {
+                uniforms: { time: { value: 0 } },
+                vertexShader: `varying vec2 vUv; varying vec3 vPos; void main() { vUv = uv; vPos = position; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`,
+                fragmentShader: `
+                  uniform float time; varying vec2 vUv; varying vec3 vPos;
+                  void main() {
+                      float fade = smoothstep(0.0, 0.2, vUv.y) * smoothstep(1.0, 0.4, vUv.y);
+                      float edge = sin(vUv.x * 3.14159);
+                      float beams = sin(vPos.x * 0.1 + time*0.5) * sin(vPos.z * 0.1 - time*0.3) * 0.5 + 0.5;
+                      gl_FragColor = vec4(0.4, 0.8, 1.0, fade * edge * beams * 0.15);
+                  }
+              `,
+            };
+
+            const WaterDistortionShader = {
+                uniforms: { tDiffuse: { value: null }, time: { value: 0 } },
+                vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                fragmentShader: `
+                  uniform sampler2D tDiffuse; uniform float time; varying vec2 vUv;
+                  void main() {
+                      vec2 p = vUv;
+                      float offset = sin(p.y * 15.0 + time * 2.0) * 0.002;
+                      vec4 cr = texture2D(tDiffuse, p + vec2(offset + 0.002, 0.0));
+                      vec4 cg = texture2D(tDiffuse, p + vec2(offset, 0.0));
+                      vec4 cb = texture2D(tDiffuse, p + vec2(offset - 0.002, 0.0));
+                      gl_FragColor = vec4(cr.r, cg.g, cb.b, 1.0);
+                  }
+              `,
+            };
+
+            // --- INITIALIZATION ---
+            function init() {
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(C.bg);
+                scene.fog = new THREE.FogExp2(C.fog, 0.012);
+
+                camera = new THREE.PerspectiveCamera(
+                    60,
+                    window.innerWidth / window.innerHeight,
+                    0.1,
+                    400,
+                );
+                camera.position.set(0, 5, 40);
+
+                renderer = new THREE.WebGLRenderer({
+                    antialias: true,
+                    powerPreference: "high-performance",
+                });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = 1.1;
+                document.body.appendChild(renderer.domElement);
+
+                clock = new THREE.Clock();
+
+                controls = new OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.maxPolarAngle = Math.PI / 2 + 0.1; // allow slight under-floor angle
+                controls.minDistance = 5;
+                controls.maxDistance = 100;
+                controls.autoRotate = true;
+                controls.autoRotateSpeed = 0.3;
+                controls.target.set(0, 8, 0);
+
+                setupLighting();
+                setupEnvironment();
+                buildBikiniBottom();
+                setupPostProcessing();
+
+                window.addEventListener("resize", onWindowResize);
+                document.getElementById("ui").style.opacity = "0";
+                setTimeout(() => document.getElementById("ui").remove(), 1500);
+
+                animate();
+            }
+
+            function setupLighting() {
+                const ambient = new THREE.AmbientLight(0x0a3b63, 1.5);
+                scene.add(ambient);
+
+                const hemi = new THREE.HemisphereLight(0x40a0ff, 0xd4c375, 1.0);
+                scene.add(hemi);
+
+                const sun = new THREE.DirectionalLight(0xfff5b6, 2.5);
+                sun.position.set(20, 50, 20);
+                sun.castShadow = true;
+                sun.shadow.mapSize.width = 2048;
+                sun.shadow.mapSize.height = 2048;
+                sun.shadow.camera.near = 10;
+                sun.shadow.camera.far = 150;
+                sun.shadow.camera.left = -60;
+                sun.shadow.camera.right = 60;
+                sun.shadow.camera.top = 60;
+                sun.shadow.camera.bottom = -60;
+                sun.shadow.bias = -0.001;
+                scene.add(sun);
+            }
+
+            function setupEnvironment() {
+                // Seafloor Terrain
+                const floorGeo = new THREE.PlaneGeometry(300, 300, 150, 150);
+                const pos = floorGeo.attributes.position;
+                for (let i = 0; i < pos.count; i++) {
+                    let x = pos.getX(i),
+                        y = pos.getY(i);
+                    // Wavy procedural dunes
+                    let z =
+                        Math.sin(x * 0.05) * Math.cos(y * 0.05) * 1.5 +
+                        Math.sin(x * 0.015) * 4;
+                    // Flatten street area
+                    const distToStreetX = Math.abs(x);
+                    if (y > -20 && y < 20) {
+                        z = THREE.MathUtils.lerp(
+                            0,
+                            z,
+                            smoothstep(5, 20, Math.abs(y)),
+                        );
+                    }
+                    pos.setZ(i, z);
+                }
+                floorGeo.computeVertexNormals();
+                const floor = new THREE.Mesh(floorGeo, M.sand);
+                floor.rotation.x = -Math.PI / 2;
+                floor.receiveShadow = true;
+                scene.add(floor);
+
+                // Caustics Overlay
+                const causticGeo = new THREE.PlaneGeometry(300, 300);
+                causticsMaterial = new THREE.ShaderMaterial({
+                    uniforms: CausticsShader.uniforms,
+                    vertexShader: CausticsShader.vertexShader,
+                    fragmentShader: CausticsShader.fragmentShader,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                });
+                const causticsPlane = new THREE.Mesh(
+                    causticGeo,
+                    causticsMaterial,
+                );
+                causticsPlane.rotation.x = -Math.PI / 2;
+                causticsPlane.position.y = 0.2;
+                scene.add(causticsPlane);
+
+                // God Rays
+                const rayGeo = new THREE.CylinderGeometry(
+                    40,
+                    90,
+                    100,
+                    32,
+                    1,
+                    true,
+                );
+                godRaysMaterial = new THREE.ShaderMaterial({
+                    uniforms: GodRaysShader.uniforms,
+                    vertexShader: GodRaysShader.vertexShader,
+                    fragmentShader: GodRaysShader.fragmentShader,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    side: THREE.DoubleSide,
+                });
+                const godRays = new THREE.Mesh(rayGeo, godRaysMaterial);
+                godRays.position.y = 50;
+                scene.add(godRays);
+
+                // Bubbles & Particles
+                const particleGeo = new THREE.BufferGeometry();
+                const pCount = 2000;
+                const pPos = new Float32Array(pCount * 3);
+                const pSizes = new Float32Array(pCount);
+                for (let i = 0; i < pCount * 3; i += 3) {
+                    pPos[i] = (Math.random() - 0.5) * 200;
+                    pPos[i + 1] = Math.random() * 80;
+                    pPos[i + 2] = (Math.random() - 0.5) * 200;
+                    pSizes[i / 3] = Math.random();
+                }
+                particleGeo.setAttribute(
+                    "position",
+                    new THREE.BufferAttribute(pPos, 3),
+                );
+                particleGeo.setAttribute(
+                    "aSize",
+                    new THREE.BufferAttribute(pSizes, 1),
+                );
+
+                const particleMat = new THREE.ShaderMaterial({
+                    uniforms: { time: { value: 0 } },
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    vertexShader: `
+                      uniform float time; varying float vAlpha; attribute float aSize;
+                      void main() {
+                          vec3 pos = position;
+                          pos.y += time * (2.0 + aSize*2.0);
+                          pos.y = mod(pos.y, 80.0);
+                          pos.x += sin(time + pos.y*0.1) * 0.5;
+                          vAlpha = smoothstep(0.0, 10.0, pos.y) * smoothstep(80.0, 60.0, pos.y);
+                          vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+                          gl_PointSize = (3.0 + aSize*5.0) * (100.0 / -mvPos.z);
+                          gl_Position = projectionMatrix * mvPos;
+                      }
+                  `,
+                    fragmentShader: `
+                      varying float vAlpha;
+                      void main() {
+                          float dist = length(gl_PointCoord - vec2(0.5));
+                          float circ = smoothstep(0.5, 0.4, dist);
+                          float ring = smoothstep(0.3, 0.4, dist) * circ; // Bubble effect
+                          gl_FragColor = vec4(0.6, 0.9, 1.0, (circ*0.3 + ring*0.7) * vAlpha * 0.5);
+                      }
+                  `,
+                });
+                const particles = new THREE.Points(particleGeo, particleMat);
+                scene.add(particles);
+                animatedObjects.push({
+                    update: (t) => (particleMat.uniforms.time.value = t),
+                });
+
+                // Kelp Forests
+                for (let i = 0; i < 40; i++) {
+                    const x = (Math.random() - 0.5) * 250;
+                    const z = (Math.random() - 0.5) * 250;
+                    if (Math.abs(x) < 40 && Math.abs(z) < 20) continue; // Keep street clear
+                    createKelpLayer(x, z, Math.random() * 4 + 3);
+                }
+            }
+
+            function createKelpLayer(bx, bz, height) {
+                const segs = 6;
+                const group = new THREE.Group();
+                group.position.set(bx, 0, bz);
+                let p = group;
+                const meshes = [];
+                for (let i = 0; i < segs; i++) {
+                    const geo = new THREE.CylinderGeometry(
+                        0.15,
+                        0.2,
+                        height / segs,
+                        5,
+                    );
+                    geo.translate(0, height / segs / 2, 0);
+                    const mesh = makeMesh(geo, M.leaves);
+                    mesh.position.y = i === 0 ? 0 : height / segs;
+                    p.add(mesh);
+                    meshes.push(mesh);
+                    p = mesh;
+                }
+                scene.add(group);
+                const offset = bx + bz;
+                animatedObjects.push({
+                    update: (t) => {
+                        meshes.forEach((m, idx) => {
+                            m.rotation.z =
+                                Math.sin(t * 2 + offset + idx * 0.3) * 0.1;
+                            m.rotation.x =
+                                Math.cos(t * 1.5 + offset + idx * 0.3) * 0.1;
+                        });
+                    },
+                });
+            }
+
+            function smoothstep(edge0, edge1, x) {
+                const t = Math.max(
+                    0,
+                    Math.min(1, (x - edge0) / (edge1 - edge0)),
+                );
+                return t * t * (3 - 2 * t);
+            }
+
+            // --- BUILDING BIKINI BOTTOM ---
+            function buildBikiniBottom() {
+                // Pineapple (x: 20, z: 0)
+                const pineapple = new THREE.Group();
+                pineapple.position.set(20, 0, 0);
+
+                const pBody = makeMesh(
+                    new THREE.SphereGeometry(4.5, 32, 32),
+                    M.pineapple,
+                );
+                pBody.scale.set(1, 1.4, 1);
+                pBody.position.y = 5.5;
+                pineapple.add(pBody);
+
+                // Door
+                const pDoor = makeMesh(
+                    new THREE.CylinderGeometry(1.5, 1.5, 0.5, 32),
+                    M.metal,
+                );
+                pDoor.rotation.x = Math.PI / 2;
+                pDoor.position.set(0, 2, 4.2);
+                pineapple.add(pDoor);
+
+                // Windows
+                const wGeo = new THREE.CylinderGeometry(1, 1, 0.4, 32);
+                const w1 = makeMesh(wGeo, M.glass);
+                w1.rotation.y = Math.PI / 4;
+                w1.rotation.x = Math.PI / 2;
+                w1.position.set(-2, 5, 3.8);
+                const w2 = makeMesh(wGeo, M.glass);
+                w2.rotation.y = -Math.PI / 4;
+                w2.rotation.x = Math.PI / 2;
+                w2.position.set(2, 7, 3.2);
+                pineapple.add(w1, w2);
+
+                // Window lights
+                const l1 = new THREE.PointLight(0xffaa00, 2, 10);
+                l1.position.copy(w1.position);
+                pineapple.add(l1);
+                const l2 = new THREE.PointLight(0xffaa00, 2, 10);
+                l2.position.copy(w2.position);
+                pineapple.add(l2);
+
+                // Chimney
+                const chimney = makeMesh(
+                    new THREE.CylinderGeometry(0.5, 0.5, 6),
+                    M.metal,
+                );
+                chimney.position.set(-3, 8, 0);
+                chimney.rotation.z = -0.3;
+                pineapple.add(chimney);
+
+                // Leaves
+                for (let i = 0; i < 8; i++) {
+                    const l = makeMesh(
+                        new THREE.ConeGeometry(0.8, 6, 8),
+                        M.leaves,
+                    );
+                    l.position.set(0, 11, 0);
+                    l.rotation.x = Math.PI / 4;
+                    l.rotation.y = (i / 8) * Math.PI * 2;
+                    l.position.x += Math.sin(l.rotation.y) * 1;
+                    l.position.z += Math.cos(l.rotation.y) * 1;
+                    pineapple.add(l);
+                }
+                scene.add(pineapple);
+
+                // Squidward's House (x: 0, z: -2)
+                const squidHouse = new THREE.Group();
+                squidHouse.position.set(0, 0, -2);
+
+                const hBody = makeMesh(
+                    new THREE.CylinderGeometry(3, 4, 14, 32),
+                    M.squidTeal,
+                );
+                hBody.position.y = 7;
+                squidHouse.add(hBody);
+
+                const hNose = makeMesh(
+                    new THREE.BoxGeometry(1.5, 4, 1.5),
+                    M.squidTeal,
+                );
+                hNose.position.set(0, 7, 3.5);
+                squidHouse.add(hNose);
+
+                const hEyeGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.5, 16);
+                const he1 = makeMesh(hEyeGeo, M.glass);
+                he1.rotation.x = Math.PI / 2;
+                he1.position.set(-1.8, 9, 3);
+                const he2 = makeMesh(hEyeGeo, M.glass);
+                he2.rotation.x = Math.PI / 2;
+                he2.position.set(1.8, 9, 3);
+                squidHouse.add(he1, he2);
+
+                const hl1 = new THREE.PointLight(0xffaa00, 1.5, 15);
+                hl1.position.copy(he1.position);
+                squidHouse.add(hl1);
+                const hl2 = new THREE.PointLight(0xffaa00, 1.5, 15);
+                hl2.position.copy(he2.position);
+                squidHouse.add(hl2);
+
+                const hDoor = makeMesh(
+                    new THREE.BoxGeometry(2.5, 4, 0.5),
+                    M.wood,
+                );
+                hDoor.position.set(0, 2, 3.8);
+                squidHouse.add(hDoor);
+
+                // Ears
+                const earGeo = new THREE.CylinderGeometry(0.8, 0.8, 2, 16);
+                const ear1 = makeMesh(earGeo, M.squidTeal);
+                ear1.rotation.z = Math.PI / 2;
+                ear1.position.set(-3.5, 7, 0);
+                const ear2 = makeMesh(earGeo, M.squidTeal);
+                ear2.rotation.z = Math.PI / 2;
+                ear2.position.set(3.5, 7, 0);
+                squidHouse.add(ear1, ear2);
+                scene.add(squidHouse);
+
+                // Patrick's Rock (x: -20, z: 0)
+                const rockHouse = new THREE.Group();
+                rockHouse.position.set(-20, 0, 0);
+
+                const rBodyGeo = new THREE.SphereGeometry(
+                    5,
+                    32,
+                    16,
+                    0,
+                    Math.PI * 2,
+                    0,
+                    Math.PI / 2,
+                );
+                const rBody = makeMesh(rBodyGeo, M.rock);
+                rBody.scale.set(1, 0.8, 1);
+                rockHouse.add(rBody);
+
+                const rAntenna = makeMesh(
+                    new THREE.CylinderGeometry(0.1, 0.1, 3),
+                    M.wood,
+                );
+                rAntenna.position.set(0, 5, 0);
+                rockHouse.add(rAntenna);
+                scene.add(rockHouse);
+
+                // Krusty Krab (x: -45, z: -30)
+                const kk = new THREE.Group();
+                kk.position.set(-45, 0, -30);
+                kk.rotation.y = Math.PI / 4;
+
+                const kkBase = makeMesh(
+                    new THREE.BoxGeometry(20, 8, 12),
+                    M.wood,
+                );
+                kkBase.position.y = 4;
+                kk.add(kkBase);
+
+                const kkRoofGeo = new THREE.CylinderGeometry(
+                    8,
+                    8,
+                    22,
+                    32,
+                    1,
+                    false,
+                    0,
+                    Math.PI,
+                );
+                const kkRoof = makeMesh(kkRoofGeo, M.wood);
+                kkRoof.rotation.z = Math.PI / 2;
+                kkRoof.position.y = 8;
+                kk.add(kkRoof);
+
+                const kkGlass = makeMesh(
+                    new THREE.BoxGeometry(18, 6, 12.5),
+                    M.glass,
+                );
+                kkGlass.position.y = 4;
+                kk.add(kkGlass);
+
+                const kkLight = new THREE.PointLight(0xffeecc, 3, 40);
+                kkLight.position.set(0, 5, 0);
+                kk.add(kkLight);
+
+                // Sign
+                const signPole = makeMesh(
+                    new THREE.CylinderGeometry(0.3, 0.3, 20),
+                    M.wood,
+                );
+                signPole.position.set(-15, 10, 10);
+                kk.add(signPole);
+
+                const signBoardMat = new THREE.MeshStandardMaterial({
+                    map: txSign,
+                });
+                const signBoard = makeMesh(
+                    new THREE.BoxGeometry(12, 6, 1),
+                    signBoardMat,
+                );
+                signBoard.position.set(-15, 18, 10);
+                kk.add(signBoard);
+                scene.add(kk);
+
+                // --- DEPLOY CHARACTERS ---
+                createSpongeBob(14, 0, 5);
+                createPatrick(-14, 0, 6);
+                createSquidward(-2, 0, 8);
+                createGary(18, 0, 8);
+
+                for (let i = 0; i < 4; i++)
+                    createJellyfish(
+                        -30 + i * 20,
+                        15 + Math.random() * 10,
+                        -10 + Math.random() * 20,
+                    );
+            }
+
+            // --- CHARACTER RIGS ---
+            function createSpongeBob(x, y, z) {
+                const sb = new THREE.Group();
+                sb.position.set(x, y + 2, z);
+                sb.rotation.y = -Math.PI / 6;
+
+                const body = makeMesh(
+                    new THREE.BoxGeometry(2, 2.5, 1),
+                    M.spongebob,
+                );
+                const shirt = makeMesh(
+                    new THREE.BoxGeometry(2.05, 0.5, 1.05),
+                    M.shirt,
+                );
+                shirt.position.y = -1.5;
+                const pants = makeMesh(
+                    new THREE.BoxGeometry(2.1, 0.6, 1.1),
+                    M.pants,
+                );
+                pants.position.y = -2.0;
+                const tie = makeMesh(new THREE.ConeGeometry(0.2, 0.8), M.tie);
+                tie.position.set(0, -1.5, 0.55);
+
+                // Eyes & Nose
+                const eGeo = new THREE.SphereGeometry(0.4, 16, 16);
+                const pGeo = new THREE.SphereGeometry(0.1, 16, 16);
+                const le = makeMesh(eGeo, M.eyeWhite);
+                le.position.set(-0.4, 0.5, 0.5);
+                const re = makeMesh(eGeo, M.eyeWhite);
+                re.position.set(0.4, 0.5, 0.5);
+                const lp = makeMesh(pGeo, M.pupil);
+                lp.position.set(-0.4, 0.5, 0.85);
+                const rp = makeMesh(pGeo, M.pupil);
+                rp.position.set(0.4, 0.5, 0.85);
+                const nose = makeMesh(
+                    new THREE.CylinderGeometry(0.1, 0.1, 0.6),
+                    M.spongebob,
+                );
+                nose.rotation.x = Math.PI / 2;
+                nose.position.set(0, 0.1, 0.8);
+
+                // Teeth
+                const teeth = makeMesh(
+                    new THREE.BoxGeometry(0.4, 0.3, 0.1),
+                    M.shirt,
+                );
+                teeth.position.set(0, -0.4, 0.55);
+
+                // Limbs
+                const armG = new THREE.CylinderGeometry(0.1, 0.1, 1.5);
+                const la = makeMesh(armG, M.spongebob);
+                la.rotation.z = Math.PI / 4;
+                la.position.set(-1.5, -0.5, 0);
+                const ra = makeMesh(armG, M.spongebob);
+                ra.rotation.z = -Math.PI / 4;
+                ra.position.set(1.5, -0.5, 0);
+
+                const legG = new THREE.CylinderGeometry(0.1, 0.1, 1.2);
+                const ll = makeMesh(legG, M.spongebob);
+                ll.position.set(-0.5, -2.8, 0);
+                const rl = makeMesh(legG, M.spongebob);
+                rl.position.set(0.5, -2.8, 0);
+
+                const shoeG = new THREE.BoxGeometry(0.6, 0.4, 0.8);
+                const ls = makeMesh(shoeG, M.shoes);
+                ls.position.set(-0.5, -3.4, 0.2);
+                const rs = makeMesh(shoeG, M.shoes);
+                rs.position.set(0.5, -3.4, 0.2);
+
+                sb.add(
+                    body,
+                    shirt,
+                    pants,
+                    tie,
+                    le,
+                    re,
+                    lp,
+                    rp,
+                    nose,
+                    teeth,
+                    la,
+                    ra,
+                    ll,
+                    rl,
+                    ls,
+                    rs,
+                );
+                scene.add(sb);
+
+                const startY = sb.position.y;
+                animatedObjects.push({
+                    update: (t) => {
+                        sb.position.y = startY + Math.sin(t * 4) * 0.2;
+                        la.rotation.x = Math.sin(t * 3) * 0.2;
+                        ra.rotation.x = Math.cos(t * 3) * 0.2;
+                    },
+                });
+            }
+
+            function createPatrick(x, y, z) {
+                const pat = new THREE.Group();
+                pat.position.set(x, y + 3.5, z);
+                pat.rotation.y = Math.PI / 4;
+
+                const body = makeMesh(
+                    new THREE.ConeGeometry(1.5, 4, 16),
+                    M.patrickBody,
+                );
+                const pants = makeMesh(
+                    new THREE.CylinderGeometry(1.6, 1.6, 1.5, 16),
+                    M.patrickShorts,
+                );
+                pants.position.y = -1.5;
+
+                const eGeo = new THREE.SphereGeometry(0.25, 16, 16);
+                const le = makeMesh(eGeo, M.eyeWhite);
+                le.position.set(-0.3, 0.8, 0.9);
+                const re = makeMesh(eGeo, M.eyeWhite);
+                re.position.set(0.3, 0.8, 0.9);
+                const lp = makeMesh(
+                    new THREE.SphereGeometry(0.08, 8, 8),
+                    M.pupil,
+                );
+                lp.position.set(-0.3, 0.8, 1.1);
+                const rp = makeMesh(
+                    new THREE.SphereGeometry(0.08, 8, 8),
+                    M.pupil,
+                );
+                rp.position.set(0.3, 0.8, 1.1);
+
+                const armG = new THREE.ConeGeometry(0.3, 2, 8);
+                const la = makeMesh(armG, M.patrickBody);
+                la.rotation.z = Math.PI / 3;
+                la.position.set(-1.5, 0, 0);
+                const ra = makeMesh(armG, M.patrickBody);
+                ra.rotation.z = -Math.PI / 3;
+                ra.position.set(1.5, 0, 0);
+
+                const legG = new THREE.CylinderGeometry(0.4, 0.3, 1.5);
+                const ll = makeMesh(legG, M.patrickShorts);
+                ll.position.set(-0.6, -2.5, 0);
+                const rl = makeMesh(legG, M.patrickShorts);
+                rl.position.set(0.6, -2.5, 0);
+
+                pat.add(body, pants, le, re, lp, rp, la, ra, ll, rl);
+                scene.add(pat);
+
+                animatedObjects.push({
+                    update: (t) => {
+                        pat.rotation.z = Math.sin(t * 1.5) * 0.1;
+                    },
+                });
+            }
+
+            function createSquidward(x, y, z) {
+                const sq = new THREE.Group();
+                sq.position.set(x, y + 4, z);
+
+                const head = makeMesh(
+                    new THREE.SphereGeometry(1.2, 16, 16),
+                    M.squidTeal,
+                );
+                head.position.y = 2;
+                const body = makeMesh(
+                    new THREE.CylinderGeometry(0.5, 0.5, 2, 16),
+                    M.squidTeal,
+                );
+                const shirt = makeMesh(
+                    new THREE.CylinderGeometry(0.6, 0.6, 1.8),
+                    M.squidShirt,
+                );
+                shirt.position.y = 0.5;
+                const nose = makeMesh(
+                    new THREE.BoxGeometry(0.4, 1.2, 0.4),
+                    M.squidTeal,
+                );
+                nose.position.set(0, 1.2, 1.1);
+
+                const eyeG = new THREE.SphereGeometry(0.4, 16, 16);
+                const le = makeMesh(eyeG, M.eyeWhite);
+                le.position.set(-0.4, 1.8, 1.0);
+                le.scale.set(1, 1.5, 1);
+                const re = makeMesh(eyeG, M.eyeWhite);
+                re.position.set(0.4, 1.8, 1.0);
+                re.scale.set(1, 1.5, 1);
+
+                // Annoyed eyelids
+                const lid = makeMesh(
+                    new THREE.BoxGeometry(1.5, 0.3, 0.5),
+                    M.squidTeal,
+                );
+                lid.position.set(0, 2.2, 1.2);
+                lid.rotation.z = 0;
+
+                const armsCrossed = makeMesh(
+                    new THREE.CylinderGeometry(0.2, 0.2, 2.5),
+                    M.squidTeal,
+                );
+                armsCrossed.rotation.z = Math.PI / 2;
+                armsCrossed.position.set(0, 0.5, 0.7);
+
+                const legs = new THREE.Group();
+                const legG = new THREE.CylinderGeometry(0.15, 0.15, 2); // 4 legs
+                for (let i = 0; i < 4; i++) {
+                    const l = makeMesh(legG, M.squidTeal);
+                    l.position.set(
+                        Math.cos((i * Math.PI) / 2) * 0.4,
+                        -1.5,
+                        Math.sin((i * Math.PI) / 2) * 0.4,
+                    );
+                    legs.add(l);
+                }
+
+                sq.add(head, body, shirt, nose, le, re, lid, armsCrossed, legs);
+                scene.add(sq);
+
+                animatedObjects.push({
+                    update: (t) => {
+                        head.rotation.y = Math.sin(t * 2) * 0.15;
+                    },
+                });
+            }
+
+            function createGary(x, y, z) {
+                const gary = new THREE.Group();
+                gary.position.set(x, y + 0.5, z);
+                gary.rotation.y = -Math.PI / 2;
+
+                const body = makeMesh(
+                    new THREE.BoxGeometry(1.5, 0.6, 3),
+                    M.garyBody,
+                );
+                const shell = makeMesh(
+                    new THREE.SphereGeometry(1.5, 32, 16),
+                    M.garyShell,
+                );
+                shell.scale.set(0.6, 1.2, 1.2);
+                shell.position.set(0, 1.2, -0.2);
+                shell.rotation.y = Math.PI / 2;
+
+                const stalkG = new THREE.CylinderGeometry(0.05, 0.05, 1.5);
+                const eyeG = new THREE.SphereGeometry(0.3, 16, 16);
+
+                const ls = makeMesh(stalkG, M.garyBody);
+                ls.position.set(-0.4, 1.0, 1.2);
+                ls.rotation.x = Math.PI / 6;
+                const rs = makeMesh(stalkG, M.garyBody);
+                rs.position.set(0.4, 1.0, 1.2);
+                rs.rotation.x = Math.PI / 6;
+                const le = makeMesh(eyeG, M.eyeWhite);
+                le.position.set(-0.4, 1.8, 1.6);
+                const re = makeMesh(eyeG, M.eyeWhite);
+                re.position.set(0.4, 1.8, 1.6);
+                const lp = makeMesh(new THREE.SphereGeometry(0.1), M.pupil);
+                lp.position.set(-0.4, 1.8, 1.85);
+                const rp = makeMesh(new THREE.SphereGeometry(0.1), M.pupil);
+                rp.position.set(0.4, 1.8, 1.85);
+
+                gary.add(body, shell, ls, rs, le, re, lp, rp);
+                scene.add(gary);
+
+                const startZ = gary.position.z;
+                animatedObjects.push({
+                    update: (t) => {
+                        gary.position.z = startZ + Math.sin(t * 0.5) * 2;
+                        gary.scale.y = 1 + Math.sin(t * 6) * 0.05; // squish crawl
+                    },
+                });
+            }
+
+            function createJellyfish(x, y, z) {
+                const jelly = new THREE.Group();
+                jelly.position.set(x, y, z);
+
+                const domeGeo = new THREE.SphereGeometry(
+                    1.5,
+                    32,
+                    16,
+                    0,
+                    Math.PI * 2,
+                    0,
+                    Math.PI / 2,
+                );
+                const dome = makeMesh(domeGeo, M.jelly);
+                jelly.add(dome);
+
+                const light = new THREE.PointLight(C.jellyPink, 2, 20);
+                jelly.add(light);
+
+                const tentacles = [];
+                const tGeo = new THREE.CylinderGeometry(0.05, 0.05, 3, 8);
+                tGeo.translate(0, -1.5, 0); // origin at top
+                for (let i = 0; i < 4; i++) {
+                    const t = makeMesh(tGeo, M.jelly);
+                    t.position.set(
+                        Math.cos((i * Math.PI) / 2) * 1,
+                        -0.2,
+                        Math.sin((i * Math.PI) / 2) * 1,
+                    );
+                    jelly.add(t);
+                    tentacles.push(t);
+                }
+                scene.add(jelly);
+
+                const offset = x + y + z;
+                const startY = y;
+                animatedObjects.push({
+                    update: (time) => {
+                        jelly.position.y =
+                            startY + Math.sin(time * 2 + offset) * 2;
+                        jelly.position.x = x + Math.cos(time + offset) * 3;
+                        dome.scale.y = 1 + Math.sin(time * 4 + offset) * 0.1; // pulse
+                        tentacles.forEach((t, i) => {
+                            t.rotation.x =
+                                Math.sin(time * 3 + offset + i) * 0.3;
+                            t.rotation.z =
+                                Math.cos(time * 3 + offset + i) * 0.3;
+                        });
+                    },
+                });
+            }
+
+            // --- POST-PROCESSING ---
+            function setupPostProcessing() {
+                composer = new EffectComposer(renderer);
+                composer.addPass(new RenderPass(scene, camera));
+
+                const bloomPass = new UnrealBloomPass(
+                    new THREE.Vector2(window.innerWidth, window.innerHeight),
+                    1.2,
+                    0.5,
+                    0.6,
+                );
+                composer.addPass(bloomPass);
+
+                waterDistortionPass = new ShaderPass(WaterDistortionShader);
+                composer.addPass(waterDistortionPass);
+            }
+
+            // --- MAIN LOOP ---
+            function onWindowResize() {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                composer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            function animate() {
+                requestAnimationFrame(animate);
+                const delta = clock.getDelta();
+                const time = clock.getElapsedTime();
+
+                controls.update();
+
+                causticsMaterial.uniforms.time.value = time;
+                godRaysMaterial.uniforms.time.value = time;
+                waterDistortionPass.uniforms.time.value = time;
+
+                animatedObjects.forEach((obj) => obj.update(time));
+
+                composer.render();
+            }
+
+            // Run application
+            init();
+        </script>
+    </body>
+</html>

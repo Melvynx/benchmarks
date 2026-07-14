@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GLM 5</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        canvas { display: block; }
+        .title {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-family: sans-serif;
+            font-size: 24px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="title">GLM 5</div>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const BALL_RADIUS = 15;
+        const POLYGON_RADIUS = 250;
+        const POLYGON_SIDES = 7;
+        const ROTATION_SPEED = 0.5;
+        const GRAVITY = 500;
+        const RESTITUTION = 0.8;
+        const FRICTION = 0.98;
+
+        let ball = { x: 0, y: 0, vx: 0, vy: 0 };
+        let rotation = 0;
+        let lastTime = performance.now();
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height / 2;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        function getPolygonVertices(cx, cy, radius, sides, rot) {
+            const vertices = [];
+            for (let i = 0; i < sides; i++) {
+                const angle = (2 * Math.PI * i / sides) + rot - Math.PI / 2;
+                vertices.push({
+                    x: cx + radius * Math.cos(angle),
+                    y: cy + radius * Math.sin(angle)
+                });
+            }
+            return vertices;
+        }
+
+        function getEdgeOutwardNormal(v1, v2, center) {
+            const dx = v2.x - v1.x;
+            const dy = v2.y - v1.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            let nx = -dy / len;
+            let ny = dx / len;
+
+            const midX = (v1.x + v2.x) / 2;
+            const midY = (v1.y + v2.y) / 2;
+            const toCenterX = center.x - midX;
+            const toCenterY = center.y - midY;
+
+            if (nx * toCenterX + ny * toCenterY > 0) {
+                nx = -nx;
+                ny = -ny;
+            }
+            return { nx, ny };
+        }
+
+        function pointToSegment(px, py, v1, v2) {
+            const dx = v2.x - v1.x;
+            const dy = v2.y - v1.y;
+            const len2 = dx * dx + dy * dy;
+
+            let t = Math.max(0, Math.min(1, ((px - v1.x) * dx + (py - v1.y) * dy) / len2));
+
+            const closestX = v1.x + t * dx;
+            const closestY = v1.y + t * dy;
+
+            return {
+                dist: Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2),
+                closestX,
+                closestY
+            };
+        }
+
+        function update(dt) {
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+
+            rotation += ROTATION_SPEED * dt;
+
+            ball.vy += GRAVITY * dt;
+            ball.x += ball.vx * dt;
+            ball.y += ball.vy * dt;
+
+            const vertices = getPolygonVertices(cx, cy, POLYGON_RADIUS, POLYGON_SIDES, rotation);
+
+            for (let iter = 0; iter < 5; iter++) {
+                for (let i = 0; i < vertices.length; i++) {
+                    const v1 = vertices[i];
+                    const v2 = vertices[(i + 1) % vertices.length];
+                    const result = pointToSegment(ball.x, ball.y, v1, v2);
+
+                    if (result.dist < BALL_RADIUS) {
+                        const normal = getEdgeOutwardNormal(v1, v2, { x: cx, y: cy });
+
+                        const penetration = BALL_RADIUS - result.dist + 0.5;
+                        ball.x += normal.nx * penetration;
+                        ball.y += normal.ny * penetration;
+
+                        const dot = ball.vx * normal.nx + ball.vy * normal.ny;
+                        if (dot < 0) {
+                            ball.vx = (ball.vx - (1 + RESTITUTION) * dot * normal.nx) * FRICTION;
+                            ball.vy = (ball.vy - (1 + RESTITUTION) * dot * normal.ny) * FRICTION;
+                        }
+                    }
+                }
+            }
+        }
+
+        function draw() {
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const vertices = getPolygonVertices(cx, cy, POLYGON_RADIUS, POLYGON_SIDES, rotation);
+            ctx.beginPath();
+            ctx.moveTo(vertices[0].x, vertices[0].y);
+            for (let i = 1; i < vertices.length; i++) {
+                ctx.lineTo(vertices[i].x, vertices[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = '#FF0000';
+            ctx.fill();
+        }
+
+        function loop(time) {
+            const dt = Math.min((time - lastTime) / 1000, 0.033);
+            lastTime = time;
+
+            update(dt);
+            draw();
+
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>

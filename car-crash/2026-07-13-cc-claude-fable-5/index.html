@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Fable 5</title>
+<style>
+  :root{
+    --panel: rgba(16,20,28,.82);
+    --panel-border: rgba(255,255,255,.09);
+    --text: #e8edf4;
+    --dim: #94a0b4;
+    --accent: #ff5533;
+    --accent2: #4da3ff;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#0b0e14;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--text); }
+  canvas#scene{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  .panel{ position:absolute; background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+
+  #brand{ top:14px; left:16px; padding:10px 16px; }
+  #brand h1{ font-size:17px; font-weight:700; letter-spacing:.2px; }
+  #brand h1 em{ font-style:normal; color:var(--accent); }
+  #brand p{ font-size:11px; color:var(--dim); margin-top:2px; }
+
+  #hud{ top:14px; right:16px; padding:10px 14px; display:flex; gap:18px; }
+  #hud .stat{ min-width:74px; }
+  #hud .stat .v{ font-size:17px; font-weight:700; font-variant-numeric: tabular-nums; }
+  #hud .stat .v small{ font-size:10px; font-weight:500; color:var(--dim); margin-left:2px; }
+  #hud .stat .l{ font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.6px; margin-top:1px; }
+  #stState .v{ color:var(--accent2); }
+
+  #settings{ left:16px; top:96px; width:264px; padding:14px 16px 12px; }
+  #settings h2{ font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--dim); margin-bottom:10px;
+    display:flex; justify-content:space-between; align-items:center; }
+  #settings h2 button{ background:none; border:none; color:var(--accent2); font-size:11px; cursor:pointer; }
+  .field{ margin-bottom:11px; }
+  .field .row{ display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; }
+  .field .row .val{ font-weight:700; font-variant-numeric:tabular-nums; color:#fff; }
+  .field .row .val small{ color:var(--dim); font-weight:500; }
+  input[type=range]{ width:100%; accent-color:var(--accent); height:20px; cursor:pointer; }
+  #fixedParams{ margin-top:10px; padding-top:9px; border-top:1px solid var(--panel-border);
+    font-size:10.5px; line-height:1.65; color:var(--dim); }
+  #fixedParams b{ color:#c4cdda; font-weight:600; }
+  #brickCount{ font-size:11px; color:var(--dim); margin-top:6px; }
+  #brickCount b{ color:#fff; }
+  #settings.collapsed .body{ display:none; }
+
+  #actions{ bottom:22px; left:50%; transform:translateX(-50%); padding:10px; display:flex; gap:10px; }
+  #actions button{ border:none; border-radius:8px; padding:11px 26px; font-size:14px; font-weight:700;
+    cursor:pointer; letter-spacing:.3px; transition: transform .08s ease, filter .15s ease; }
+  #actions button:hover{ filter:brightness(1.12); }
+  #actions button:active{ transform:scale(.96); }
+  #btnTest{ background:var(--accent); color:#fff; box-shadow:0 4px 18px rgba(255,85,51,.4); }
+  #btnReset{ background:rgba(255,255,255,.1); color:var(--text); border:1px solid var(--panel-border) !important; }
+  #hint{ position:absolute; bottom:6px; left:50%; transform:translateX(-50%);
+    font-size:10.5px; color:rgba(255,255,255,.4); }
+
+  @media (max-width:760px){
+    #settings{ width:220px; }
+    #hud{ gap:10px; } #hud .stat{ min-width:58px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div class="panel" id="brand">
+  <h1>Claude <em>Fable 5</em></h1>
+  <p>Vehicle × masonry wall — rigid-body crash experiment</p>
+</div>
+
+<div class="panel" id="hud">
+  <div class="stat"><div class="v" id="stSpeed">0.0<small>m/s</small></div><div class="l">Car speed</div></div>
+  <div class="stat"><div class="v" id="stTime">0.00<small>s</small></div><div class="l">Elapsed</div></div>
+  <div class="stat"><div class="v" id="stMoving">0</div><div class="l">Moving bricks</div></div>
+  <div class="stat"><div class="v" id="stFps">60</div><div class="l">FPS</div></div>
+  <div class="stat" id="stState"><div class="v" id="stStateV">Ready</div><div class="l">State</div></div>
+</div>
+
+<div class="panel" id="settings">
+  <h2>Experiment parameters <button id="btnCollapse">hide</button></h2>
+  <div class="body">
+    <div class="field">
+      <div class="row"><span>Car speed</span><span class="val"><span id="vSpeed">22</span> <small>m/s</small></span></div>
+      <input type="range" id="inSpeed" min="5" max="45" step="0.5" value="22">
+    </div>
+    <div class="field">
+      <div class="row"><span>Wall columns</span><span class="val"><span id="vCols">12</span> <small>bricks</small></span></div>
+      <input type="range" id="inCols" min="4" max="24" step="1" value="12">
+    </div>
+    <div class="field">
+      <div class="row"><span>Wall rows</span><span class="val"><span id="vRows">8</span> <small>bricks</small></span></div>
+      <input type="range" id="inRows" min="3" max="16" step="1" value="8">
+    </div>
+    <div class="field">
+      <div class="row"><span>Wall depth layers</span><span class="val"><span id="vLayers">2</span> <small>layers</small></span></div>
+      <input type="range" id="inLayers" min="1" max="5" step="1" value="2">
+    </div>
+    <div class="field">
+      <div class="row"><span>Brick mass</span><span class="val"><span id="vMass">2.5</span> <small>kg</small></span></div>
+      <input type="range" id="inMass" min="0.5" max="12" step="0.1" value="2.5">
+    </div>
+    <div id="brickCount">Wall: <b id="vCount">—</b> bricks</div>
+    <div id="fixedParams">
+      Brick <b>0.50 × 0.24 m</b> · μ <b>0.72</b> · e <b>0.18</b><br>
+      Car <b>1250 kg</b> · <b>4.2 × 1.45 m</b><br>
+      Gravity <b>9.81 m/s²</b> · ground μ <b>0.85</b><br>
+      Scale <b>80 px/m</b> (auto-fit) · step <b>1/150 s</b>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="actions">
+  <button id="btnTest">▶ &nbsp;Test</button>
+  <button id="btnReset">↺ &nbsp;Reset</button>
+</div>
+<div id="hint">Space — run test · R — reset</div>
+
+<script>
+'use strict';
+/*PHYSICS-BEGIN*/
+/* ============================================================
+   2D rigid-body engine — oriented boxes, SAT clipping manifolds,
+   warm-started sequential impulses (box2d-lite style), sleeping,
+   fixed deterministic timestep.
+   ============================================================ */
+const SUB_DT = 1/150;
+const ITERATIONS = 12;
+const SLOP = 0.008;
+const BIAS_FACTOR = 0.2;
+const REST_THRESHOLD = 1.0;     // m/s — restitution kicks in above this
+const SLEEP_LIN2 = 0.006, SLEEP_ANG2 = 0.02, SLEEP_TIME = 0.55;
+const WAKE_VN = 0.4;            // approach speed that wakes a sleeping body
+const MAX_SPEED = 60;
+
+const EDGE1=1, EDGE2=2, EDGE3=3, EDGE4=4;
+
+class Body {
+  constructor(id, x, y, w, h, mass, friction, restitution){
+    this.id = id;
+    this.x = x; this.y = y;
+    this.angle = 0; this.cos = 1; this.sin = 0;
+    this.vx = 0; this.vy = 0; this.w = 0;         // w = angular velocity
+    this.hw = w*0.5; this.hh = h*0.5;
+    this.width = w; this.height = h;
+    this.mass = mass;
+    this.friction = friction;
+    this.restitution = restitution;
+    if (mass > 0){
+      this.invMass = 1/mass;
+      this.I = mass*(w*w + h*h)/12;
+      this.invI = 1/this.I;
+      this.isStatic = false;
+    } else {
+      this.invMass = 0; this.I = 0; this.invI = 0; this.isStatic = true;
+    }
+    this.sleeping = false; this.sleepTime = 0; this.noSleep = false;
+    this.layer = -1;        // -1 collides with everything; bricks get 0..L-1
+    this.isBrick = false;
+    this.minX=0; this.maxX=0; this.minY=0; this.maxY=0;
+  }
+  setAngle(a){ this.angle = a; this.cos = Math.cos(a); this.sin = Math.sin(a); }
+}
+
+/* --- narrowphase: OBB vs OBB, up to 2 contact points --------------- */
+function incidentEdge(hx, hy, px, py, c, s, nx, ny){
+  const nlx = -( c*nx + s*ny);
+  const nly = -(-s*nx + c*ny);
+  let v0x,v0y,i20,o20, v1x,v1y,i21,o21;
+  if (Math.abs(nlx) > Math.abs(nly)){
+    if (nlx > 0){ v0x= hx; v0y=-hy; i20=EDGE3; o20=EDGE4;  v1x= hx; v1y= hy; i21=EDGE4; o21=EDGE1; }
+    else        { v0x=-hx; v0y= hy; i20=EDGE1; o20=EDGE2;  v1x=-hx; v1y=-hy; i21=EDGE2; o21=EDGE3; }
+  } else {
+    if (nly > 0){ v0x= hx; v0y= hy; i20=EDGE4; o20=EDGE1;  v1x=-hx; v1y= hy; i21=EDGE1; o21=EDGE2; }
+    else        { v0x=-hx; v0y=-hy; i20=EDGE2; o20=EDGE3;  v1x= hx; v1y=-hy; i21=EDGE3; o21=EDGE4; }
+  }
+  return [
+    { x: px + c*v0x - s*v0y, y: py + s*v0x + c*v0y, in1:0, out1:0, in2:i20, out2:o20 },
+    { x: px + c*v1x - s*v1y, y: py + s*v1x + c*v1y, in1:0, out1:0, in2:i21, out2:o21 },
+  ];
+}
+
+function clipSegment(vIn, nx, ny, offset, clipEdge){
+  const out = [];
+  const d0 = nx*vIn[0].x + ny*vIn[0].y - offset;
+  const d1 = nx*vIn[1].x + ny*vIn[1].y - offset;
+  if (d0 <= 0) out.push(vIn[0]);
+  if (d1 <= 0) out.push(vIn[1]);
+  if (d0*d1 < 0){
+    const t = d0/(d0-d1);
+    const v = { x: vIn[0].x + t*(vIn[1].x-vIn[0].x),
+                y: vIn[0].y + t*(vIn[1].y-vIn[0].y),
+                in1:0, out1:0, in2:0, out2:0 };
+    if (d0 > 0){ v.in1=clipEdge; v.out1=vIn[0].out1; v.in2=0; v.out2=vIn[0].out2; }
+    else       { v.out1=clipEdge; v.in1=vIn[1].in1; v.out2=0; v.in2=vIn[1].in2; }
+    out.push(v);
+  }
+  return out;
+}
+
+function collideBoxes(A, B){
+  const hAx=A.hw, hAy=A.hh, hBx=B.hw, hBy=B.hh;
+  const cA=A.cos, sA=A.sin, cB=B.cos, sB=B.sin;
+  const dpx=B.x-A.x, dpy=B.y-A.y;
+  const dAx =  cA*dpx + sA*dpy, dAy = -sA*dpx + cA*dpy;
+  const dBx =  cB*dpx + sB*dpy, dBy = -sB*dpx + cB*dpy;
+  // C = RotA^T * RotB and its abs
+  const c00 =  cA*cB + sA*sB,  c01 = -cA*sB + sA*cB;
+  const c10 = -sA*cB + cA*sB,  c11 =  sA*sB + cA*cB;
+  const a00=Math.abs(c00), a01=Math.abs(c01), a10=Math.abs(c10), a11=Math.abs(c11);
+
+  const faceAx = Math.abs(dAx) - hAx - (a00*hBx + a01*hBy);
+  if (faceAx > 0) return [];
+  const faceAy = Math.abs(dAy) - hAy - (a10*hBx + a11*hBy);
+  if (faceAy > 0) return [];
+  const faceBx = Math.abs(dBx) - hBx - (a00*hAx + a10*hAy);
+  if (faceBx > 0) return [];
+  const faceBy = Math.abs(dBy) - hBy - (a01*hAx + a11*hAy);
+  if (faceBy > 0) return [];
+
+  // best separating axis (with tolerance to stabilize axis choice)
+  let axis = 0, sep = faceAx;
+  let nx = dAx > 0 ?  cA : -cA,  ny = dAx > 0 ?  sA : -sA;
+  const REL=0.95, ABS=0.01;
+  if (faceAy > REL*sep + ABS*hAy){ axis=1; sep=faceAy; nx = dAy>0 ? -sA :  sA; ny = dAy>0 ?  cA : -cA; }
+  if (faceBx > REL*sep + ABS*hBx){ axis=2; sep=faceBx; nx = dBx>0 ?  cB : -cB; ny = dBx>0 ?  sB : -sB; }
+  if (faceBy > REL*sep + ABS*hBy){ axis=3; sep=faceBy; nx = dBy>0 ? -sB :  sB; ny = dBy>0 ?  cB : -cB; }
+
+  let fnx, fny, front, snx, sny, negSide, posSide, negEdge, posEdge, inc, side;
+  if (axis === 0){
+    fnx=nx; fny=ny; front = A.x*fnx + A.y*fny + hAx;
+    snx=-sA; sny=cA; side = A.x*snx + A.y*sny;
+    negSide = -side + hAy; posSide = side + hAy; negEdge=EDGE3; posEdge=EDGE1;
+    inc = incidentEdge(hBx,hBy,B.x,B.y,cB,sB,fnx,fny);
+  } else if (axis === 1){
+    fnx=nx; fny=ny; front = A.x*fnx + A.y*fny + hAy;
+    snx=cA; sny=sA; side = A.x*snx + A.y*sny;
+    negSide = -side + hAx; posSide = side + hAx; negEdge=EDGE2; posEdge=EDGE4;
+    inc = incidentEdge(hBx,hBy,B.x,B.y,cB,sB,fnx,fny);
+  } else if (axis === 2){
+    fnx=-nx; fny=-ny; front = B.x*fnx + B.y*fny + hBx;
+    snx=-sB; sny=cB; side = B.x*snx + B.y*sny;
+    negSide = -side + hBy; posSide = side + hBy; negEdge=EDGE3; posEdge=EDGE1;
+    inc = incidentEdge(hAx,hAy,A.x,A.y,cA,sA,fnx,fny);
+  } else {
+    fnx=-nx; fny=-ny; front = B.x*fnx + B.y*fny + hBy;
+    snx=cB; sny=sB; side = B.x*snx + B.y*sny;
+    negSide = -side + hBx; posSide = side + hBx; negEdge=EDGE2; posEdge=EDGE4;
+    inc = incidentEdge(hAx,hAy,A.x,A.y,cA,sA,fnx,fny);
+  }
+
+  let cp = clipSegment(inc, -snx, -sny, negSide, negEdge);
+  if (cp.length < 2) return [];
+  cp = clipSegment(cp, snx, sny, posSide, posEdge);
+  if (cp.length < 2) return [];
+
+  const contacts = [];
+  for (let i=0; i<2; i++){
+    const v = cp[i];
+    const s = fnx*v.x + fny*v.y - front;
+    if (s <= 0){
+      let in1=v.in1, out1=v.out1, in2=v.in2, out2=v.out2;
+      if (axis >= 2){ let t=in1; in1=in2; in2=t; t=out1; out1=out2; out2=t; }
+      contacts.push({
+        px: v.x - s*fnx, py: v.y - s*fny,
+        nx, ny, sep: s,
+        key: in1 | (out1<<3) | (in2<<6) | (out2<<9),
+        Pn: 0, Pt: 0, massNormal: 0, massTangent: 0, bias: 0, vn0: 0,
+        r1x:0, r1y:0, r2x:0, r2y:0,
+      });
+    }
+  }
+  return contacts;
+}
+
+/* --- contact arbiter with warm starting ---------------------------- */
+class Arbiter {
+  constructor(a, b){
+    this.a = a; this.b = b;
+    this.friction = Math.sqrt(a.friction * b.friction);
+    this.restitution = Math.max(a.restitution, b.restitution);
+    this.contacts = [];
+    this.stamp = 0;
+    this.im1=0; this.iI1=0; this.im2=0; this.iI2=0;
+  }
+  update(newContacts){
+    const old = this.contacts;
+    for (let i=0; i<newContacts.length; i++){
+      const nc = newContacts[i];
+      for (let j=0; j<old.length; j++){
+        if (old[j].key === nc.key){ nc.Pn = old[j].Pn; nc.Pt = old[j].Pt; break; }
+      }
+    }
+    this.contacts = newContacts;
+  }
+  preStep(invDt, wake){
+    const a = this.a, b = this.b;
+    // a sleeping body hit hard enough wakes up and joins the solve
+    if (a.sleeping !== b.sleeping){
+      for (let i=0; i<this.contacts.length; i++){
+        const c = this.contacts[i];
+        const r1x=c.px-a.x, r1y=c.py-a.y, r2x=c.px-b.x, r2y=c.py-b.y;
+        const dvx = (b.vx - b.w*r2y) - (a.vx - a.w*r1y);
+        const dvy = (b.vy + b.w*r2x) - (a.vy + a.w*r1x);
+        if (dvx*c.nx + dvy*c.ny < -WAKE_VN){ wake(a.sleeping ? a : b); break; }
+      }
+    }
+    this.im1 = (a.isStatic || a.sleeping) ? 0 : a.invMass;
+    this.iI1 = (a.isStatic || a.sleeping) ? 0 : a.invI;
+    this.im2 = (b.isStatic || b.sleeping) ? 0 : b.invMass;
+    this.iI2 = (b.isStatic || b.sleeping) ? 0 : b.invI;
+    const im1=this.im1, iI1=this.iI1, im2=this.im2, iI2=this.iI2;
+    for (let i=0; i<this.contacts.length; i++){
+      const c = this.contacts[i];
+      const r1x = c.px - a.x, r1y = c.py - a.y;
+      const r2x = c.px - b.x, r2y = c.py - b.y;
+      c.r1x=r1x; c.r1y=r1y; c.r2x=r2x; c.r2y=r2y;
+      const rn1 = r1x*c.nx + r1y*c.ny, rn2 = r2x*c.nx + r2y*c.ny;
+      let k = im1 + im2
+        + iI1*((r1x*r1x + r1y*r1y) - rn1*rn1)
+        + iI2*((r2x*r2x + r2y*r2y) - rn2*rn2);
+      c.massNormal = k > 0 ? 1/k : 0;
+      const tx = c.ny, ty = -c.nx;
+      const rt1 = r1x*tx + r1y*ty, rt2 = r2x*tx + r2y*ty;
+      k = im1 + im2
+        + iI1*((r1x*r1x + r1y*r1y) - rt1*rt1)
+        + iI2*((r2x*r2x + r2y*r2y) - rt2*rt2);
+      c.massTangent = k > 0 ? 1/k : 0;
+      c.bias = -BIAS_FACTOR * invDt * Math.min(0, c.sep + SLOP);
+      // restitution on fast approach
+      const dvx = (b.vx - b.w*r2y) - (a.vx - a.w*r1y);
+      const dvy = (b.vy + b.w*r2x) - (a.vy + a.w*r1x);
+      const vn = dvx*c.nx + dvy*c.ny;
+      c.vn0 = vn;
+      if (vn < -REST_THRESHOLD) c.bias += -this.restitution * vn;
+      // warm start
+      const Px = c.Pn*c.nx + c.Pt*tx, Py = c.Pn*c.ny + c.Pt*ty;
+      a.vx -= im1*Px; a.vy -= im1*Py; a.w -= iI1*(r1x*Py - r1y*Px);
+      b.vx += im2*Px; b.vy += im2*Py; b.w += iI2*(r2x*Py - r2y*Px);
+    }
+  }
+  applyImpulse(){
+    const a = this.a, b = this.b;
+    const im1=this.im1, iI1=this.iI1, im2=this.im2, iI2=this.iI2;
+    const fr = this.friction;
+    for (let i=0; i<this.contacts.length; i++){
+      const c = this.contacts[i];
+      const r1x=c.r1x, r1y=c.r1y, r2x=c.r2x, r2y=c.r2y;
+      // normal impulse
+      let dvx = (b.vx - b.w*r2y) - (a.vx - a.w*r1y);
+      let dvy = (b.vy + b.w*r2x) - (a.vy + a.w*r1x);
+      const vn = dvx*c.nx + dvy*c.ny;
+      let dPn = c.massNormal * (-vn + c.bias);
+      const Pn0 = c.Pn;
+      c.Pn = Math.max(Pn0 + dPn, 0);
+      dPn = c.Pn - Pn0;
+      let Px = dPn*c.nx, Py = dPn*c.ny;
+      a.vx -= im1*Px; a.vy -= im1*Py; a.w -= iI1*(r1x*Py - r1y*Px);
+      b.vx += im2*Px; b.vy += im2*Py; b.w += iI2*(r2x*Py - r2y*Px);
+      // friction impulse
+      dvx = (b.vx - b.w*r2y) - (a.vx - a.w*r1y);
+      dvy = (b.vy + b.w*r2x) - (a.vy + a.w*r1x);
+      const tx = c.ny, ty = -c.nx;
+      const vt = dvx*tx + dvy*ty;
+      let dPt = c.massTangent * (-vt);
+      const maxPt = fr * c.Pn;
+      const Pt0 = c.Pt;
+      c.Pt = Math.min(Math.max(Pt0 + dPt, -maxPt), maxPt);
+      dPt = c.Pt - Pt0;
+      Px = dPt*tx; Py = dPt*ty;
+      a.vx -= im1*Px; a.vy -= im1*Py; a.w -= iI1*(r1x*Py - r1y*Px);
+      b.vx += im2*Px; b.vy += im2*Py; b.w += iI2*(r2x*Py - r2y*Px);
+    }
+  }
+}
+
+/* --- world ---------------------------------------------------------- */
+class World {
+  constructor(gx, gy){
+    this.gx = gx; this.gy = gy;
+    this.bodies = [];
+    this.sorted = [];
+    this.arbiters = new Map();
+    this.stamp = 0;
+    this.nextId = 1;
+    this.carHit = false;
+    this.car = null;
+  }
+  addBody(x, y, w, h, mass, friction, restitution){
+    const b = new Body(this.nextId++, x, y, w, h, mass, friction, restitution);
+    this.bodies.push(b);
+    this.sorted.push(b);
+    return b;
+  }
+  wake(b){
+    if (b.sleeping){ b.sleeping = false; b.sleepTime = 0; }
+  }
+  step(dt){
+    this.stamp++;
+    const bodies = this.bodies, s = this.sorted;
+    // AABBs
+    for (let i=0; i<bodies.length; i++){
+      const b = bodies[i];
+      const ac = Math.abs(b.cos), as = Math.abs(b.sin);
+      const rx = ac*b.hw + as*b.hh, ry = as*b.hw + ac*b.hh;
+      b.minX = b.x - rx; b.maxX = b.x + rx;
+      b.minY = b.y - ry; b.maxY = b.y + ry;
+    }
+    // sweep & prune on x (insertion sort — near-sorted every step)
+    for (let i=1; i<s.length; i++){
+      const b = s[i]; let j = i-1;
+      while (j >= 0 && s[j].minX > b.minX){ s[j+1] = s[j]; j--; }
+      s[j+1] = b;
+    }
+    const wakeFn = (b) => this.wake(b);
+    for (let i=0; i<s.length; i++){
+      const a = s[i];
+      for (let j=i+1; j<s.length && s[j].minX <= a.maxX; j++){
+        const b = s[j];
+        if (a.minY > b.maxY || b.minY > a.maxY) continue;
+        if (a.invMass === 0 && b.invMass === 0) continue;
+        if (a.layer >= 0 && b.layer >= 0 && a.layer !== b.layer) continue;
+        const key = a.id < b.id ? a.id*1000000 + b.id : b.id*1000000 + a.id;
+        const aInert = a.sleeping || a.isStatic, bInert = b.sleeping || b.isStatic;
+        let arb = this.arbiters.get(key);
+        if (aInert && bInert){          // dormant contact — keep it alive, skip narrowphase
+          if (arb) arb.stamp = this.stamp;
+          continue;
+        }
+        const A = a.id < b.id ? a : b, B = a.id < b.id ? b : a;
+        const contacts = collideBoxes(A, B);
+        if (contacts.length){
+          if (!arb){ arb = new Arbiter(A, B); this.arbiters.set(key, arb); }
+          arb.update(contacts);
+          arb.stamp = this.stamp;
+          if (!this.carHit && this.car && (A === this.car || B === this.car) &&
+              (A.isBrick || B.isBrick)) this.carHit = true;
+        }
+      }
+    }
+    // drop stale arbiters; losing support wakes both bodies
+    for (const [k, arb] of this.arbiters){
+      if (arb.stamp !== this.stamp){
+        this.arbiters.delete(k);
+        if (!arb.a.isStatic) this.wake(arb.a);
+        if (!arb.b.isStatic) this.wake(arb.b);
+      }
+    }
+    // integrate forces
+    for (let i=0; i<bodies.length; i++){
+      const b = bodies[i];
+      if (b.invMass === 0 || b.sleeping) continue;
+      b.vx += this.gx*dt; b.vy += this.gy*dt;
+    }
+    // solve
+    const invDt = 1/dt;
+    for (const arb of this.arbiters.values()){
+      if ((arb.a.sleeping || arb.a.isStatic) && (arb.b.sleeping || arb.b.isStatic)) continue;
+      arb.preStep(invDt, wakeFn);
+    }
+    for (let it=0; it<ITERATIONS; it++){
+      for (const arb of this.arbiters.values()){
+        if ((arb.a.sleeping || arb.a.isStatic) && (arb.b.sleeping || arb.b.isStatic)) continue;
+        arb.applyImpulse();
+      }
+    }
+    // integrate positions
+    for (let i=0; i<bodies.length; i++){
+      const b = bodies[i];
+      if (b.invMass === 0 || b.sleeping) continue;
+      const sp2 = b.vx*b.vx + b.vy*b.vy;
+      if (sp2 > MAX_SPEED*MAX_SPEED){
+        const f = MAX_SPEED/Math.sqrt(sp2); b.vx *= f; b.vy *= f;
+      }
+      b.x += b.vx*dt; b.y += b.vy*dt;
+      b.setAngle(b.angle + b.w*dt);
+    }
+    // sleeping
+    for (let i=0; i<bodies.length; i++){
+      const b = bodies[i];
+      if (b.isStatic || b.sleeping || b.noSleep) continue;
+      if (b.vx*b.vx + b.vy*b.vy < SLEEP_LIN2 && b.w*b.w < SLEEP_ANG2){
+        b.sleepTime += dt;
+        if (b.sleepTime > SLEEP_TIME){ b.sleeping = true; b.vx = 0; b.vy = 0; b.w = 0; }
+      } else b.sleepTime = 0;
+    }
+  }
+}
+/*PHYSICS-END*/
+
+/* ============================================================
+   Experiment app — scene, camera, rendering, UI
+   ============================================================ */
+(function(){
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, dpr = 1;
+
+const FIXED = {
+  gravity: 9.81,
+  brickW: 0.50, brickH: 0.24,
+  brickFriction: 0.72, brickRest: 0.18,
+  carMass: 1250, carW: 4.2, carH: 1.45,
+  groundFriction: 0.85,
+  baseScale: 80,
+  runway: 12,             // metres of clear track in front of the car
+};
+
+const params = { speed: 22, cols: 12, rows: 8, layers: 2, brickMass: 2.5 };
+
+let world = null, car = null, bricks = [], layerBricks = [];
+let state = 'ready';       // ready | driving | crashed | settled
+let elapsed = 0;
+let wallX = 0, wallW = 0, wallH = 0;
+let carHome = 0;
+let travel = 0;            // wheel-spin odometer (visual)
+let impactSpeed = 0;
+
+const cam = { x: -6, scale: 55, shake: 0, t: 0 };
+let particles = [], skids = [];
+let maxDebrisX = 0;
+
+/* deterministic per-brick shade (visual only) */
+function brickShade(i){ const h = (i*2654435761) >>> 0; return (h % 997)/997; }
+
+function buildScene(){
+  world = new World(0, -FIXED.gravity);
+  world.carHit = false;
+  bricks = [];
+  layerBricks = Array.from({length: params.layers}, () => []);
+  particles = []; skids = [];
+  state = 'ready'; elapsed = 0; travel = 0; impactSpeed = 0;
+  cam.shake = 0;
+
+  // ground
+  const ground = world.addBody(10, -1.5, 160, 3, 0, FIXED.groundFriction, 0.0);
+
+  // wall geometry
+  const bw = FIXED.brickW, bh = FIXED.brickH;
+  wallX = 0; wallW = params.cols * bw; wallH = params.rows * bh;
+  maxDebrisX = wallX + wallW;
+  const gap = 0.0006;
+  for (let L=0; L<params.layers; L++){
+    for (let r=0; r<params.rows; r++){
+      const y = r*bh + bh*0.5;
+      const odd = (r % 2) === 1;
+      const place = (cx, w, m) => {
+        const b = world.addBody(cx, y, w - gap, bh, m, FIXED.brickFriction, FIXED.brickRest);
+        b.isBrick = true; b.layer = L; b.sleeping = true;
+        b.shade = brickShade(world.nextId + r*31 + L*7);
+        bricks.push(b); layerBricks[L].push(b);
+      };
+      if (!odd){
+        for (let ci=0; ci<params.cols; ci++) place(wallX + (ci+0.5)*bw, bw, params.brickMass);
+      } else {
+        place(wallX + bw*0.25, bw*0.5, params.brickMass*0.5);
+        for (let ci=0; ci<params.cols-1; ci++) place(wallX + bw*0.5 + (ci+0.5)*bw, bw, params.brickMass);
+        place(wallX + wallW - bw*0.25, bw*0.5, params.brickMass*0.5);
+      }
+    }
+  }
+
+  // car — parked, engine off, asleep like the rest of the scene
+  carHome = wallX - FIXED.runway - FIXED.carW*0.5;
+  car = world.addBody(carHome, FIXED.carH*0.5, FIXED.carW, FIXED.carH,
+                      FIXED.carMass, FIXED.groundFriction, 0.05);
+  car.sleeping = true;
+  world.car = car;
+
+  document.getElementById('vCount').textContent = bricks.length;
+}
+
+function startTest(){
+  buildScene();               // reset to current settings, then launch
+  state = 'driving';
+  car.sleeping = false; car.noSleep = true;
+  car.vx = params.speed;
+}
+
+/* --- simulation ------------------------------------------------- */
+function substep(){
+  if (state === 'driving'){
+    // powered run-up: the sled holds the commanded speed until first brick contact
+    car.vx = params.speed;
+    car.w = 0; car.setAngle(0);
+  }
+  world.step(SUB_DT);
+  if (state === 'driving' && world.carHit){
+    state = 'crashed';
+    car.noSleep = false;
+    impactSpeed = Math.abs(car.vx);
+    cam.shake = Math.min(16, impactSpeed * 0.55);
+    burstDust(wallX, Math.min(wallH*0.6, 1.2), impactSpeed);
+  }
+  if (state === 'driving' || state === 'crashed') elapsed += SUB_DT;
+  if (state === 'crashed'){
+    spawnContactDust();
+    // settled when every dynamic body has gone to sleep
+    let awake = 0;
+    for (const b of world.bodies) if (!b.isStatic && !b.sleeping) awake++;
+    if (awake === 0) state = 'settled';
+  }
+}
+
+/* --- effects (visual only — no influence on physics) -------------- */
+function burstDust(x, y, intensity){
+  const n = Math.min(40, 10 + intensity*1.2);
+  for (let i=0; i<n; i++){
+    particles.push({
+      x: x + (Math.random()-0.5)*0.8, y: y + (Math.random()-0.5)*1.2,
+      vx: (Math.random()-0.2)*intensity*0.25, vy: Math.random()*intensity*0.14,
+      life: 0, max: 0.7 + Math.random()*0.9,
+      size: 0.12 + Math.random()*0.3,
+      chip: Math.random() < 0.25,
+    });
+  }
+}
+function spawnContactDust(){
+  if (particles.length > 260) return;
+  let budget = 10;
+  for (const arb of world.arbiters.values()){
+    if (budget <= 0) break;
+    if ((arb.a.sleeping || arb.a.isStatic) && (arb.b.sleeping || arb.b.isStatic)) continue;
+    const mm = Math.min(arb.a.mass > 0 ? arb.a.mass : 1e9, arb.b.mass > 0 ? arb.b.mass : 1e9);
+    for (const c of arb.contacts){
+      if (c.vn0 < -1.6 && c.Pn > 2.2*mm){
+        particles.push({
+          x: c.px, y: c.py,
+          vx: (Math.random()-0.5)*1.6, vy: Math.random()*1.4,
+          life: 0, max: 0.5 + Math.random()*0.6,
+          size: 0.08 + Math.random()*0.18,
+          chip: Math.random() < 0.2,
+        });
+        if (--budget <= 0) break;
+      }
+    }
+  }
+}
+function updateEffects(dt){
+  for (let i=particles.length-1; i>=0; i--){
+    const p = particles[i];
+    p.life += dt;
+    if (p.life > p.max){ particles.splice(i,1); continue; }
+    p.x += p.vx*dt; p.y += p.vy*dt;
+    if (p.chip){ p.vy -= 9.81*dt; if (p.y < 0.03){ p.y = 0.03; p.vy *= -0.3; p.vx *= 0.6; } }
+    else { p.vx *= (1 - 1.6*dt); p.vy *= (1 - 1.6*dt); p.vy += 0.5*dt; p.size += 0.5*dt; }
+  }
+  // tyre skid marks after the impact while the car scrubs speed
+  if (state === 'crashed' && !car.sleeping && Math.abs(car.vx) > 1.2 && car.y < FIXED.carH*0.5 + 0.06){
+    for (const wx of [-1.35, 1.35]){
+      const gx = car.x + wx*car.cos;
+      skids.push({ x: gx, a: Math.min(0.5, Math.abs(car.vx)*0.03) });
+    }
+    if (skids.length > 900) skids.splice(0, skids.length - 900);
+  }
+  cam.shake *= Math.pow(0.02, dt);
+  if (cam.shake < 0.05) cam.shake = 0;
+  cam.t += dt;
+}
+
+/* --- camera -------------------------------------------------------- */
+function updateCamera(dt){
+  if (state === 'crashed' || state === 'settled'){
+    for (const b of bricks) if (!b.sleeping && b.x > maxDebrisX) maxDebrisX = b.x;
+  }
+  let minX = Math.min(car.x - 3.2, wallX - 4);
+  let maxX = Math.max(wallX + wallW + 3, car.x + 3.5, maxDebrisX + 1.5);
+  const span = maxX - minX;
+  let target = Math.min(FIXED.baseScale, (W * 0.94) / span);
+  target = Math.min(target, (H * 0.62) / (wallH + 2.2));
+  target = Math.max(12, target);
+  const cx = (minX + maxX) / 2;
+  const k = Math.min(1, 3.2*dt);
+  cam.scale += (target - cam.scale) * k;
+  cam.x += (cx - cam.x) * k;
+}
+
+/* --- rendering ------------------------------------------------------ */
+function resize(){
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W*dpr); canvas.height = Math.round(H*dpr);
+}
+window.addEventListener('resize', resize);
+
+function groundScreenY(){ return H * 0.80; }
+function sx(wx){ return (wx - cam.x)*cam.scale + W/2; }
+function sy(wy){ return groundScreenY() - wy*cam.scale; }
+
+function draw(){
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const shx = cam.shake ? Math.sin(cam.t*53)*cam.shake : 0;
+  const shy = cam.shake ? Math.cos(cam.t*47)*cam.shake*0.7 : 0;
+
+  // sky
+  const gy = groundScreenY();
+  let g = ctx.createLinearGradient(0, 0, 0, gy);
+  g.addColorStop(0, '#7fa8cf'); g.addColorStop(0.75, '#cfdfea'); g.addColorStop(1, '#e8ede9');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, gy);
+
+  // sun + clouds (static, deterministic)
+  ctx.fillStyle = 'rgba(255,250,230,.75)';
+  ctx.beginPath(); ctx.arc(W*0.82, H*0.14, 34, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.5)';
+  for (const [cx0, cy0, s0] of [[0.18,0.16,1],[0.46,0.10,0.8],[0.68,0.20,1.2]]){
+    const cx = W*cx0, cy = H*cy0;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 46*s0, 13*s0, 0, 0, 7);
+    ctx.ellipse(cx+30*s0, cy-8*s0, 30*s0, 11*s0, 0, 0, 7);
+    ctx.ellipse(cx-32*s0, cy-4*s0, 26*s0, 10*s0, 0, 0, 7);
+    ctx.fill();
+  }
+
+  ctx.save();
+  ctx.translate(shx, shy);
+
+  // distant hills (parallax with camera)
+  ctx.fillStyle = 'rgba(112,138,120,.45)';
+  ctx.beginPath(); ctx.moveTo(0, gy);
+  for (let x=0; x<=W; x+=24){
+    const wx = (x - W/2)/cam.scale*0.25 + cam.x*0.25;
+    ctx.lineTo(x, gy - 40 - 26*Math.sin(wx*0.9) - 14*Math.sin(wx*2.3+1.7));
+  }
+  ctx.lineTo(W, gy); ctx.closePath(); ctx.fill();
+
+  // ground: asphalt strip + soil
+  ctx.fillStyle = '#43474e';
+  ctx.fillRect(0, gy, W, Math.min(H-gy, 0.55*cam.scale));
+  g = ctx.createLinearGradient(0, gy + 0.55*cam.scale, 0, H);
+  g.addColorStop(0, '#6d5b45'); g.addColorStop(1, '#443727');
+  ctx.fillStyle = g; ctx.fillRect(0, gy + 0.55*cam.scale, W, H);
+  ctx.fillStyle = 'rgba(255,255,255,.5)';
+  ctx.fillRect(0, gy, W, 2);
+
+  // distance ticks (metres relative to the wall face)
+  ctx.font = `${Math.max(9, Math.min(12, cam.scale*0.16))}px ui-sans-serif`;
+  ctx.textAlign = 'center';
+  const m0 = Math.floor((cam.x - W/(2*cam.scale))/2)*2;
+  const m1 = Math.ceil((cam.x + W/(2*cam.scale))/2)*2;
+  for (let m=m0; m<=m1; m+=2){
+    const x = sx(m);
+    const major = (m % 10) === 0;
+    ctx.fillStyle = 'rgba(255,255,255,.55)';
+    ctx.fillRect(x, gy+3, 1.5, major ? 10 : 5);
+    if (major){
+      ctx.fillStyle = 'rgba(255,255,255,.55)';
+      ctx.fillText(`${m - wallX} m`, x, gy + 24);
+    }
+  }
+
+  // skid marks
+  ctx.fillStyle = 'rgba(20,20,22,.9)';
+  for (const s of skids){
+    ctx.globalAlpha = s.a;
+    ctx.fillRect(sx(s.x) - 0.16*cam.scale, gy - 2.5, 0.32*cam.scale, 3);
+  }
+  ctx.globalAlpha = 1;
+
+  // concrete footing under the wall
+  ctx.fillStyle = '#8e949b';
+  ctx.fillRect(sx(wallX - 0.25), gy - 3, (wallW + 0.5)*cam.scale, 5);
+
+  // bricks: back layers → car → front layer
+  for (let L=params.layers-1; L>=1; L--) drawLayer(L);
+  drawCar();
+  drawLayer(0);
+
+  // dust & chips
+  for (const p of particles){
+    const t = p.life/p.max;
+    if (p.chip){
+      ctx.fillStyle = `rgba(140,72,52,${(1-t)*0.9})`;
+      ctx.fillRect(sx(p.x)-2, sy(p.y)-2, 4, 4);
+    } else {
+      ctx.fillStyle = `rgba(186,170,150,${(1-t)*0.4})`;
+      ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), p.size*cam.scale, 0, 7); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawLayer(L){
+  const arr = layerBricks[L];
+  if (!arr) return;
+  const dim = 1 - 0.16*L;
+  const sc = cam.scale;
+  for (const b of arr){
+    const x = sx(b.x), y = sy(b.y);
+    if (x < -60 || x > W+60) continue;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-b.angle);
+    const w = b.width*sc, h = b.height*sc;
+    const light = (30 + b.shade*12) * dim;
+    ctx.fillStyle = `hsl(13, 46%, ${light}%)`;
+    ctx.fillRect(-w/2, -h/2, w, h);
+    ctx.fillStyle = `hsla(18, 50%, ${light+14}%, .5)`;
+    ctx.fillRect(-w/2, -h/2, w, Math.max(1.5, h*0.16));
+    ctx.strokeStyle = 'rgba(30,16,10,.55)';
+    ctx.lineWidth = Math.max(1, sc*0.02);
+    ctx.strokeRect(-w/2, -h/2, w, h);
+    ctx.restore();
+  }
+}
+
+function drawCar(){
+  const sc = cam.scale;
+  const x = sx(car.x), y = sy(car.y);
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  ctx.beginPath();
+  ctx.ellipse(x, groundScreenY()+2, FIXED.carW*0.48*sc, 4, 0, 0, 7);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-car.angle);
+  ctx.scale(sc, sc);
+  ctx.lineJoin = 'round';
+
+  // body
+  const body = new Path2D();
+  body.moveTo(-2.10, -0.30);
+  body.lineTo(-2.10,  0.08);
+  body.lineTo(-1.92,  0.24);
+  body.lineTo(-1.20,  0.30);
+  body.lineTo(-1.00,  0.68);
+  body.lineTo(-0.02,  0.70);
+  body.lineTo( 0.58,  0.26);
+  body.lineTo( 1.86,  0.14);
+  body.lineTo( 2.08,  0.02);
+  body.lineTo( 2.10, -0.30);
+  body.closePath();
+  const bg = ctx.createLinearGradient(0, -0.73, 0, 0.73);
+  bg.addColorStop(0, '#8f1f14'); bg.addColorStop(0.55, '#d9402c'); bg.addColorStop(1, '#e8604a');
+  ctx.fillStyle = bg;
+  ctx.fill(body);
+  ctx.strokeStyle = 'rgba(40,8,4,.7)'; ctx.lineWidth = 0.03; ctx.stroke(body);
+
+  // windows
+  ctx.fillStyle = 'rgba(150,200,235,.92)';
+  ctx.beginPath();
+  ctx.moveTo(-0.92, 0.62); ctx.lineTo(-0.10, 0.63); ctx.lineTo(0.42, 0.28); ctx.lineTo(-0.40, 0.30); ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-0.94, 0.61); ctx.lineTo(-0.50, 0.62); ctx.lineTo(-0.50, 0.31); ctx.lineTo(-1.10, 0.29); ctx.closePath();
+  ctx.fill();
+
+  // lights + trim
+  ctx.fillStyle = '#ffe9a3';
+  ctx.fillRect(1.94, 0.00, 0.14, 0.10);
+  ctx.fillStyle = '#c1272d';
+  ctx.fillRect(-2.10, 0.06, 0.09, 0.11);
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  ctx.fillRect(-2.10, -0.34, 4.2, 0.08);
+
+  // wheels
+  const spin = travel/0.33;
+  for (const wx of [-1.35, 1.35]){
+    ctx.save();
+    ctx.translate(wx, -0.395);
+    ctx.fillStyle = '#15171a';
+    ctx.beginPath(); ctx.arc(0, 0, 0.33, 0, 7); ctx.fill();
+    ctx.fillStyle = '#b9bfc7';
+    ctx.beginPath(); ctx.arc(0, 0, 0.17, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#5c636c'; ctx.lineWidth = 0.045;
+    ctx.rotate(-spin);
+    for (let k=0; k<4; k++){
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0.15, 0); ctx.stroke();
+      ctx.rotate(Math.PI/2);
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+/* --- HUD ------------------------------------------------------------ */
+const $ = id => document.getElementById(id);
+let fps = 60, lastHud = 0;
+function updateHud(now){
+  if (now - lastHud < 140) return;
+  lastHud = now;
+  const sp = Math.hypot(car.vx, car.vy);
+  $('stSpeed').innerHTML = `${sp.toFixed(1)}<small>m/s</small>`;
+  $('stTime').innerHTML = `${elapsed.toFixed(2)}<small>s</small>`;
+  let moving = 0;
+  for (const b of bricks) if (!b.sleeping && (b.vx*b.vx + b.vy*b.vy > 0.0025)) moving++;
+  $('stMoving').textContent = moving;
+  $('stFps').textContent = Math.round(fps);
+  $('stStateV').textContent =
+    state === 'ready' ? 'Ready' :
+    state === 'driving' ? 'Launch' :
+    state === 'crashed' ? (elapsed - 0 < 0.6 ? 'Impact!' : 'Settling') : 'Settled';
+}
+
+/* --- main loop ------------------------------------------------------ */
+let acc = 0, last = performance.now();
+function frame(now){
+  const dtms = Math.min(50, now - last);
+  last = now;
+  const dt = dtms/1000;
+  fps += (1000/Math.max(1, dtms) - fps)*0.06;
+
+  acc += dt;
+  let steps = 0;
+  while (acc >= SUB_DT && steps < 12){
+    substep();
+    acc -= SUB_DT;
+    steps++;
+  }
+  if (steps === 12) acc = 0;   // avoid spiral of death on slow frames
+
+  travel += car.vx * dt;
+  updateEffects(dt);
+  updateCamera(dt);
+  draw();
+  updateHud(now);
+  requestAnimationFrame(frame);
+}
+
+/* --- UI wiring ------------------------------------------------------ */
+function bindSlider(inputId, labelId, key, fmt){
+  const el = $(inputId);
+  el.addEventListener('input', () => {
+    params[key] = parseFloat(el.value);
+    $(labelId).textContent = fmt ? fmt(params[key]) : params[key];
+    buildScene();               // rebuild with new parameters; nothing else changes
+  });
+}
+bindSlider('inSpeed', 'vSpeed', 'speed', v => v.toFixed(1).replace(/\.0$/,''));
+bindSlider('inCols', 'vCols', 'cols');
+bindSlider('inRows', 'vRows', 'rows');
+bindSlider('inLayers', 'vLayers', 'layers');
+bindSlider('inMass', 'vMass', 'brickMass', v => v.toFixed(1).replace(/\.0$/,''));
+
+$('btnTest').addEventListener('click', startTest);
+$('btnReset').addEventListener('click', buildScene);
+$('btnCollapse').addEventListener('click', () => {
+  const p = $('settings');
+  p.classList.toggle('collapsed');
+  $('btnCollapse').textContent = p.classList.contains('collapsed') ? 'show' : 'hide';
+});
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space' && !e.repeat){ e.preventDefault(); startTest(); }
+  if (e.code === 'KeyR') buildScene();
+});
+
+resize();
+buildScene();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

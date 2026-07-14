@@ -1,0 +1,109 @@
+name: E2E Playwright Tests
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Preview URL to test"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.deployment_status.deployment.id || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  preview-e2e:
+    name: Playwright Preview
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'deployment_status' &&
+        github.event.deployment_status.state == 'success' &&
+        github.event.deployment_status.environment_url != ''
+      )
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    env:
+      PLAYWRIGHT_TEST_BASE_URL: ${{ github.event_name == 'deployment_status' && 'https://beta.thumbfa.st' || inputs.base_url }}
+      PLAYWRIGHT_AUTH_ORIGIN: ${{ github.event_name == 'deployment_status' && 'https://beta.thumbfa.st' || inputs.base_url }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      PLAYWRIGHT_ENABLE_AUTH_E2E: ${{ secrets.PLAYWRIGHT_ENABLE_AUTH_E2E }}
+      HEADLESS: "true"
+      CI: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          CONVEX_CODEGEN_SKIP: "1"
+
+      - name: Install Playwright browsers
+        if: ${{ env.VERCEL_AUTOMATION_BYPASS_SECRET != '' && env.PLAYWRIGHT_ENABLE_AUTH_E2E == 'true' }}
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Skip protected preview without bypass secret
+        if: ${{ env.VERCEL_AUTOMATION_BYPASS_SECRET == '' }}
+        run: |
+          echo "Skipping Playwright preview checks because VERCEL_AUTOMATION_BYPASS_SECRET is not configured."
+          echo "The Vercel preview is protected and cannot be reached by CI without the bypass secret."
+
+      - name: Wait for preview URL
+        if: ${{ env.VERCEL_AUTOMATION_BYPASS_SECRET != '' }}
+        run: |
+          for attempt in {1..60}; do
+            if curl -fsS \
+              -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+              -H "x-vercel-set-bypass-cookie: true" \
+              "$PLAYWRIGHT_TEST_BASE_URL" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timed out waiting for $PLAYWRIGHT_TEST_BASE_URL"
+          exit 1
+
+      - name: Run Playwright tests
+        if: ${{ env.VERCEL_AUTOMATION_BYPASS_SECRET != '' && env.PLAYWRIGHT_ENABLE_AUTH_E2E == 'true' }}
+        run: pnpm exec playwright test e2e/settings-migration.spec.ts --project=chromium --reporter=list
+
+      - name: Skip auth E2E without opt-in
+        if: ${{ env.VERCEL_AUTOMATION_BYPASS_SECRET != '' && env.PLAYWRIGHT_ENABLE_AUTH_E2E != 'true' }}
+        run: |
+          echo "Skipping protected-preview auth E2E because PLAYWRIGHT_ENABLE_AUTH_E2E is not set to true."
+          echo "Preview reachability was verified; frontend CI and Vercel checks still cover this PR."
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 30

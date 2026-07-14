@@ -1,0 +1,3 @@
+#!/usr/bin/env zsh
+source "$HOME/.zshrc"
+ccx -p --model gpt-5.6-luna --effort xhigh --permission-mode bypassPermissions --output-format stream-json --verbose --session-id 6d020112-fa44-4743-9db5-5272c7b3218c $'Build a responsive timezone overlap planner for comparing cities, working hours, and shared availability.\n\nWork only inside: /Users/melvynx/Developer/experiments/benchmarks/runs/20260712T171928Z-gpt-5-6-luna-ccx/data/timezone-checker/app\nConfigure your app to use port 9106 in order to create the benchmark.\nRun the relevant checks yourself. Do not edit other benchmark results or the run evidence outside the app directory.\nEnd your final response with exactly BENCHMARK_COMPLETE.' 

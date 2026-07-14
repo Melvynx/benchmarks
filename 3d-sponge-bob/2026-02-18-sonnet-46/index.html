@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bikini Bottom 3D</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #001133; overflow: hidden; }
+canvas { display: block; }
+#title {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(180,220,255,0.9);
+  font-family: 'Arial', sans-serif;
+  font-size: 22px;
+  font-weight: bold;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 0 18px rgba(80,160,255,0.8), 0 2px 8px rgba(0,0,0,0.6);
+  letter-spacing: 3px;
+  white-space: nowrap;
+}
+#info {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(180,220,255,0.7);
+  font-family: 'Arial', sans-serif;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 0 10px rgba(0,100,255,0.5);
+  letter-spacing: 1px;
+}
+</style>
+</head>
+<body>
+<div id="title">✦ SONNET 4.6 ✦</div>
+<div id="info">🌊 BIKINI BOTTOM &nbsp;·&nbsp; Drag to rotate &nbsp;·&nbsp; Scroll to zoom</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+// ─────────────────────────────────────────────
+// SCENE / CAMERA / RENDERER
+// ─────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x003355, 0.011);
+scene.background = new THREE.Color(0x001428);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(28, 22, 42);
+camera.lookAt(0, 4, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 2.2;
+document.body.appendChild(renderer.domElement);
+
+// ─────────────────────────────────────────────
+// ORBIT CONTROLS
+// ─────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 4, 0);
+controls.maxPolarAngle = Math.PI * 0.82;
+controls.minDistance = 8;
+controls.maxDistance = 110;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.25;
+renderer.domElement.addEventListener('pointerdown', () => { controls.autoRotate = false; });
+
+// ─────────────────────────────────────────────
+// POST-PROCESSING
+// ─────────────────────────────────────────────
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 0.82);
+composer.addPass(bloomPass);
+
+const underwaterShader = {
+  uniforms: { tDiffuse: { value: null }, time: { value: 0.0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float time;
+    varying vec2 vUv;
+    void main() {
+      vec2 uv = vUv;
+      float wave = sin(uv.y * 80.0 + time * 0.8) * 0.0008 + sin(uv.x * 60.0 + time * 0.5) * 0.0006;
+      vec3 col;
+      col.r = texture2D(tDiffuse, uv + vec2(wave + 0.0012, 0.0)).r;
+      col.g = texture2D(tDiffuse, uv + vec2(wave, wave * 0.5)).g;
+      col.b = texture2D(tDiffuse, uv + vec2(-wave * 0.5, 0.0)).b;
+      col.r *= 0.82;
+      col.g *= 0.95;
+      col.b *= 1.05;
+      vec2 center = uv - 0.5;
+      float vignette = 1.0 - dot(center, center) * 0.45;
+      col *= clamp(vignette, 0.0, 1.0);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+};
+const underwaterPass = new ShaderPass(underwaterShader);
+composer.addPass(underwaterPass);
+
+// ─────────────────────────────────────────────
+// LIGHTS
+// ─────────────────────────────────────────────
+const sunLight = new THREE.DirectionalLight(0xCCEEFF, 4.5);
+sunLight.position.set(25, 90, 30);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.near = 1;
+sunLight.shadow.camera.far = 220;
+sunLight.shadow.camera.left = sunLight.shadow.camera.bottom = -70;
+sunLight.shadow.camera.right = sunLight.shadow.camera.top = 70;
+sunLight.shadow.bias = -0.0005;
+scene.add(sunLight);
+
+// Hemisphere light: sky color from above, ground bounce from below
+const hemiLight = new THREE.HemisphereLight(0x2266CC, 0x886633, 3.0);
+scene.add(hemiLight);
+
+scene.add(new THREE.AmbientLight(0x3377BB, 5.0));
+
+const rimLight1 = new THREE.DirectionalLight(0x4488CC, 2.0);
+rimLight1.position.set(-30, 15, -25);
+scene.add(rimLight1);
+
+const fillLight = new THREE.DirectionalLight(0x6699BB, 1.5);
+fillLight.position.set(0, 20, 40);
+scene.add(fillLight);
+
+// ─────────────────────────────────────────────
+// MATERIAL HELPER
+// ─────────────────────────────────────────────
+const M = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.72, metalness: 0.05, ...opts });
+
+// ─────────────────────────────────────────────
+// OCEAN FLOOR
+// ─────────────────────────────────────────────
+const sandCanvas = document.createElement('canvas');
+sandCanvas.width = sandCanvas.height = 512;
+const sandCtx = sandCanvas.getContext('2d');
+sandCtx.fillStyle = '#C8A96E';
+sandCtx.fillRect(0, 0, 512, 512);
+for (let i = 0; i < 8000; i++) {
+  const x = Math.random() * 512, y = Math.random() * 512;
+  const r = Math.random() * 2.5 + 0.3;
+  const bright = Math.random();
+  sandCtx.fillStyle = bright > 0.5
+    ? `rgba(210,180,120,${Math.random()*0.4})`
+    : `rgba(160,120,70,${Math.random()*0.3})`;
+  sandCtx.beginPath(); sandCtx.arc(x, y, r, 0, Math.PI * 2); sandCtx.fill();
+}
+const sandTex = new THREE.CanvasTexture(sandCanvas);
+sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
+sandTex.repeat.set(10, 10);
+
+const floorGeo = new THREE.PlaneGeometry(240, 240, 100, 100);
+const floorPos = floorGeo.attributes.position;
+for (let i = 0; i < floorPos.count; i++) {
+  const x = floorPos.getX(i), z = floorPos.getY(i);
+  const h = Math.sin(x * 0.1) * 1.8 + Math.sin(z * 0.07) * 2.2 + Math.sin((x+z) * 0.18) * 0.9 + Math.sin(x*0.35 + z*0.28) * 0.5;
+  floorPos.setZ(i, h);
+}
+floorGeo.computeVertexNormals();
+floorGeo.rotateX(-Math.PI / 2);
+
+const floor = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({
+  map: sandTex, color: 0xD4AA70, roughness: 0.97, metalness: 0.0
+}));
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ─────────────────────────────────────────────
+// CAUSTICS (animated light patterns)
+// ─────────────────────────────────────────────
+const causticsMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { time: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform float time;
+    varying vec2 vUv;
+    float caustic(vec2 p, float t) {
+      float c = 0.0;
+      c += sin(p.x * 3.1 + sin(p.y * 2.4 + t) * 2.2 + t * 0.7);
+      c += sin(p.y * 2.8 + sin(p.x * 2.0 + t * 1.1) * 2.1 - t * 0.5);
+      c += sin((p.x + p.y) * 2.6 + t * 0.9);
+      c += sin((p.x - p.y) * 2.3 - t * 0.6);
+      return abs(sin(c * 0.4));
+    }
+    void main() {
+      vec2 uv = vUv * 10.0;
+      float t = time * 0.35;
+      float c1 = caustic(uv, t);
+      float c2 = caustic(uv * 1.4 + vec2(3.7, 1.3), t * 0.8);
+      float c = pow(c1, 3.0) * pow(c2, 2.0) * 0.18;
+      gl_FragColor = vec4(0.25, 0.65, 1.0, c);
+    }
+  `
+});
+const causticsPlane = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), causticsMat);
+causticsPlane.rotation.x = -Math.PI / 2;
+causticsPlane.position.y = 0.08;
+scene.add(causticsPlane);
+
+// ─────────────────────────────────────────────
+// GOD RAYS
+// ─────────────────────────────────────────────
+for (let i = 0; i < 10; i++) {
+  const angle = (i / 10) * Math.PI * 2;
+  const r = 12 + Math.random() * 18;
+  const rayMat = new THREE.MeshBasicMaterial({
+    color: 0x3388FF, transparent: true,
+    opacity: 0.025 + Math.random() * 0.015,
+    side: THREE.BackSide, depthWrite: false
+  });
+  const ray = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 4, 70, 8, 1, true), rayMat);
+  ray.position.set(
+    Math.cos(angle) * r + (Math.random()-0.5)*8,
+    40,
+    Math.sin(angle) * r + (Math.random()-0.5)*8
+  );
+  ray.rotation.x = (Math.random()-0.5)*0.12;
+  ray.rotation.z = (Math.random()-0.5)*0.12;
+  scene.add(ray);
+}
+
+// ─────────────────────────────────────────────
+// BUBBLES
+// ─────────────────────────────────────────────
+const BUBBLE_COUNT = 500;
+const bPos = new Float32Array(BUBBLE_COUNT * 3);
+const bVel = new Float32Array(BUBBLE_COUNT * 3);
+const bSiz = new Float32Array(BUBBLE_COUNT);
+const bPhs = new Float32Array(BUBBLE_COUNT);
+for (let i = 0; i < BUBBLE_COUNT; i++) {
+  bPos[i*3]   = (Math.random()-0.5)*110;
+  bPos[i*3+1] = Math.random()*55;
+  bPos[i*3+2] = (Math.random()-0.5)*110;
+  bVel[i*3]   = (Math.random()-0.5)*0.012;
+  bVel[i*3+1] = 0.035 + Math.random()*0.055;
+  bVel[i*3+2] = (Math.random()-0.5)*0.012;
+  bSiz[i] = 1.5 + Math.random()*3.5;
+  bPhs[i] = Math.random()*Math.PI*2;
+}
+const bubbleGeo = new THREE.BufferGeometry();
+bubbleGeo.setAttribute('position', new THREE.BufferAttribute(bPos, 3));
+bubbleGeo.setAttribute('aSize', new THREE.BufferAttribute(bSiz, 1));
+bubbleGeo.setAttribute('aPhase', new THREE.BufferAttribute(bPhs, 1));
+
+const bubbleMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  vertexShader: `
+    attribute float aSize;
+    attribute float aPhase;
+    varying float vAlpha;
+    void main() {
+      vAlpha = 0.6;
+      vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = aSize * (220.0 / -mvPos.z);
+      gl_Position = projectionMatrix * mvPos;
+    }
+  `,
+  fragmentShader: `
+    varying float vAlpha;
+    void main() {
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = length(uv);
+      if (d > 0.5) discard;
+      float ring = smoothstep(0.5, 0.42, d) - smoothstep(0.38, 0.28, d);
+      float glow = smoothstep(0.28, 0.0, d) * 0.12;
+      float alpha = (ring * 0.75 + glow) * vAlpha;
+      gl_FragColor = vec4(0.65, 0.88, 1.0, alpha);
+    }
+  `
+});
+scene.add(new THREE.Points(bubbleGeo, bubbleMat));
+
+// ─────────────────────────────────────────────
+// CONSTRUCTION HELPERS
+// ─────────────────────────────────────────────
+function mesh(geo, mat, parent=null) {
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = true; m.receiveShadow = true;
+  if (parent) parent.add(m); else scene.add(m);
+  return m;
+}
+const G = () => new THREE.Group();
+const BOX = (w,h,d) => new THREE.BoxGeometry(w,h,d);
+const SPH = (r,ws=14,hs=12) => new THREE.SphereGeometry(r,ws,hs);
+const CYL = (rt,rb,h,s=12) => new THREE.CylinderGeometry(rt,rb,h,s);
+const CONE = (r,h,s=12) => new THREE.ConeGeometry(r,h,s);
+const TOR = (r,t,rs=8,ts=24) => new THREE.TorusGeometry(r,t,rs,ts);
+
+// ─────────────────────────────────────────────
+// SPONGEBOB'S PINEAPPLE HOUSE
+// ─────────────────────────────────────────────
+function buildPineappleHouse(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+
+  const bodyMat  = M(0xE8921E);
+  const darkBump = M(0xC87010);
+  const leafMat  = [M(0x2D8A3E), M(0x3AAB50), M(0x1D6B28)];
+  const doorMat  = M(0x6B3A1E);
+  const woodMat  = M(0x8B5E2A);
+
+  // Pineapple body
+  mesh(CYL(3.0, 2.6, 8.5, 14), bodyMat, g).position.y = 4.25;
+
+  // Diamond texture bumps
+  for (let row = 0; row < 6; row++) {
+    for (let col = 0; col < 10; col++) {
+      const bump = mesh(SPH(0.22, 6, 6), darkBump, g);
+      const ang = (col/10)*Math.PI*2 + (row%2)*(Math.PI/10);
+      bump.position.set(
+        Math.cos(ang)*3.05, 1.2 + row*1.1, Math.sin(ang)*3.05
+      );
+    }
+  }
+
+  // Chimney
+  mesh(CYL(0.32,0.42,2.2,8), M(0xBB6600), g).position.set(1.6,8.5,-1);
+
+  // Leaf crown
+  for (let i = 0; i < 9; i++) {
+    const ang = (i/9)*Math.PI*2;
+    const leaf = mesh(CONE(0.7,4.0,6), leafMat[i%3], g);
+    leaf.position.set(Math.cos(ang)*1.8, 9.2, Math.sin(ang)*1.8);
+    leaf.rotation.z =  Math.cos(ang)*0.45;
+    leaf.rotation.x =  Math.sin(ang)*0.45;
+  }
+  mesh(CONE(0.45,5,6), M(0x1A6B28), g).position.set(0,11,0);
+
+  // Door
+  mesh(BOX(1.3,2.2,0.12), doorMat, g).position.set(0,1.9,3.06);
+  mesh(SPH(0.11,6,6), M(0xFFCC00), g).position.set(0.38,1.9,3.18);
+
+  // Windows
+  [-1.3,1.3].forEach(wx => {
+    mesh(new THREE.CircleGeometry(0.52,18), M(0xAADDFF,{emissive:0x334466,emissiveIntensity:0.7}), g).position.set(wx,3.8,3.07);
+    mesh(TOR(0.52,0.09,8,18), woodMat, g).position.set(wx,3.8,3.1);
+  });
+
+  // Window light
+  const wl = new THREE.PointLight(0xFFAA44, 2.0, 9);
+  wl.position.set(0,3.5,2.5); g.add(wl);
+  return g;
+}
+
+// ─────────────────────────────────────────────
+// SQUIDWARD'S EASTER ISLAND HOUSE
+// ─────────────────────────────────────────────
+function buildSquidwardHouse(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+  const stoneMat = M(0x8899BB, {roughness:0.88});
+  const darkMat  = M(0x666688, {roughness:0.9});
+
+  // Body
+  mesh(BOX(5.5,8.5,4.5), stoneMat, g).position.y = 4.25;
+
+  // Rounded top
+  mesh(CYL(2.3,2.75,2,8), stoneMat, g).position.y = 9.25;
+
+  // Brow ridge
+  const brow = mesh(BOX(6,1.6,2), M(0x7080A0), g);
+  brow.position.set(0,7.8,2.3);
+
+  // Eyes (sunken)
+  [-1.3,1.3].forEach(ex => {
+    const eye = mesh(SPH(0.75,14,12), M(0x222244,{emissive:0x223366,emissiveIntensity:1.0}), g);
+    eye.position.set(ex,6.4,2.3);
+    eye.scale.z = 0.45;
+  });
+
+  // Nose
+  mesh(BOX(1.6,1.4,2.4), M(0x9090BB), g).position.set(0,5.0,2.7);
+
+  // Mouth/door
+  mesh(BOX(2.1,3.2,0.35), M(0x111128), g).position.set(0,2.0,2.3);
+  mesh(BOX(2.5,3.6,0.18), darkMat, g).position.set(0,2.0,2.42);
+
+  // Interior light
+  const il = new THREE.PointLight(0x4466FF, 1.5, 8);
+  il.position.set(0,5,1); g.add(il);
+  return g;
+}
+
+// ─────────────────────────────────────────────
+// PATRICK'S ROCK
+// ─────────────────────────────────────────────
+function buildPatrickRock(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+
+  const rockGeo = SPH(3.8,14,10);
+  const rp = rockGeo.attributes.position;
+  for (let i=0;i<rp.count;i++) {
+    const x=rp.getX(i),y=rp.getY(i),z=rp.getZ(i);
+    const n = Math.sin(x*1.7+y)*0.28 + Math.sin(z*1.4+x)*0.22 + Math.cos(y*2.1)*0.18;
+    rp.setX(i,x+n*0.3); rp.setY(i,y*0.55+n*0.15); rp.setZ(i,z+n*0.3);
+  }
+  rockGeo.computeVertexNormals();
+
+  const rock = mesh(rockGeo, M(0x887766,{roughness:0.97}), g);
+  rock.position.y = 1.8;
+
+  // Sand mound
+  mesh(SPH(4.2,12,8), M(0xC8A96E,{roughness:0.95}), g).position.y = -0.6;
+  g.children[g.children.length-1].scale.y = 0.28;
+  return g;
+}
+
+// ─────────────────────────────────────────────
+// KRUSTY KRAB
+// ─────────────────────────────────────────────
+function buildKrustyKrab(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+  const redMat  = M(0xCC3300,{roughness:0.8});
+  const dkRed   = M(0xAA2200,{roughness:0.85});
+  const woodMat = M(0x7A5012);
+  const winMat  = M(0x99CCFF,{emissive:0x224466,emissiveIntensity:0.8});
+
+  // Main body
+  mesh(BOX(11,5.5,8), redMat, g).position.y = 2.75;
+
+  // Roof (4-sided pyramid)
+  mesh(CYL(0.4,6,2.8,4), dkRed, g).position.set(0,6.5,0).rotation || null;
+  g.children[g.children.length-1].rotation.y = Math.PI/4;
+
+  // Stack
+  mesh(CYL(0.45,0.55,2.5,8), M(0x992200), g).position.set(2.5,8,1.5);
+
+  // Front entrance bump
+  mesh(BOX(4.5,4.5,3), M(0xBB3300), g).position.set(0,2.25,5.5);
+  const entRoof = mesh(CYL(0.1,2.8,2.2,4), dkRed, g);
+  entRoof.position.set(0,5.3,5.5); entRoof.rotation.y = Math.PI/4;
+
+  // Door
+  mesh(BOX(2,3,0.22), M(0x4A2A10), g).position.set(0,1.5,7.12);
+
+  // Windows
+  [[-3.5,3.8],[-3.5,1.5],[3.5,3.8],[3.5,1.5]].forEach(([wx,wy]) => {
+    mesh(BOX(1.6,1.3,0.18), winMat, g).position.set(wx,wy,4.12);
+    mesh(BOX(1.95,1.6,0.12), woodMat, g).position.set(wx,wy,4.18);
+  });
+
+  // Sign
+  mesh(BOX(5.5,1.6,0.18), M(0xFFEE44,{emissive:0x886600,emissiveIntensity:0.4}), g).position.set(0,6.2,4.15);
+  mesh(CYL(0.12,0.12,2,8), woodMat, g).position.set(0,5,4.15);
+
+  // Anchor
+  const anc = [
+    [CYL(0.09,0.09,1.8,8), M(0x222222), [-4.5,3.5,4.18], [0,0,0]],
+    [CYL(0.09,0.09,1.0,8), M(0x222222), [-4.5,4.3,4.18], [0,0,Math.PI/2]],
+    [SPH(0.25,8,8),         M(0x222222), [-4.5,2.6,4.18], [0,0,0]],
+  ];
+  anc.forEach(([geo,mat,pos,rot]) => {
+    const m = mesh(geo,mat,g);
+    m.position.set(...pos); m.rotation.set(...rot);
+  });
+
+  // Interior light
+  const il = new THREE.PointLight(0xFFAA44, 2.5, 12);
+  il.position.set(0,3,0); g.add(il);
+  return g;
+}
+
+// ─────────────────────────────────────────────
+// CHARACTERS
+// ─────────────────────────────────────────────
+function buildSpongeBob(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+  const yellow = M(0xFFDD44);
+  const white  = M(0xFFFFFF);
+  const blue   = M(0x4499DD);
+  const black  = M(0x111111);
+  const brown  = M(0x8B5E14);
+  const red    = M(0xCC2200);
+
+  // Legs & shoes
+  [-0.55,0.55].forEach(lx => {
+    mesh(BOX(0.55,0.9,0.55), yellow, g).position.set(lx,0.45,0);
+    const shoe = mesh(BOX(0.65,0.32,0.9), black, g);
+    shoe.position.set(lx,-0.07,0.12);
+  });
+
+  // Pants
+  mesh(BOX(2.0,0.75,1.3), brown, g).position.y = 0.95;
+
+  // Shirt
+  mesh(BOX(2.0,1.3,1.3), white, g).position.y = 1.9;
+
+  // Tie
+  mesh(BOX(0.28,0.85,0.12), red, g).position.set(0,1.6,0.66);
+
+  // Body (yellow exposed)
+  mesh(BOX(2.0,2.3,1.3), yellow, g).position.y = 1.95;
+  // slightly smaller white shirt overlay so yellow peeks out
+  mesh(BOX(1.85,1.2,1.32), white, g).position.y = 1.95;
+
+  // Arms
+  [-1.12,1.12].forEach(ax => {
+    mesh(BOX(0.38,1.1,0.38), yellow, g).position.set(ax,1.9,0);
+    // Hand
+    mesh(SPH(0.28,8,8), yellow, g).position.set(ax,1.28,0);
+  });
+
+  // Neck
+  mesh(CYL(0.5,0.55,0.4,8), yellow, g).position.y = 3.25;
+
+  // Head
+  mesh(BOX(1.85,1.6,1.4), yellow, g).position.y = 4.2;
+
+  // Eyes
+  [-0.5,0.5].forEach(ex => {
+    mesh(SPH(0.52,14,14), white, g).position.set(ex,4.35,0.72).matrixAutoUpdate=false||null;
+    const ew = mesh(SPH(0.52,14,14), white, g);
+    ew.position.set(ex,4.35,0.72); ew.scale.z=0.42;
+
+    const eb = mesh(SPH(0.32,12,12), blue, g);
+    eb.position.set(ex,4.35,0.9); eb.scale.z=0.38;
+
+    const ep = mesh(SPH(0.15,8,8), black, g);
+    ep.position.set(ex+0.06,4.28,1.0); ep.scale.z=0.35;
+
+    // Eyelid shine
+    const sh = mesh(SPH(0.06,6,6), white, g);
+    sh.position.set(ex+0.18,4.52,1.0);
+
+    // Eyelashes
+    [-0.25,0,0.25].forEach((lx,i) => {
+      const lash = mesh(CYL(0.03,0.015,0.32,6), black, g);
+      lash.position.set(ex+lx, 4.85, 0.78);
+      lash.rotation.z = (lx)*0.5;
+      lash.rotation.x = -0.3;
+    });
+  });
+
+  // Nose
+  mesh(SPH(0.14,8,8), yellow, g).position.set(0,4.05,0.76);
+
+  // Mouth & teeth
+  mesh(BOX(0.8,0.1,0.12), M(0xCC4422), g).position.set(0,3.78,0.73);
+  [-0.2,0.2].forEach(tx => {
+    mesh(BOX(0.18,0.3,0.09), white, g).position.set(tx,3.66,0.74);
+  });
+
+  // Freckles
+  [-0.65,0.65].forEach(fx => {
+    for(let fi=0;fi<3;fi++) {
+      mesh(SPH(0.06,6,6), M(0xCC9922), g).position.set(fx+(fi-1)*0.14, 3.98, 0.72);
+    }
+  });
+
+  return g;
+}
+
+function buildPatrick(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+  const pink = M(0xFF88AA,{roughness:0.8});
+
+  // Legs
+  [-0.6,0.6].forEach(lx => {
+    mesh(SPH(0.6,10,8), pink, g).position.set(lx,0.5,0).matrixAutoUpdate=false||null;
+    const leg = mesh(SPH(0.6,10,8), pink, g);
+    leg.position.set(lx,0.5,0); leg.scale.set(0.85,1.2,0.85);
+  });
+
+  // Shorts
+  mesh(CYL(1.65,2.0,1.1,12), M(0x33AA44), g).position.y = 1.25;
+  for(let i=0;i<6;i++) {
+    const ang=(i/6)*Math.PI*2;
+    mesh(SPH(0.22,8,8), M(0xAA44AA), g).position.set(Math.cos(ang)*1.7,1.25,Math.sin(ang)*1.7);
+  }
+
+  // Body blob
+  const body = mesh(SPH(1.7,14,12), pink, g);
+  body.position.y = 2.4; body.scale.set(1.25,1.0,1.2);
+
+  // Belly
+  const belly = mesh(SPH(1.3,12,10), M(0xFF99BB,{roughness:0.75}), g);
+  belly.position.set(0,2.2,0.6); belly.scale.set(1.0,0.8,0.5);
+
+  // Head
+  const head = mesh(SPH(1.3,14,12), pink, g);
+  head.position.y = 3.7; head.scale.set(1.15,1.0,1.1);
+
+  // Eyes
+  [-0.48,0.48].forEach(ex => {
+    const ew = mesh(SPH(0.35,12,12), M(0xFFFFFF), g);
+    ew.position.set(ex,3.85,1.2); ew.scale.z=0.45;
+    const ep = mesh(SPH(0.18,8,8), M(0x111111), g);
+    ep.position.set(ex,3.78,1.38); ep.scale.z=0.38;
+  });
+
+  // Dopey mouth
+  const mouth = mesh(BOX(1.1,0.12,0.12), M(0xCC5566), g);
+  mouth.position.set(0,3.4,1.25); mouth.rotation.z=0.12;
+
+  // Arms
+  [-1.65,1.65].forEach((ax,i) => {
+    const arm = mesh(SPH(0.6,10,8), pink, g);
+    arm.position.set(ax,2.6,0); arm.scale.set(0.65,0.65,1.1);
+  });
+
+  return g;
+}
+
+function buildSquidward(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+  const teal  = M(0x4AADA8,{roughness:0.75});
+  const brown = M(0x8B6914);
+
+  // Tentacle legs
+  for(let i=0;i<4;i++) {
+    const ang=(i/4)*Math.PI*1.5 - Math.PI*0.25 + (i%2)*0.4;
+    const leg = mesh(CYL(0.22,0.08,1.8,6), teal, g);
+    leg.position.set(Math.cos(ang)*0.6,0.6,Math.sin(ang)*0.6);
+    leg.rotation.z = Math.cos(ang)*0.25;
+    leg.rotation.x = Math.sin(ang)*0.25;
+  }
+
+  // Body
+  mesh(CYL(1.0,1.2,2.8,12), teal, g).position.y = 2.1;
+  mesh(CYL(1.05,1.25,1.8,12), brown, g).position.y = 2.1;
+
+  // Head (elongated oval)
+  const head = mesh(SPH(1.35,16,14), teal, g);
+  head.position.y = 4.8; head.scale.set(0.95,1.5,0.95);
+
+  // Nose (long droopy)
+  const nose = mesh(SPH(0.55,10,10), M(0x3D9490), g);
+  nose.position.set(0,4.5,1.25); nose.scale.set(0.7,2.2,0.65);
+
+  // Eyes
+  [-0.52,0.52].forEach(ex => {
+    const ew = mesh(SPH(0.42,12,12), M(0xEEEEEE), g);
+    ew.position.set(ex,5.4,0.88); ew.scale.z=0.42;
+    const ep = mesh(SPH(0.22,8,8), M(0x2A1000), g);
+    ep.position.set(ex,5.3,1.05); ep.scale.z=0.38;
+    // Annoyed brow
+    const brow = mesh(BOX(0.5,0.1,0.1), M(0x2A1000), g);
+    brow.position.set(ex,5.88,1.0); brow.rotation.z = ex>0?0.35:-0.35;
+  });
+
+  // Frown
+  mesh(BOX(0.6,0.1,0.1), M(0x222222), g).position.set(0,4.22,1.1);
+
+  // Arms (crossed-ish)
+  [-1.1,1.1].forEach((ax,i) => {
+    const arm = mesh(CYL(0.22,0.18,1.6,8), teal, g);
+    arm.position.set(ax,2.8,0.4); arm.rotation.z=ax*0.22; arm.rotation.x=0.4;
+    mesh(SPH(0.28,8,8), teal, g).position.set(ax*1.05+ax*0.3,2.1,0.7);
+  });
+
+  return g;
+}
+
+function buildGary(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+  const blue = M(0x6688AA,{roughness:0.8});
+
+  // Body
+  const body = mesh(SPH(0.65,12,10), blue, g);
+  body.position.set(0,0.45,0); body.scale.set(1.5,0.58,1.1);
+
+  // Shell
+  const shellG = G(); shellG.position.set(-0.25,0.65,-0.05); g.add(shellG);
+  for(let i=0;i<5;i++) {
+    const r=0.58-i*0.08;
+    const seg = mesh(TOR(r,r*0.36,6,18), M(i%2===0?0xFF8877:0xFFAA99), shellG);
+    seg.position.y = i*0.16; seg.rotation.x = Math.PI/2;
+  }
+  mesh(SPH(0.1,8,8), M(0xFF7766), shellG).position.y = 0.82;
+
+  // Eye stalks
+  [-0.28,0.28].forEach(ex => {
+    mesh(CYL(0.065,0.065,0.55,6), blue, g).position.set(ex,0.95,0.52);
+    const ew = mesh(SPH(0.18,10,10), M(0xFFFFFF), g);
+    ew.position.set(ex,1.3,0.52);
+    const ep = mesh(SPH(0.09,8,8), M(0x111133), g);
+    ep.position.set(ex,1.3,0.64);
+  });
+
+  return g;
+}
+
+function buildJellyfish(px, py, pz) {
+  const g = G(); scene.add(g); g.position.set(px, py, pz);
+
+  const jellyMat = new THREE.MeshStandardMaterial({
+    color:0xFF88BB, transparent:true, opacity:0.55,
+    roughness:0.1, metalness:0.05,
+    emissive:0xFF44AA, emissiveIntensity:0.35
+  });
+  const bell = mesh(SPH(1.3,16,12), jellyMat, g);
+  bell.scale.y = 0.6;
+
+  // Inner dome glow
+  const inner = mesh(SPH(1.1,14,10), new THREE.MeshStandardMaterial({
+    color:0xFFAACC, transparent:true, opacity:0.25,
+    emissive:0xFF66BB, emissiveIntensity:0.5, side:THREE.BackSide
+  }), g);
+  inner.scale.y=0.55;
+
+  // Tentacles
+  for(let i=0;i<10;i++) {
+    const ang=(i/10)*Math.PI*2;
+    const tendMat = new THREE.MeshStandardMaterial({color:0xFF99CC,transparent:true,opacity:0.4});
+    for(let j=0;j<4;j++) {
+      const t = mesh(CYL(0.04-j*0.005,0.025,1.2,5), tendMat, g);
+      const wobble = j*0.12;
+      t.position.set(
+        Math.cos(ang)*(0.6+wobble), -0.9-j*1.1, Math.sin(ang)*(0.6+wobble)
+      );
+      t.rotation.z = Math.cos(ang)*0.18;
+      t.rotation.x = Math.sin(ang)*0.18;
+    }
+  }
+
+  const glow = new THREE.PointLight(0xFF88BB, 0.9, 6);
+  g.add(glow);
+  return g;
+}
+
+// ─────────────────────────────────────────────
+// ENVIRONMENT DETAILS
+// ─────────────────────────────────────────────
+function buildCoral(px, pz, color) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+  const cm = M(color);
+  const branches = 3 + Math.floor(Math.random()*4);
+  for(let i=0;i<branches;i++) {
+    const ang=(i/branches)*Math.PI*2+Math.random()*0.8;
+    const h=1.4+Math.random()*2.5;
+    const br = mesh(CYL(0.09,0.28,h,6), cm, g);
+    br.position.set(Math.cos(ang)*0.55, h/2, Math.sin(ang)*0.55);
+    br.rotation.z=Math.cos(ang)*0.35; br.rotation.x=Math.sin(ang)*0.35;
+    mesh(SPH(0.24,8,8), cm, g).position.set(
+      Math.cos(ang)*(0.55+Math.sin(ang)*0.3*h*0.4), h+0.1, Math.sin(ang)*(0.55+Math.cos(ang)*0.3*h*0.4)
+    );
+  }
+  g.castShadow=true;
+  return g;
+}
+
+const seaweeds = [];
+function buildSeaweed(px, pz) {
+  const g = G(); scene.add(g); g.position.set(px, 0, pz);
+  const segs = 5+Math.floor(Math.random()*5);
+  const h = 0.85+Math.random()*2.2;
+  let py = 0;
+  for(let i=0;i<segs;i++) {
+    const colors = [0x1A7A30, 0x258A3C, 0x1D6B28, 0x2E9440];
+    const sw = mesh(BOX(0.14,h,0.06), M(colors[Math.floor(Math.random()*4)],{roughness:0.85}), g);
+    sw.position.set((Math.random()-0.5)*0.3, py+h*0.5, (Math.random()-0.5)*0.12);
+    sw.rotation.z=(Math.random()-0.5)*0.5; sw.rotation.x=(Math.random()-0.5)*0.3;
+    py += h*0.82;
+  }
+  seaweeds.push(g);
+  return g;
+}
+
+function buildRock(px, pz) {
+  const rg = SPH(0.9+Math.random()*1.1, 9, 7);
+  const rp2 = rg.attributes.position;
+  for(let i=0;i<rp2.count;i++) {
+    rp2.setX(i, rp2.getX(i)+(Math.random()-0.5)*0.35);
+    rp2.setY(i, rp2.getY(i)+(Math.random()-0.5)*0.25);
+    rp2.setZ(i, rp2.getZ(i)+(Math.random()-0.5)*0.35);
+  }
+  rg.computeVertexNormals();
+  const r = mesh(rg, M(0x888888+(Math.random()*0x1A1A1A|0),{roughness:0.96}));
+  r.position.set(px,0.35,pz);
+  r.rotation.y=Math.random()*Math.PI;
+  r.scale.y=0.55+Math.random()*0.45;
+  return r;
+}
+
+function buildPath() {
+  const pm = new THREE.MeshStandardMaterial({color:0xC8A060,roughness:0.92});
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-18,-0.05,-5),
+    new THREE.Vector3(-10,-0.05,2),
+    new THREE.Vector3(0,-0.05,-2),
+    new THREE.Vector3(10,-0.05,2),
+    new THREE.Vector3(18,-0.05,-4),
+  ]);
+  const pts = curve.getPoints(28);
+  pts.forEach((pt,i) => {
+    if(i%2!==0) return;
+    const stone = mesh(CYL(0.75+Math.random()*0.3,0.85+Math.random()*0.3,0.18,8), pm);
+    stone.position.set(pt.x,0.08,pt.z);
+    stone.rotation.y=Math.random()*Math.PI;
+  });
+}
+
+// ─────────────────────────────────────────────
+// POPULATE
+// ─────────────────────────────────────────────
+const sbHouse  = buildPineappleHouse(-14, -5);
+const sqHouse  = buildSquidwardHouse( 0,  -7);
+const patRock  = buildPatrickRock(   14,  -4);
+const krabHouse= buildKrustyKrab(    -1,  16);
+
+const spongebob = buildSpongeBob(-10,  3);
+const patrick   = buildPatrick(  11,   3);
+const squidward = buildSquidward( 3.5, 0.5);
+const gary      = buildGary(    -12,   7);
+
+const jellyfish = [
+  buildJellyfish(-6,  18, -3),
+  buildJellyfish( 9,  24, -9),
+  buildJellyfish(17,  16,  7),
+];
+
+buildPath();
+
+const coralColors = [0xFF5533,0xFF2255,0xFF8833,0xFF33AA,0xFF6611,0xFF4477];
+for(let i=0;i<25;i++) {
+  const ang=Math.random()*Math.PI*2, r=16+Math.random()*28;
+  buildCoral(Math.cos(ang)*r, Math.sin(ang)*r, coralColors[Math.floor(Math.random()*coralColors.length)]);
+}
+for(let i=0;i<50;i++) {
+  const ang=Math.random()*Math.PI*2, r=6+Math.random()*40;
+  buildSeaweed(Math.cos(ang)*r, Math.sin(ang)*r);
+}
+for(let i=0;i<35;i++) {
+  const ang=Math.random()*Math.PI*2, r=4+Math.random()*45;
+  buildRock(Math.cos(ang)*r, Math.sin(ang)*r);
+}
+
+// ─────────────────────────────────────────────
+// ANIMATION
+// ─────────────────────────────────────────────
+const clock = new THREE.Clock();
+let frame = 0;
+
+function animBubbles() {
+  for(let i=0;i<BUBBLE_COUNT;i++) {
+    bPos[i*3]   += bVel[i*3]   + Math.sin(frame*0.04+bPhs[i])*0.006;
+    bPos[i*3+1] += bVel[i*3+1];
+    bPos[i*3+2] += bVel[i*3+2] + Math.cos(frame*0.035+bPhs[i])*0.006;
+    if(bPos[i*3+1]>62) {
+      bPos[i*3]   = (Math.random()-0.5)*110;
+      bPos[i*3+1] = -3;
+      bPos[i*3+2] = (Math.random()-0.5)*110;
+    }
+  }
+  bubbleGeo.attributes.position.needsUpdate = true;
+}
+
+function animSeaweed(t) {
+  seaweeds.forEach((sw,si) => {
+    sw.children.forEach((seg,ji) => {
+      seg.rotation.z = Math.sin(t*0.75+si*0.65+ji*0.35)*(0.12+ji*0.045);
+      seg.rotation.x = Math.cos(t*0.55+si*0.5+ji*0.25)*0.04;
+    });
+  });
+}
+
+function animCharacters(t) {
+  // SpongeBob - breathing bounce
+  spongebob.position.y = Math.sin(t*1.8)*0.12;
+  spongebob.rotation.y = Math.sin(t*0.35)*0.08;
+
+  // Patrick - slow sway
+  patrick.rotation.z = Math.sin(t*0.55)*0.09;
+  patrick.position.y = Math.sin(t*0.9)*0.06;
+
+  // Squidward - head shake
+  squidward.rotation.y = Math.sin(t*1.3)*0.14;
+  squidward.position.y = Math.sin(t*0.4)*0.04;
+
+  // Gary - crawl
+  const gt = t * 0.28;
+  gary.position.x = -12 + Math.sin(gt)*2.5;
+  gary.position.z =   7 + Math.cos(gt*0.7)*1.8;
+  gary.position.y = Math.sin(t*2.2)*0.04;
+  gary.rotation.y = Math.atan2(Math.cos(gt)*2.5*0.28, Math.sin(gt*0.7)*0.7*1.8*0.28) + Math.PI*0.5;
+
+  // Jellyfish
+  jellyfish.forEach((jf,ji) => {
+    jf.position.y  = (18+ji*7) + Math.sin(t*0.55+ji*2.1)*2.2;
+    jf.position.x += Math.sin(t*0.18+ji*1.3)*0.018;
+    jf.position.z += Math.cos(t*0.14+ji*1.8)*0.018;
+    if(Math.abs(jf.position.x)>32) jf.position.x*=-0.95;
+    if(Math.abs(jf.position.z)>32) jf.position.z*=-0.95;
+    // Bell pulse
+    const pulse = 0.6 + Math.sin(t*1.8+ji)*0.08;
+    jf.children[0].scale.set(1+Math.sin(t*1.8+ji)*0.06, pulse, 1+Math.sin(t*1.8+ji)*0.06);
+    jf.children[1].scale.set(1+Math.sin(t*1.8+ji)*0.05, pulse*0.9, 1+Math.sin(t*1.8+ji)*0.05);
+  });
+}
+
+// ─────────────────────────────────────────────
+// RESIZE
+// ─────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+// ─────────────────────────────────────────────
+// RENDER LOOP
+// ─────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  frame++;
+
+  causticsMat.uniforms.time.value = t;
+  underwaterPass.uniforms.time.value = t;
+
+  animBubbles();
+  animSeaweed(t);
+  animCharacters(t);
+
+  controls.update();
+  composer.render();
+}
+
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,1005 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fable 5</title>
+<style>
+  :root{
+    --bg:#0b1410; --panel:#12211a; --panel2:#0e1a14; --line:#22362b;
+    --ink:#e6f1e9; --muted:#8fae9c; --accent:#5ad1a8;
+    --food:#ff7a5c; --prey:#57b6ff; --pred:#ff5d6c; --warn:#ffcf5b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  .app{
+    display:grid; height:100vh;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: 48px 1fr 210px;
+    grid-template-areas:"top side" "world side" "charts side";
+    gap:1px; background:var(--line);
+  }
+  header{grid-area:top; background:var(--panel); display:flex; align-items:center; gap:16px; padding:0 14px;}
+  header h1{font-size:15px; margin:0; letter-spacing:.3px; font-weight:700}
+  header h1 .dot{color:var(--accent)}
+  header h1 small{color:var(--muted); font-weight:500; font-size:11px}
+  .readouts{display:flex; gap:14px; margin-left:6px; flex-wrap:wrap; overflow:hidden}
+  .ro{display:flex; flex-direction:column; line-height:1.05}
+  .ro b{font-size:13px; font-variant-numeric:tabular-nums}
+  .ro span{font-size:9.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px}
+  .ro.prey b{color:var(--prey)} .ro.pred b{color:var(--pred)} .ro.food b{color:var(--food)}
+  .spacer{flex:1}
+  .worldwrap{grid-area:world; position:relative; background:#0a140e; overflow:hidden}
+  #world{position:absolute; inset:0; width:100%; height:100%; display:block; cursor:grab}
+  #world:active{cursor:grabbing}
+  .charts{grid-area:charts; background:var(--panel2); display:grid; grid-template-columns: 2fr 1fr 1fr; gap:1px}
+  .chartbox{background:var(--panel2); position:relative; min-width:0}
+  .chartbox canvas{position:absolute; inset:0; width:100%; height:100%}
+  .chartbox .lbl{position:absolute; top:4px; left:8px; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; z-index:2; pointer-events:none}
+  aside{grid-area:side; background:var(--panel); overflow-y:auto; overflow-x:hidden}
+  aside::-webkit-scrollbar{width:9px} aside::-webkit-scrollbar-thumb{background:#274436; border-radius:6px}
+  .controls{padding:10px 12px 40px}
+  .row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px}
+  button{
+    background:#1c3227; color:var(--ink); border:1px solid #2c4838; border-radius:7px;
+    padding:7px 10px; font-size:12px; cursor:pointer; flex:1; min-width:52px;
+  }
+  button:hover{background:#244233}
+  button.primary{background:var(--accent); color:#052018; border-color:transparent; font-weight:700}
+  button.primary:hover{filter:brightness(1.08)}
+  button.active{outline:2px solid var(--accent); outline-offset:-2px}
+  .presetrow button{flex:1 1 46%; font-size:11px; padding:6px 4px}
+  .speedrow button{flex:1; padding:6px 2px; font-size:11px}
+  .grp{border:1px solid var(--line); border-radius:9px; margin:10px 0; overflow:hidden}
+  .grp>h3{margin:0; font-size:11px; text-transform:uppercase; letter-spacing:.7px; color:var(--muted);
+    background:#0e1a14; padding:7px 10px; cursor:pointer; display:flex; justify-content:space-between}
+  .grp .body{padding:6px 10px 10px}
+  .grp.collapsed .body{display:none}
+  .headline{border-color:#2a4a3f}
+  .headline>h3{color:var(--accent)}
+  .ctl{margin:9px 0}
+  .ctl .top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px}
+  .ctl label{font-size:11.5px; color:#cfe0d5}
+  .ctl .val{font-size:11px; color:var(--accent); font-variant-numeric:tabular-nums}
+  .ctl input[type=range]{width:100%; margin:0; accent-color:var(--accent); height:16px}
+  .ctl .hint{font-size:9.5px; color:var(--muted); margin-top:1px}
+  .inspect{border:1px solid var(--line); border-radius:9px; padding:10px; margin:10px 0; font-size:12px}
+  .inspect h3{margin:0 0 6px; font-size:11px; text-transform:uppercase; color:var(--muted); letter-spacing:.6px}
+  .inspect table{width:100%; border-collapse:collapse}
+  .inspect td{padding:2px 0; color:#cfe0d5}
+  .inspect td:last-child{text-align:right; font-variant-numeric:tabular-nums; color:var(--ink)}
+  .inspect .none{color:var(--muted)}
+  .banner{position:absolute; top:10px; left:50%; transform:translateX(-50%); background:#1c3227cc;
+    border:1px solid #2c4838; padding:6px 14px; border-radius:20px; font-size:12px; color:var(--warn);
+    backdrop-filter:blur(4px); z-index:5; pointer-events:none}
+  .camhud{position:absolute; bottom:6px; right:8px; font-size:10px; color:var(--muted); z-index:2; text-align:right; line-height:1.5}
+  .legend{display:flex; gap:12px; font-size:10px; color:var(--muted); position:absolute; bottom:6px; left:8px; z-index:2}
+  .legend i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:3px; vertical-align:-1px}
+  .tiny{font-size:10px; color:var(--muted)}
+  /* modal */
+  .modal{position:fixed; inset:0; background:#04070bd0; z-index:50; display:none; align-items:center; justify-content:center}
+  .modal.show{display:flex}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; width:min(900px,92vw);
+    max-height:90vh; overflow:auto; padding:20px 22px}
+  .card h2{margin:0 0 4px; font-size:18px}
+  .verdict{color:var(--accent); font-size:13px; margin-bottom:14px}
+  .summarycanvas{width:100%; height:230px; background:var(--panel2); border-radius:8px; display:block; margin-bottom:14px}
+  .statgrid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px}
+  .stat{background:var(--panel2); border-radius:8px; padding:8px 10px}
+  .stat b{display:block; font-size:16px; font-variant-numeric:tabular-nums}
+  .stat span{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px}
+  .events{font-size:12px; color:#cfe0d5; max-height:130px; overflow:auto}
+  .events div{padding:2px 0; border-bottom:1px solid var(--line)}
+  .closebtn{float:right}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Fable 5 <span class="dot">·</span> Critter Meadow <small>a living map of bubble-folk, hungry hunters &amp; fruit trees</small></h1>
+    <div class="readouts" id="readouts"></div>
+    <div class="spacer"></div>
+    <div class="tiny" id="fps">–</div>
+  </header>
+
+  <div class="worldwrap">
+    <canvas id="world"></canvas>
+    <div class="banner" id="banner" style="display:none"></div>
+    <div class="legend">
+      <span><i style="background:var(--food)"></i>fruit</span>
+      <span><i style="background:var(--prey)"></i>bubble-folk</span>
+      <span><i style="background:var(--pred)"></i>hunters</span>
+    </div>
+    <div class="camhud" id="camhud"></div>
+  </div>
+
+  <div class="charts">
+    <div class="chartbox"><div class="lbl">Populations over time</div><canvas id="popchart"></canvas></div>
+    <div class="chartbox"><div class="lbl">Phase space (prey→pred)</div><canvas id="phasechart"></canvas></div>
+    <div class="chartbox"><div class="lbl">Avg traits (prey)</div><canvas id="traitchart"></canvas></div>
+  </div>
+
+  <aside>
+    <div class="controls">
+      <div class="row">
+        <button class="primary" id="btnPlay">▶ Play</button>
+        <button id="btnStep">Step</button>
+        <button id="btnReset">Reset</button>
+      </div>
+      <div class="row speedrow" id="speedrow"></div>
+      <div class="row">
+        <button id="btnRandom">🎲 Randomize</button>
+        <button id="btnFit">🎥 Reset view</button>
+        <button id="btnSummary">📊 Summary</button>
+      </div>
+      <div class="tiny" style="margin:-4px 0 8px">Drag to orbit · scroll to zoom · click a critter to inspect · presets:</div>
+      <div class="row presetrow" id="presetrow"></div>
+
+      <div class="inspect" id="inspect">
+        <h3>Inspector</h3>
+        <div class="none">Click a critter to inspect it.</div>
+      </div>
+
+      <div id="controlHost"></div>
+    </div>
+  </aside>
+</div>
+
+<div class="modal" id="modal">
+  <div class="card">
+    <button class="closebtn" id="btnCloseModal">✕ Close</button>
+    <h2>Run Summary</h2>
+    <div class="verdict" id="verdict"></div>
+    <canvas class="summarycanvas" id="summarycanvas"></canvas>
+    <div class="statgrid" id="statgrid"></div>
+    <h3 style="color:var(--muted);font-size:11px;letter-spacing:.6px;text-transform:uppercase">Events</h3>
+    <div class="events" id="eventlist"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   Fable 5 — Critter Meadow (2D living-ecosystem simulator)
+   Single-file, vanilla JS + Canvas. Three layers, kept separate:
+     (1) MODEL   — seeded RNG, fruit trees, cute agents, energy economy
+     (2) RENDER  — top-down map, trees & faced critters, 2D pan/zoom camera; charts
+     (3) UI      — dashboard, presets, loop, inspector, summary
+   ========================================================================== */
+
+/* ---------- seeded RNG (mulberry32) ---------- */
+function makeRng(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- 2D spatial hash grid ---------- */
+class Grid {
+  constructor(w, h, cell){
+    this.cell = cell;
+    this.cols = Math.max(1, Math.ceil(w / cell));
+    this.rows = Math.max(1, Math.ceil(h / cell));
+    this.buckets = new Array(this.cols * this.rows);
+    for (let i = 0; i < this.buckets.length; i++) this.buckets[i] = [];
+  }
+  clear(){ for (let i = 0; i < this.buckets.length; i++) this.buckets[i].length = 0; }
+  insert(item){
+    let cx = (item.x/this.cell)|0, cy = (item.y/this.cell)|0;
+    if (cx<0) cx=0; else if (cx>=this.cols) cx=this.cols-1;
+    if (cy<0) cy=0; else if (cy>=this.rows) cy=this.rows-1;
+    this.buckets[cy*this.cols+cx].push(item);
+  }
+  nearest(x, y, radius, ok){
+    const r = Math.ceil(radius/this.cell);
+    const bx=(x/this.cell)|0, by=(y/this.cell)|0;
+    let best=null, bestD=radius*radius;
+    for (let gy=by-r; gy<=by+r; gy++){ if(gy<0||gy>=this.rows) continue;
+      for (let gx=bx-r; gx<=bx+r; gx++){ if(gx<0||gx>=this.cols) continue;
+        const b=this.buckets[gy*this.cols+gx];
+        for (let k=0;k<b.length;k++){ const it=b[k];
+          if (ok ? !ok(it) : it.dead) continue;
+          const dx=it.x-x, dy=it.y-y, d=dx*dx+dy*dy;
+          if (d<bestD){ bestD=d; best=it; } } } }
+    return best;
+  }
+}
+
+/* ---------- tunable parameters (flat, all slider-backed) ---------- */
+const DEFAULTS = {
+  // world / map
+  worldW: 1180, worldH: 760, numTrees: 220, seed: 1337,
+  // FOOD (fruit on trees) — headline: foodGrowth
+  foodGrowth: 0.022, foodCap: 1.5, regrowthDelay: 35, foodEnergy: 44, biteSize: 0.1,
+  // eating (handling time — creatures pause to feed)
+  preyEatTime: 16, predEatTime: 14,
+  // REPRODUCTION — headline: fertility
+  fertility: 1.0,
+  // KILLER — headline: catchChance
+  predCatch: 0.18,
+  // prey (bubble-folk)
+  preyInit: 300, preyStartE: 40, preyMetab: 0.08, preyMoveCost: 0.02,
+  preySpeed: 1.45, preyVision: 100, preyRepro: 80, preyReproChance: 0.06,
+  // predator (hunters)
+  predInit: 34, predStartE: 90, predMetab: 0.20, predMoveCost: 0.03,
+  predSpeed: 1.85, predHunt: 130, predEnergy: 58, predRepro: 140, predReproChance: 0.05,
+  // evolution
+  mutation: 0.06, geneMax: 1.8, maxAgents: 6000,
+};
+
+/* ---------- the simulation model (2D, fruit trees) ---------- */
+class Sim {
+  constructor(params){ this.P = Object.assign({}, params); this.reset(); }
+  reset(params){
+    if (params) this.P = Object.assign({}, params);
+    const P = this.P;
+    this.rng = makeRng(P.seed);
+    this.tick = 0;
+    this.W = P.worldW; this.H = P.worldH;
+    // trees (fruit sources) placed with a margin
+    this.trees = [];
+    const m = 40;
+    for (let i = 0; i < P.numTrees; i++){
+      this.trees.push({
+        x: m + this.rng()*(this.W-2*m),
+        y: m + this.rng()*(this.H-2*m),
+        r: 15 + this.rng()*10,             // canopy radius (visual + eat zone)
+        fruit: P.foodCap*(0.4 + 0.6*this.rng()),
+        cd: 0,
+        sway: this.rng()*6.28,
+      });
+    }
+    this.treeGrid = new Grid(this.W, this.H, 70);
+    for (const t of this.trees) this.treeGrid.insert(t);
+    this.prey = []; this.pred = []; this.nextId = 1;
+    for (let i=0;i<P.preyInit;i++) this.prey.push(this.makePrey());
+    for (let i=0;i<P.predInit;i++) this.pred.push(this.makePred());
+    this.preyGrid = new Grid(this.W, this.H, 46);
+    this.predGrid = new Grid(this.W, this.H, 46);
+    this.births=0; this.deathsStarve=0; this.deathsPred=0;
+    this.lifespanSum=0; this.lifespanCount=0;
+    this.hist = { step:1, tick:[], prey:[], pred:[], food:[], aspeed:[], avision:[] };
+    this.HIST_CAP = 24000;
+    this.events = [];
+    this.prevPreyAlive = P.preyInit>0; this.prevPredAlive = P.predInit>0;
+    this.recordSample();
+  }
+  fruitOk(t){ return t.fruit > 0.06; }
+  makePrey(x,y,energy,gSpeed,gVision){
+    return { id:this.nextId++, kind:0, dead:false,
+      x: x!==undefined?x:this.rng()*this.W, y: y!==undefined?y:this.rng()*this.H,
+      vx:(this.rng()*2-1), vy:(this.rng()*2-1),
+      energy: energy!==undefined?energy:this.P.preyStartE, age:0, eatT:0,
+      gSpeed: gSpeed!==undefined?gSpeed:1, gVision: gVision!==undefined?gVision:1,
+      face: this.rng() };
+  }
+  makePred(x,y,energy,gSpeed,gHunt){
+    return { id:this.nextId++, kind:1, dead:false,
+      x: x!==undefined?x:this.rng()*this.W, y: y!==undefined?y:this.rng()*this.H,
+      vx:(this.rng()*2-1), vy:(this.rng()*2-1),
+      energy: energy!==undefined?energy:this.P.predStartE, age:0, feedT:0,
+      gSpeed: gSpeed!==undefined?gSpeed:1, gHunt: gHunt!==undefined?gHunt:1,
+      face: this.rng() };
+  }
+  mutate(g){ const m=this.P.mutation, hi=this.P.geneMax||1.8; let v=g*(1+(this.rng()*2-1)*m); return v<0.4?0.4:(v>hi?hi:v); }
+
+  step(){
+    const P=this.P, W=this.W, H=this.H, rng=this.rng;
+    this.tick++;
+
+    // fruit regrowth with delay
+    for (let i=0;i<this.trees.length;i++){
+      const t=this.trees[i];
+      if (t.cd>0) t.cd--;
+      else if (t.fruit<P.foodCap){ t.fruit += P.foodGrowth; if(t.fruit>P.foodCap) t.fruit=P.foodCap; }
+    }
+
+    // rebuild agent grids
+    const preyGrid=this.preyGrid, predGrid=this.predGrid;
+    preyGrid.clear(); predGrid.clear();
+    for (let i=0;i<this.prey.length;i++) preyGrid.insert(this.prey[i]);
+    for (let i=0;i<this.pred.length;i++) predGrid.insert(this.pred[i]);
+    const okFruit = t => t.fruit > 0.06;
+
+    // ---- PREY: flee predators, seek fruit trees, graze, reproduce, starve ----
+    const newPrey=[];
+    for (let i=0;i<this.prey.length;i++){
+      const a=this.prey[i]; if(a.dead) continue;
+      a.age++;
+      const speed=P.preySpeed*a.gSpeed, vision=P.preyVision*a.gVision;
+      const threat=predGrid.nearest(a.x,a.y,vision);
+      let eating=false, ax=0, ay=0;
+      if (threat){ a.eatT=0; const dx=a.x-threat.x, dy=a.y-threat.y, d=Math.hypot(dx,dy)||1; ax=dx/d; ay=dy/d; } // flee, drop food
+      else if (a.eatT>0){ eating=true; a.eatT--; }                                                             // mid-munch: stay put
+      else {
+        const tree=this.treeGrid.nearest(a.x,a.y,vision,okFruit);
+        if (tree){ const dx=tree.x-a.x, dy=tree.y-a.y, dd=dx*dx+dy*dy;
+          if (dd < (tree.r+14)*(tree.r+14)){ a.eatT=P.preyEatTime; eating=true; }  // reached a tree → begin feeding bout
+          else { const d=Math.sqrt(dd)||1; ax=dx/d; ay=dy/d; } }
+        else { ax=(rng()*2-1)*0.6; ay=(rng()*2-1)*0.6; }
+      }
+      if (eating){ a.vx*=0.35; a.vy*=0.35; }
+      else { const al=Math.hypot(ax,ay)||1; a.vx+=ax/al*0.5; a.vy+=ay/al*0.5;
+        const vl=Math.hypot(a.vx,a.vy)||1; a.vx=a.vx/vl*speed; a.vy=a.vy/vl*speed; }
+      a.x+=a.vx; a.y+=a.vy;
+      if(a.x<0){a.x=0;a.vx=-a.vx;} else if(a.x>W){a.x=W;a.vx=-a.vx;}
+      if(a.y<0){a.y=0;a.vy=-a.vy;} else if(a.y>H){a.y=H;a.vy=-a.vy;}
+
+      let pcost=0.01*a.gVision; pcost += eating ? P.preyMetab*0.7 : (P.preyMetab + P.preyMoveCost*speed*speed);
+      a.energy -= pcost;
+      // munch fruit from the tree we're parked at (only while feeding)
+      if (eating){
+        const et=this.treeGrid.nearest(a.x,a.y,44,okFruit);
+        if (et){ const dx=et.x-a.x, dy=et.y-a.y;
+          if (dx*dx+dy*dy < (et.r+16)*(et.r+16) && et.fruit>0.02){
+            let eaten=P.biteSize; if(eaten>et.fruit) eaten=et.fruit;
+            et.fruit-=eaten; if(et.fruit<0.05) et.cd=P.regrowthDelay; a.energy+=eaten*P.foodEnergy;
+          } else a.eatT=0; }
+        else a.eatT=0;
+      }
+      const maxE=P.preyRepro*1.6; if(a.energy>maxE) a.energy=maxE;
+      if (a.energy<=0){ a.dead=true; this.deathsStarve++; this.lifespanSum+=a.age; this.lifespanCount++; continue; }
+      if (a.energy>=P.preyRepro && (this.prey.length+newPrey.length+this.pred.length)<P.maxAgents && rng()<P.preyReproChance*P.fertility){
+        a.energy*=0.5;
+        newPrey.push(this.makePrey(a.x+(rng()*2-1)*6, a.y+(rng()*2-1)*6, a.energy, this.mutate(a.gSpeed), this.mutate(a.gVision)));
+        this.births++;
+      }
+    }
+
+    // ---- PREDATORS: hunt bubble-folk, catch, reproduce, starve ----
+    const newPred=[];
+    for (let i=0;i<this.pred.length;i++){
+      const a=this.pred[i]; if(a.dead) continue;
+      a.age++;
+      const speed=P.predSpeed*a.gSpeed, hunt=P.predHunt*a.gHunt;
+      let feeding=false, ax=0, ay=0;
+      if (a.feedT>0){ feeding=true; a.feedT--; }                               // devouring a catch: can't hunt
+      else {
+        const target=preyGrid.nearest(a.x,a.y,hunt);
+        if (target){ const dx=target.x-a.x, dy=target.y-a.y, dd=dx*dx+dy*dy, d=Math.sqrt(dd)||1; ax=dx/d; ay=dy/d;
+          if (dd < 130 && rng()<P.predCatch){
+            target.dead=true; this.deathsPred++; this.lifespanSum+=target.age; this.lifespanCount++;
+            a.energy+=P.predEnergy; a.feedT=P.predEatTime; feeding=true;       // caught one → feast (handling time)
+          } }
+        else { ax=(rng()*2-1)*0.7; ay=(rng()*2-1)*0.7; }
+      }
+      if (feeding){ a.vx*=0.3; a.vy*=0.3; }
+      else { const al=Math.hypot(ax,ay)||1; a.vx+=ax/al*0.5; a.vy+=ay/al*0.5;
+        const vl=Math.hypot(a.vx,a.vy)||1; a.vx=a.vx/vl*speed; a.vy=a.vy/vl*speed; }
+      a.x+=a.vx; a.y+=a.vy;
+      if(a.x<0){a.x=0;a.vx=-a.vx;} else if(a.x>W){a.x=W;a.vx=-a.vx;}
+      if(a.y<0){a.y=0;a.vy=-a.vy;} else if(a.y>H){a.y=H;a.vy=-a.vy;}
+      a.energy -= feeding ? P.predMetab*0.8 : (P.predMetab + P.predMoveCost*speed*speed);
+      const maxE=P.predRepro*1.6; if(a.energy>maxE) a.energy=maxE;
+      if (a.energy<=0){ a.dead=true; this.deathsStarve++; this.lifespanSum+=a.age; this.lifespanCount++; continue; }
+      if (a.energy>=P.predRepro && (this.prey.length+this.pred.length+newPred.length)<P.maxAgents && rng()<P.predReproChance*P.fertility){
+        a.energy*=0.5;
+        newPred.push(this.makePred(a.x+(rng()*2-1)*6, a.y+(rng()*2-1)*6, a.energy, this.mutate(a.gSpeed), this.mutate(a.gHunt)));
+        this.births++;
+      }
+    }
+
+    if (this.prey.length) this.prey=this.prey.filter(notDead);
+    if (this.pred.length) this.pred=this.pred.filter(notDead);
+    for (let i=0;i<newPrey.length;i++) this.prey.push(newPrey[i]);
+    for (let i=0;i<newPred.length;i++) this.pred.push(newPred[i]);
+
+    this.detectEvents();
+    this.recordSample();
+  }
+
+  detectEvents(){
+    const pa=this.prey.length>0, da=this.pred.length>0;
+    if (this.prevPreyAlive && !pa) this.events.push({tick:this.tick, text:`Bubble-folk went EXTINCT at tick ${this.tick}`});
+    if (this.prevPredAlive && !da) this.events.push({tick:this.tick, text:`Hunters went EXTINCT at tick ${this.tick}`});
+    if (!this.prevPredAlive && da) this.events.push({tick:this.tick, text:`Hunters recovered at tick ${this.tick}`});
+    if (!this.prevPreyAlive && pa) this.events.push({tick:this.tick, text:`Bubble-folk recovered at tick ${this.tick}`});
+    this.prevPreyAlive=pa; this.prevPredAlive=da;
+  }
+  recordSample(){
+    const h=this.hist;
+    if (h.tick.length>=this.HIST_CAP){
+      for (const k of ['tick','prey','pred','food','aspeed','avision']){ const arr=h[k], out=[]; for(let i=0;i<arr.length;i+=2) out.push(arr[i]); h[k]=out; }
+      h.step*=2;
+    }
+    if (this.tick % h.step !== 0 && this.tick !== 0) return;
+    let sp=0, vi=0;
+    for (let i=0;i<this.prey.length;i++){ sp+=this.prey[i].gSpeed; vi+=this.prey[i].gVision; }
+    const n=this.prey.length||1;
+    let fsum=0; for(let i=0;i<this.trees.length;i++) fsum+=this.trees[i].fruit;
+    const fFrac=fsum/(this.trees.length*this.P.foodCap || 1);
+    h.tick.push(this.tick); h.prey.push(this.prey.length); h.pred.push(this.pred.length);
+    h.food.push(fFrac); h.aspeed.push(this.prey.length?sp/n:0); h.avision.push(this.prey.length?vi/n:0);
+  }
+  avgEnergy(list){ if(!list.length) return 0; let s=0; for(const a of list) s+=a.energy; return s/list.length; }
+  avgLifespan(){ return this.lifespanCount ? this.lifespanSum/this.lifespanCount : 0; }
+}
+function notDead(a){ return !a.dead; }
+
+/* ============================================================================
+   RENDER — 3D perspective diorama: ground plane + camera-facing critter billboards
+   The simulation stays on a 2D ground (a.x, a.y); the renderer maps it to
+   world 3D as (x = a.x, y = height, z = a.y) and projects with an orbit camera.
+   ========================================================================== */
+class Camera {
+  constructor(){ this.yaw=0.62; this.pitch=0.60; this.dist=1600; this.focal=1000; }
+  fit(sim, viewW, viewH){
+    this.tx=sim.W/2; this.ty=0; this.tz=sim.H/2;
+    this.dist=Math.max(sim.W, sim.H)*1.25;
+    this.focal=viewW*0.62;
+    this.yaw=0.62; this.pitch=0.60;
+    this.update();
+  }
+  update(){
+    if (this.pitch>1.45) this.pitch=1.45; else if (this.pitch<0.12) this.pitch=0.12;
+    const cp=Math.cos(this.pitch), sp=Math.sin(this.pitch), cy=Math.cos(this.yaw), sy=Math.sin(this.yaw);
+    this.ex=this.tx + this.dist*cp*sy; this.ey=this.ty + this.dist*sp; this.ez=this.tz + this.dist*cp*cy;
+    let fx=this.tx-this.ex, fy=this.ty-this.ey, fz=this.tz-this.ez; const fl=Math.hypot(fx,fy,fz)||1; fx/=fl; fy/=fl; fz/=fl;
+    // right = normalize(cross(forward, worldUp)); worldUp=(0,1,0)
+    let rx=-fz, ry=0, rz=fx; const rl=Math.hypot(rx,ry,rz)||1; rx/=rl; rz/=rl;
+    // up = cross(right, forward)
+    const ux=ry*fz-rz*fy, uy=rz*fx-rx*fz, uz=rx*fy-ry*fx;
+    this.fx=fx; this.fy=fy; this.fz=fz; this.rx=rx; this.ry=ry; this.rz=rz; this.ux=ux; this.uy=uy; this.uz=uz;
+  }
+  // project a 3D world point (x up = y) to screen; returns null if behind camera
+  project(x, y, z, hw, hh){
+    const dx=x-this.ex, dy=y-this.ey, dz=z-this.ez;
+    const camZ = dx*this.fx+dy*this.fy+dz*this.fz;
+    if (camZ < 20) return null;
+    const camX = dx*this.rx+dy*this.ry+dz*this.rz;
+    const camY = dx*this.ux+dy*this.uy+dz*this.uz;
+    const s = this.focal/camZ;
+    return { sx: hw+camX*s, sy: hh-camY*s, z: camZ, s };
+  }
+  // project a ground point (sim coords a.x, a.y) — ground is y=0, z=a.y
+  ground(ax, ay, hw, hh){ return this.project(ax, 0, ay, hw, hh); }
+}
+
+class Renderer {
+  constructor(canvas){ this.canvas=canvas; this.ctx=canvas.getContext('2d'); this.cam=new Camera(); this._fitted=false; }
+  resize(sim, refit){
+    const dpr=Math.min(2, window.devicePixelRatio||1);
+    const r=this.canvas.getBoundingClientRect();
+    this.canvas.width=Math.max(1,r.width*dpr); this.canvas.height=Math.max(1,r.height*dpr);
+    this.dpr=dpr; this.viewW=r.width; this.viewH=r.height;
+    if (refit || !this._fitted){ this.cam.fit(sim, this.canvas.width, this.canvas.height); this._fitted=true; }
+    else this.cam.update();
+  }
+  draw(sim, selectedId){
+    const ctx=this.ctx, cam=this.cam, dpr=this.dpr;
+    const cw=this.canvas.width, ch=this.canvas.height, hw=cw/2, hh=ch/2;
+    cam.update();
+    this.animT = (typeof performance!=='undefined' ? performance.now() : 0)/1000; // wall-clock for smooth anim
+    ctx.setTransform(1,0,0,1,0,0);
+    // sky/backdrop
+    const sky=ctx.createLinearGradient(0,0,0,ch);
+    sky.addColorStop(0,'#0f1c26'); sky.addColorStop(0.55,'#0b1620'); sky.addColorStop(1,'#070d13');
+    ctx.fillStyle=sky; ctx.fillRect(0,0,cw,ch);
+
+    this.drawGround(sim, hw, hh, dpr);
+
+    // --- collect trees + critters as billboards, depth-sort far→near ---
+    const buf=[];
+    for (let i=0;i<sim.trees.length;i++){ const t=sim.trees[i]; const p=cam.ground(t.x,t.y,hw,hh);
+      if (p && p.sx>-120 && p.sx<cw+120 && p.sy<ch+120) buf.push({kind:2, o:t, p}); }
+    for (let i=0;i<sim.prey.length;i++){ const a=sim.prey[i]; const p=cam.ground(a.x,a.y,hw,hh);
+      if (p && p.sx>-80 && p.sx<cw+80 && p.sy<ch+80) buf.push({kind:0, o:a, p}); }
+    for (let i=0;i<sim.pred.length;i++){ const a=sim.pred[i]; const p=cam.ground(a.x,a.y,hw,hh);
+      if (p && p.sx>-80 && p.sx<cw+80 && p.sy<ch+80) buf.push({kind:1, o:a, p}); }
+    buf.sort((A,B)=>B.p.z-A.p.z);
+
+    const preyBase=10, predBase=15, treeScale=1.0;
+    for (let i=0;i<buf.length;i++){
+      const it=buf[i], p=it.p;
+      if (it.kind===2){ this.drawTree(ctx, p.sx, p.sy, it.o.r*p.s*treeScale, it.o, sim); }
+      else {
+        const R=(it.kind===1?predBase:preyBase)*p.s;
+        // stand the critter on the ground: feet at the projected ground point
+        this.drawCritter(ctx, p.sx, p.sy - R*0.9, R, it.o, dpr, this.animT);
+        if (it.o.id===selectedId){
+          ctx.strokeStyle='rgba(255,207,91,0.95)'; ctx.lineWidth=2*dpr;
+          ctx.beginPath(); ctx.ellipse(p.sx, p.sy, R*1.0, R*0.4, 0, 0, 6.283); ctx.stroke();
+        }
+      }
+    }
+  }
+  drawGround(sim, hw, hh, dpr){
+    const ctx=this.ctx, cam=this.cam, W=sim.W, H=sim.H, slab=46;
+    const P=(x,y,z)=>cam.project(x,y,z,hw,hh);
+    const c=[P(0,0,0),P(W,0,0),P(W,0,H),P(0,0,H)];               // top corners (grass)
+    const b=[P(0,-slab,0),P(W,-slab,0),P(W,-slab,H),P(0,-slab,H)]; // bottom corners (slab)
+    // slab side walls (only where projected)
+    const wall=(i,j)=>{ if(!c[i]||!c[j]||!b[i]||!b[j])return;
+      ctx.beginPath(); ctx.moveTo(c[i].sx,c[i].sy); ctx.lineTo(c[j].sx,c[j].sy); ctx.lineTo(b[j].sx,b[j].sy); ctx.lineTo(b[i].sx,b[i].sy); ctx.closePath();
+      ctx.fillStyle='#12261a'; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=dpr; ctx.stroke(); };
+    wall(0,1); wall(1,2); wall(2,3); wall(3,0);
+    // grass top
+    if (c[0]&&c[1]&&c[2]&&c[3]){
+      const cyAvg=(c[0].sy+c[2].sy)/2;
+      const grd=ctx.createLinearGradient(0,Math.min(c[0].sy,c[1].sy),0,Math.max(c[2].sy,c[3].sy));
+      grd.addColorStop(0,'#2c5c3a'); grd.addColorStop(1,'#1d4429');
+      ctx.beginPath(); ctx.moveTo(c[0].sx,c[0].sy); ctx.lineTo(c[1].sx,c[1].sy); ctx.lineTo(c[2].sx,c[2].sy); ctx.lineTo(c[3].sx,c[3].sy); ctx.closePath();
+      ctx.fillStyle=grd; ctx.fill();
+      // grid lines for depth cue
+      ctx.strokeStyle='rgba(150,200,150,0.10)'; ctx.lineWidth=dpr; const N=8;
+      for (let k=0;k<=N;k++){ const a=P(W*k/N,0,0), bb=P(W*k/N,0,H); if(a&&bb){ctx.beginPath();ctx.moveTo(a.sx,a.sy);ctx.lineTo(bb.sx,bb.sy);ctx.stroke();}
+        const e=P(0,0,H*k/N), f=P(W,0,H*k/N); if(e&&f){ctx.beginPath();ctx.moveTo(e.sx,e.sy);ctx.lineTo(f.sx,f.sy);ctx.stroke();} }
+    }
+  }
+  drawTree(ctx, gx, gy, R, t, sim){
+    if (R<1) return;
+    // shadow on ground
+    ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(gx, gy, R*0.95, R*0.34, 0, 0, 6.283); ctx.fill();
+    // trunk rises from the ground point
+    const trunkH=R*1.5;
+    ctx.fillStyle='#6b4a2a'; ctx.fillRect(gx-R*0.14, gy-trunkH, R*0.28, trunkH);
+    ctx.fillStyle='#7d5832'; ctx.fillRect(gx-R*0.14, gy-trunkH, R*0.10, trunkH);
+    // canopy sits atop the trunk
+    const cy=gy-trunkH-R*0.35;
+    const barren = t.cd>0 && t.fruit<0.1;
+    const g1=barren?'#356338':'#49a058', g2=barren?'#284d2c':'#367e44';
+    ctx.fillStyle=g2; ctx.beginPath(); ctx.arc(gx-R*0.5,cy+R*0.15,R*0.66,0,6.283); ctx.arc(gx+R*0.5,cy+R*0.15,R*0.66,0,6.283); ctx.fill();
+    ctx.fillStyle=g1; ctx.beginPath(); ctx.arc(gx,cy-R*0.35,R*0.85,0,6.283); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.10)'; ctx.beginPath(); ctx.arc(gx-R*0.3,cy-R*0.55,R*0.4,0,6.283); ctx.fill();
+    // fruit
+    if (R>6 && t.fruit>0.08){
+      const nF=Math.round(t.fruit/(sim.P.foodCap||1)*6);
+      for (let k=0;k<nF;k++){ const ang=t.sway+k*2.399, rr=R*(0.4+0.45*((k*0.37)%1));
+        const fx=gx+Math.cos(ang)*rr, fy=cy-R*0.15+Math.sin(ang)*rr*0.85;
+        ctx.fillStyle='#ff7a5c'; ctx.beginPath(); ctx.arc(fx,fy,Math.max(1.3,R*0.12),0,6.283); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.arc(fx-R*0.04,fy-R*0.04,Math.max(0.5,R*0.045),0,6.283); ctx.fill();
+      }
+    }
+  }
+  bodyPath(ctx, sx, sy, rx, ry){
+    // soft pear / teardrop: narrow rounded top, bulbous bottom
+    const top=sy-ry, bot=sy+ry;
+    ctx.beginPath();
+    ctx.moveTo(sx, top);
+    ctx.bezierCurveTo(sx+rx*0.58, top+ry*0.10,  sx+rx*1.04, sy+ry*0.10,  sx+rx*0.80, bot-ry*0.18);
+    ctx.quadraticCurveTo(sx+rx*0.52, bot,  sx, bot);
+    ctx.quadraticCurveTo(sx-rx*0.52, bot,  sx-rx*0.80, bot-ry*0.18);
+    ctx.bezierCurveTo(sx-rx*1.04, sy+ry*0.10,  sx-rx*0.58, top+ry*0.10,  sx, top);
+    ctx.closePath();
+  }
+  drawCritter(ctx, sx, sy, R, a, dpr, t){
+    const pred=a.kind===1;
+    if (R < 1.6){ // too small for detail — just a soft dot
+      ctx.fillStyle=pred?'#ec3b52':'#3f97dd';
+      ctx.beginPath(); ctx.arc(sx,sy,Math.max(1,R),0,6.283); ctx.fill(); return;
+    }
+    t = t||0;
+    // --- animation state: chomp squash while eating, gentle bob while moving ---
+    const eating = pred ? (a.feedT>0) : (a.eatT>0);
+    const spd = Math.hypot(a.vx,a.vy);
+    let squash=1, mouth=0;
+    if (eating){ const cp=t*11 + (a.face||0)*6.283; mouth=0.5+0.5*Math.sin(cp); squash=1-0.15*mouth; }
+    else if (spd>0.05){ squash=1+0.05*Math.sin(t*9 + (a.face||0)*6.283); }
+    let rx=R*0.78, ry=R;
+    if (squash!==1){ ry=ry*squash; rx=rx*(1+(1-squash)*0.55); }
+    const bob = eating ? (1-squash)*R*0.5 : 0;   // settle down as it chomps
+    sy += bob;
+    // ground shadow
+    ctx.fillStyle='rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(sx, sy+ry*0.92, rx*0.92, ry*0.26, 0, 0, 6.283); ctx.fill();
+    // body — glossy soft-body radial shading, light from upper-left
+    this.bodyPath(ctx, sx, sy, rx, ry);
+    const g=ctx.createRadialGradient(sx-rx*0.34, sy-ry*0.34, rx*0.15, sx, sy+ry*0.25, ry*1.55);
+    if (pred){ g.addColorStop(0,'#ff8f88'); g.addColorStop(0.5,'#f0475c'); g.addColorStop(1,'#b81f36'); }
+    else     { g.addColorStop(0,'#a9def8'); g.addColorStop(0.5,'#3f9fe0'); g.addColorStop(1,'#1f6fb2'); }
+    ctx.fillStyle=g; ctx.fill();
+    // glossy top highlight
+    ctx.fillStyle='rgba(255,255,255,0.28)';
+    ctx.beginPath(); ctx.ellipse(sx-rx*0.30, sy-ry*0.42, rx*0.34, ry*0.26, -0.5, 0, 6.283); ctx.fill();
+    if (R < 4){ return; } // faces only when readable
+    // soft "nose"/cheek bump (subtle raised highlight, like the reference)
+    ctx.fillStyle= pred ? 'rgba(255,190,185,0.35)' : 'rgba(210,240,255,0.5)';
+    ctx.beginPath(); ctx.ellipse(sx-rx*0.30, sy+ry*0.18, rx*0.26, ry*0.24, 0, 0, 6.283); ctx.fill();
+    // eyes
+    const eyeY=sy-ry*0.18, eyeDX=rx*0.34;
+    if (pred){
+      // stern, angry slanted eyes
+      const ew=R*0.30, eh=R*0.16;
+      ctx.fillStyle='#1a0a0d';
+      ctx.save(); ctx.translate(sx-eyeDX,eyeY); ctx.rotate(0.5);  ctx.beginPath(); ctx.ellipse(0,0,ew,eh,0,0,6.283); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(sx+eyeDX,eyeY); ctx.rotate(-0.5); ctx.beginPath(); ctx.ellipse(0,0,ew,eh,0,0,6.283); ctx.fill(); ctx.restore();
+    } else {
+      // calm little eyes, close together, with a tiny glint
+      const dir=Math.atan2(a.vy,a.vx), lx=Math.cos(dir)*R*0.05, ly=Math.sin(dir)*R*0.05;
+      const er=R*0.17;
+      for (const s of [-1,1]){
+        const ex=sx+s*eyeDX;
+        ctx.fillStyle='#141a1f'; ctx.beginPath(); ctx.ellipse(ex+lx, eyeY+ly, er*0.82, er*1.12, 0, 0, 6.283); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(ex+lx-er*0.28, eyeY+ly-er*0.4, er*0.32, 0, 6.283); ctx.fill();
+      }
+    }
+    // --- mouth: appears only while eating, opening & closing with the chomp ---
+    if (eating && mouth>0.04){
+      const my = sy + ry*0.34;
+      if (pred){
+        ctx.fillStyle='#460a12';
+        ctx.beginPath(); ctx.ellipse(sx, my, rx*0.46, ry*0.34*mouth+ry*0.05, 0, 0, 6.283); ctx.fill();
+        ctx.fillStyle='#fff'; // fangs
+        const fw=rx*0.12, fy=my-ry*0.34*mouth;
+        ctx.beginPath(); ctx.moveTo(sx-rx*0.26,fy); ctx.lineTo(sx-rx*0.26+fw,fy); ctx.lineTo(sx-rx*0.26+fw*0.5,fy+ry*0.16); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(sx+rx*0.26,fy); ctx.lineTo(sx+rx*0.26-fw,fy); ctx.lineTo(sx+rx*0.26-fw*0.5,fy+ry*0.16); ctx.fill();
+        // little red crumb
+        ctx.fillStyle='rgba(255,90,90,0.8)'; ctx.beginPath(); ctx.arc(sx+rx*0.5, my-ry*0.1, R*0.09, 0, 6.283); ctx.fill();
+      } else {
+        ctx.fillStyle='#3a2018';
+        ctx.beginPath(); ctx.ellipse(sx, my, rx*0.3, ry*0.26*mouth+ry*0.03, 0, 0, 6.283); ctx.fill();
+        // fruit crumbs flicking as it munches
+        ctx.fillStyle='#ff7a5c';
+        ctx.beginPath(); ctx.arc(sx-rx*0.5, my-ry*0.05, R*0.08, 0, 6.283); ctx.arc(sx+rx*0.48, my+ry*0.02, R*0.07, 0, 6.283); ctx.fill();
+      }
+    }
+  }
+  roundRect(ctx,x,y,w,h,r){ r=Math.max(0,Math.min(r,Math.abs(w)/2,Math.abs(h)/2));
+    ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+  findById(sim,id){ for(const a of sim.prey) if(a.id===id) return a; for(const a of sim.pred) if(a.id===id) return a; return null; }
+  pick(sim, vx, vy){
+    // project every critter's ground point to screen; pick the nearest one to the click (front-most wins ties)
+    const hw=this.canvas.width/2, hh=this.canvas.height/2, dpr=this.dpr;
+    const px=vx*dpr, py=vy*dpr;
+    let best=null, bestZ=Infinity;
+    const scan=(list,base)=>{ for(const a of list){ const p=this.cam.ground(a.x,a.y,hw,hh); if(!p) continue;
+      const R=base*p.s; const dx=p.sx-px, dy=(p.sy-R*0.9)-py; const rr=R+8*dpr;
+      if (dx*dx+dy*dy < rr*rr && p.z<bestZ){ bestZ=p.z; best=a; } } };
+    scan(sim.pred,15); scan(sim.prey,10);
+    return best;
+  }
+}
+
+/* ---------- charts (all hand-drawn) ---------- */
+function setupChartCanvas(cv){
+  const dpr=Math.min(2, window.devicePixelRatio||1);
+  const r=cv.getBoundingClientRect();
+  cv.width=Math.max(1,r.width*dpr); cv.height=Math.max(1,r.height*dpr);
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return { ctx, w:r.width, h:r.height };
+}
+function drawPopChart(cv, sim, windowN){
+  const { ctx, w, h } = setupChartCanvas(cv);
+  ctx.clearRect(0,0,w,h);
+  const H=sim.hist, n=H.prey.length; if(n<2) return;
+  const start=windowN?Math.max(0,n-windowN):0, len=n-start;
+  const pad={l:34,r:8,t:14,b:14}, cw=w-pad.l-pad.r, ch=h-pad.t-pad.b;
+  let maxP=1; for(let i=start;i<n;i++){ if(H.prey[i]>maxP)maxP=H.prey[i]; if(H.pred[i]>maxP)maxP=H.pred[i]; } maxP*=1.1;
+  const X=i=>pad.l+(len<=1?0:(i-start)/(len-1))*cw, Y=v=>pad.t+ch-(v/maxP)*ch;
+  ctx.strokeStyle='#20362b'; ctx.lineWidth=1; ctx.fillStyle='#6a8574'; ctx.font='9px sans-serif';
+  for(let g=0;g<=4;g++){ const yy=pad.t+ch-(g/4)*ch; ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke(); ctx.fillText(Math.round(maxP*g/4),2,yy+3); }
+  ctx.beginPath(); ctx.moveTo(pad.l,pad.t+ch);
+  for(let i=start;i<n;i++) ctx.lineTo(X(i), pad.t+ch-H.food[i]*ch);
+  ctx.lineTo(pad.l+cw,pad.t+ch); ctx.closePath(); ctx.fillStyle='rgba(255,122,92,0.12)'; ctx.fill();
+  const line=(arr,color,yfn)=>{ ctx.strokeStyle=color; ctx.lineWidth=1.4; ctx.beginPath();
+    for(let i=start;i<n;i++){ const x=X(i), y=yfn(arr[i]); if(i===start)ctx.moveTo(x,y); else ctx.lineTo(x,y);} ctx.stroke(); };
+  line(H.food,'#ff7a5c', v=>pad.t+ch-v*ch);
+  line(H.prey,'#57b6ff', Y);
+  line(H.pred,'#ff5d6c', Y);
+}
+function drawPhaseChart(cv, sim){
+  const { ctx, w, h } = setupChartCanvas(cv);
+  ctx.clearRect(0,0,w,h);
+  const H=sim.hist, n=H.prey.length; if(n<3) return;
+  const pad=16; let maxPrey=1, maxPred=1;
+  for(let i=0;i<n;i++){ if(H.prey[i]>maxPrey)maxPrey=H.prey[i]; if(H.pred[i]>maxPred)maxPred=H.pred[i]; } maxPrey*=1.1; maxPred*=1.1;
+  const X=v=>pad+v/maxPrey*(w-2*pad), Y=v=>h-pad-v/maxPred*(h-2*pad);
+  const show=Math.min(n,1400), s0=n-show;
+  for(let i=Math.max(1,s0+1);i<n;i++){ const t=(i-s0)/show;
+    ctx.strokeStyle=`rgba(90,209,168,${(0.08+0.7*t).toFixed(3)})`; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(X(H.prey[i-1]),Y(H.pred[i-1])); ctx.lineTo(X(H.prey[i]),Y(H.pred[i])); ctx.stroke(); }
+  ctx.fillStyle='#ffcf5b'; ctx.beginPath(); ctx.arc(X(H.prey[n-1]),Y(H.pred[n-1]),3,0,6.283); ctx.fill();
+  ctx.fillStyle='#6a8574'; ctx.font='9px sans-serif'; ctx.fillText('prey →',w-46,h-4);
+  ctx.save(); ctx.translate(10,30); ctx.rotate(-Math.PI/2); ctx.fillText('pred →',0,0); ctx.restore();
+}
+function drawTraitChart(cv, sim, windowN){
+  const { ctx, w, h } = setupChartCanvas(cv);
+  ctx.clearRect(0,0,w,h);
+  const H=sim.hist, n=H.aspeed.length; if(n<2) return;
+  const start=windowN?Math.max(0,n-windowN):0, len=n-start;
+  const pad={l:6,r:6,t:14,b:6}, cw=w-pad.l-pad.r, ch=h-pad.t-pad.b;
+  let mn=Infinity, mx=-Infinity;
+  for(let i=start;i<n;i++){ mn=Math.min(mn,H.aspeed[i],H.avision[i]); mx=Math.max(mx,H.aspeed[i],H.avision[i]); }
+  if(mx-mn<0.1){ mn-=0.1; mx+=0.1; }
+  const X=i=>pad.l+(len<=1?0:(i-start)/(len-1))*cw, Y=v=>pad.t+ch-(v-mn)/(mx-mn)*ch;
+  const line=(arr,color)=>{ ctx.strokeStyle=color; ctx.lineWidth=1.4; ctx.beginPath();
+    for(let i=start;i<n;i++){ const x=X(i), y=Y(arr[i]); if(i===start)ctx.moveTo(x,y); else ctx.lineTo(x,y);} ctx.stroke(); };
+  line(H.aspeed,'#ffcf5b'); line(H.avision,'#c78bff');
+  ctx.font='9px sans-serif';
+  ctx.fillStyle='#ffcf5b'; ctx.fillText('speed',pad.l,h-4);
+  ctx.fillStyle='#c78bff'; ctx.fillText('vision',pad.l+42,h-4);
+}
+
+/* ============================================================================
+   PRESETS
+   ========================================================================== */
+const PRESETS = {
+  'Balanced': {},
+  'Fragile equilibrium': { foodGrowth:0.0048, regrowthDelay:85, predCatch:0.15, predEnergy:48, predHunt:110, geneMax:2.2 },
+  'Predator apocalypse': { worldW:600, worldH:400, numTrees:70, preyInit:250, predInit:110, predCatch:0.45, predEnergy:58, predHunt:150, foodGrowth:0.004 },
+  'Prey paradise': { foodGrowth:0.02, numTrees:280, predInit:10, predCatch:0.08, preyReproChance:0.09, regrowthDelay:30 },
+  'Ice age / low food': { foodGrowth:0.0024, foodCap:0.7, numTrees:110, regrowthDelay:110, predInit:16, preyInit:280 },
+  'No hunters': { predInit:0, predCatch:0 },
+};
+
+/* ============================================================================
+   CONTROL DEFINITIONS
+   ========================================================================== */
+const CONTROLS = [
+  { group:'★ The three rates', headline:true, items:[
+    { key:'foodGrowth', label:'Food rate', min:0.0005, max:0.03, step:0.0005, hint:'How fast fruit regrows on trees' },
+    { key:'fertility', label:'Reproduction rate', min:0.2, max:3, step:0.05, hint:'Global breeding multiplier' },
+    { key:'predCatch', label:'Killer rate', min:0, max:0.6, step:0.01, hint:'Hunter catch chance / lethality' },
+  ]},
+  { group:'Food (fruit trees)', items:[
+    { key:'foodCap', label:'Fruit per tree (capacity)', min:0.3, max:2, step:0.05 },
+    { key:'regrowthDelay', label:'Regrowth delay', min:0, max:200, step:5, hint:'Ticks a stripped tree stays bare' },
+    { key:'foodEnergy', label:'Fruit energy value', min:8, max:60, step:1 },
+    { key:'biteSize', label:'Bite size', min:0.03, max:1.5, step:0.01, hint:'Fruit per tick — smaller = longer, slower meals' },
+  ]},
+  { group:'Bubble-folk (prey)', items:[
+    { key:'preyMetab', label:'Metabolism', min:0.02, max:0.4, step:0.01 },
+    { key:'preyRepro', label:'Repro threshold', min:30, max:160, step:5 },
+    { key:'preyReproChance', label:'Fertility', min:0.01, max:0.2, step:0.005 },
+    { key:'preyVision', label:'Vision range', min:20, max:200, step:5 },
+    { key:'preySpeed', label:'Speed', min:0.4, max:3, step:0.05 },
+    { key:'preyEatTime', label:'Eat time (munch)', min:0, max:60, step:2, hint:'Ticks a bubble-folk pauses to eat' },
+  ]},
+  { group:'Hunters (predators)', items:[
+    { key:'predMetab', label:'Metabolism', min:0.05, max:0.7, step:0.01 },
+    { key:'predHunt', label:'Hunt range', min:25, max:220, step:5 },
+    { key:'predEnergy', label:'Energy per catch', min:15, max:100, step:1 },
+    { key:'predRepro', label:'Repro threshold', min:60, max:300, step:5 },
+    { key:'predReproChance', label:'Fertility', min:0.01, max:0.2, step:0.005 },
+    { key:'predSpeed', label:'Speed', min:0.4, max:3.5, step:0.05 },
+    { key:'predEatTime', label:'Feast time', min:0, max:90, step:2, hint:'Ticks a hunter spends devouring a catch' },
+  ]},
+  { group:'Evolution', items:[
+    { key:'mutation', label:'Mutation rate', min:0, max:0.25, step:0.005, hint:'Trait drift on birth' },
+    { key:'geneMax', label:'Trait ceiling', min:1.2, max:3, step:0.1, hint:'Cap on evolved speed/vision (high = runaway arms race)' },
+  ]},
+  { group:'Map & setup (reset to apply)', reset:true, items:[
+    { key:'preyInit', label:'Initial bubble-folk', min:0, max:1500, step:10 },
+    { key:'predInit', label:'Initial hunters', min:0, max:400, step:2 },
+    { key:'numTrees', label:'Number of trees', min:20, max:500, step:10 },
+    { key:'worldW', label:'Map width', min:480, max:1600, step:60 },
+    { key:'worldH', label:'Map height', min:360, max:1100, step:60 },
+    { key:'maxAgents', label:'Max critters (safety cap)', min:1000, max:12000, step:500 },
+    { key:'seed', label:'RNG seed', min:1, max:99999, step:1 },
+  ]},
+];
+const RESET_KEYS = new Set(['preyInit','predInit','numTrees','worldW','worldH','seed','maxAgents']);
+
+/* ============================================================================
+   UI + APP
+   ========================================================================== */
+const App = {
+  params: Object.assign({}, DEFAULTS),
+  sim:null, renderer:null, running:false, speed:1, selectedId:null, sliders:{},
+
+  init(){
+    this.sim = new Sim(this.params);
+    this.renderer = new Renderer(document.getElementById('world'));
+    this.renderer.resize(this.sim, true);
+    this.buildControls(); this.buildSpeedButtons(); this.buildPresets(); this.wireButtons();
+    window.addEventListener('resize', ()=>{ this.renderer.resize(this.sim); this.renderAll(); });
+    this.wireCamera();
+    window.addEventListener('keydown', e=>{ if(e.code==='Space'){ e.preventDefault(); this.togglePlay(); } });
+    this.loop=this.loop.bind(this);
+    requestAnimationFrame(this.loop);
+    this.renderAll(); this.refreshReadouts(); this.updateCamHud();
+  },
+
+  buildControls(){
+    const host=document.getElementById('controlHost'); host.innerHTML='';
+    for (const grp of CONTROLS){
+      const box=document.createElement('div');
+      box.className='grp'+(grp.headline?' headline':'')+(grp.reset?' collapsed':'');
+      const head=document.createElement('h3'); head.innerHTML=`<span>${grp.group}</span><span>▾</span>`;
+      head.onclick=()=>box.classList.toggle('collapsed'); box.appendChild(head);
+      const body=document.createElement('div'); body.className='body';
+      for (const item of grp.items) body.appendChild(this.makeSlider(item));
+      box.appendChild(body); host.appendChild(box);
+    }
+  },
+  makeSlider(item){
+    const wrap=document.createElement('div'); wrap.className='ctl';
+    const top=document.createElement('div'); top.className='top';
+    const lab=document.createElement('label'); lab.textContent=item.label;
+    const val=document.createElement('span'); val.className='val';
+    top.appendChild(lab); top.appendChild(val);
+    const input=document.createElement('input');
+    input.type='range'; input.min=item.min; input.max=item.max; input.step=item.step; input.value=this.params[item.key];
+    const fmt=v=>(item.step<1 ? (+v).toFixed(item.step<0.01?4:(item.step<0.1?3:2)) : Math.round(v));
+    val.textContent=fmt(input.value);
+    input.oninput=()=>{ const v=parseFloat(input.value); this.params[item.key]=v; val.textContent=fmt(v);
+      if(!RESET_KEYS.has(item.key)) this.sim.P[item.key]=v; if(!this.running) this.renderAll(); };
+    wrap.appendChild(top); wrap.appendChild(input);
+    if(item.hint){ const hint=document.createElement('div'); hint.className='hint'; hint.textContent=item.hint; wrap.appendChild(hint); }
+    this.sliders[item.key]={input,val,fmt};
+    return wrap;
+  },
+  syncSliders(){ for(const k in this.sliders){ const s=this.sliders[k]; s.input.value=this.params[k]; s.val.textContent=s.fmt(this.params[k]); } },
+
+  buildSpeedButtons(){
+    const row=document.getElementById('speedrow');
+    const speeds=[{l:'1×',v:1},{l:'5×',v:5},{l:'20×',v:20},{l:'⏩ Turbo',v:-1}];
+    row.innerHTML=''; this.speedBtns=[];
+    for (const s of speeds){ const b=document.createElement('button'); b.textContent=s.l;
+      b.onclick=()=>{ this.speed=s.v; this.updateSpeedBtns(); if(!this.running) this.togglePlay(); };
+      if(s.v===this.speed) b.classList.add('active'); row.appendChild(b); this.speedBtns.push({b,v:s.v}); }
+  },
+  updateSpeedBtns(){ for(const s of this.speedBtns) s.b.classList.toggle('active', s.v===this.speed); },
+
+  buildPresets(){
+    const row=document.getElementById('presetrow'); row.innerHTML='';
+    for (const name in PRESETS){ const b=document.createElement('button'); b.textContent=name; b.onclick=()=>this.applyPreset(name); row.appendChild(b); }
+  },
+  applyPreset(name){ this.params=Object.assign({},DEFAULTS,PRESETS[name]); this.syncSliders(); this.hardReset(true); this.flash('Preset: '+name); },
+
+  wireButtons(){
+    document.getElementById('btnPlay').onclick=()=>this.togglePlay();
+    document.getElementById('btnStep').onclick=()=>{ this.running=false; this.updatePlayBtn(); this.sim.step(); this.renderAll(); this.refreshReadouts(); };
+    document.getElementById('btnReset').onclick=()=>this.hardReset(false);
+    document.getElementById('btnRandom').onclick=()=>this.randomize();
+    document.getElementById('btnFit').onclick=()=>{ this.renderer.cam.fit(this.sim, this.renderer.canvas.width, this.renderer.canvas.height); this.updateCamHud(); this.renderAll(); };
+    document.getElementById('btnSummary').onclick=()=>this.showSummary();
+    document.getElementById('btnCloseModal').onclick=()=>document.getElementById('modal').classList.remove('show');
+  },
+  togglePlay(){ this.running=!this.running; this.updatePlayBtn(); },
+  updatePlayBtn(){ const b=document.getElementById('btnPlay'); b.textContent=this.running?'⏸ Pause':'▶ Play'; b.classList.toggle('active', this.running); },
+
+  hardReset(refit){ this.sim.reset(this.params); this.renderer.resize(this.sim, !!refit); this.selectedId=null; this.updateInspector(); this.renderAll(); this.refreshReadouts(); this.updateCamHud(); },
+  randomize(){
+    const R=(a,b)=>a+Math.random()*(b-a);
+    this.params.foodGrowth=+R(0.002,0.02).toFixed(4);
+    this.params.fertility=+R(0.6,1.8).toFixed(2);
+    this.params.predCatch=+R(0.06,0.3).toFixed(2);
+    this.params.regrowthDelay=Math.round(R(30,110));
+    this.params.numTrees=Math.round(R(120,320));
+    this.params.preyInit=Math.round(R(220,500));
+    this.params.predInit=Math.round(R(20,70));
+    this.params.predEnergy=Math.round(R(40,58));
+    this.params.seed=Math.floor(Math.random()*99999)+1;
+    this.syncSliders(); this.hardReset(true); this.flash('Randomized settings');
+  },
+
+  wireCamera(){
+    const cv=document.getElementById('world'); const cam=this.renderer.cam;
+    let dragging=false, moved=false, lx=0, ly=0;
+    cv.addEventListener('mousedown', e=>{ dragging=true; moved=false; lx=e.clientX; ly=e.clientY; });
+    window.addEventListener('mousemove', e=>{
+      if(!dragging) return;
+      const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+      if(Math.abs(dx)+Math.abs(dy)>2) moved=true;
+      cam.yaw -= dx*0.006; cam.pitch += dy*0.006; cam.update(); // orbit
+      this.updateCamHud(); if(!this.running) this.renderAll();
+    });
+    window.addEventListener('mouseup', e=>{
+      if(dragging && !moved){
+        const rect=cv.getBoundingClientRect();
+        const a=this.renderer.pick(this.sim, e.clientX-rect.left, e.clientY-rect.top);
+        this.selectedId=a?a.id:null; this.updateInspector(); if(!this.running) this.renderAll();
+      }
+      dragging=false;
+    });
+    cv.addEventListener('wheel', e=>{ e.preventDefault();
+      cam.dist *= (e.deltaY<0 ? 1/1.12 : 1.12);
+      cam.dist=Math.max(300, Math.min(6000, cam.dist)); cam.update();
+      this.updateCamHud(); if(!this.running) this.renderAll();
+    }, {passive:false});
+  },
+  updateCamHud(){ const cam=this.renderer.cam;
+    document.getElementById('camhud').innerHTML = `3D · drag to orbit · scroll to zoom · pitch ${cam.pitch.toFixed(2)}`; },
+
+  updateInspector(){
+    const el=document.getElementById('inspect');
+    const a=this.selectedId?this.renderer.findById(this.sim,this.selectedId):null;
+    if(!a){ el.innerHTML='<h3>Inspector</h3>'+(this.selectedId?'<div class="none">That critter is gone.</div>':'<div class="none">Click a critter to inspect it.</div>'); return; }
+    const kind=a.kind===0?'Bubble-folk':'Hunter';
+    const state = a.kind===0 ? (a.eatT>0?'🍎 eating':'foraging') : (a.feedT>0?'😋 feasting':'hunting');
+    const rows=[
+      ['Type',kind],['State',state],['Energy',a.energy.toFixed(1)],['Age',a.age+' ticks'],
+      ['Gene: speed',a.gSpeed.toFixed(3)],
+      a.kind===0?['Gene: vision',a.gVision.toFixed(3)]:['Gene: hunt',a.gHunt.toFixed(3)],
+      ['Position',`${a.x.toFixed(0)}, ${a.y.toFixed(0)}`],
+      ['Speed',Math.hypot(a.vx,a.vy).toFixed(2)],
+    ];
+    el.innerHTML='<h3>Inspector — '+kind+'</h3><table>'+rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')+'</table>';
+  },
+
+  loop(now){
+    if (this.running){
+      if (this.speed===-1){ const t0=performance.now(); let count=0; while(performance.now()-t0<12 && count<2000){ this.sim.step(); count++; } }
+      else { for(let i=0;i<this.speed;i++) this.sim.step(); }
+      this.renderAll(); this.refreshReadouts(); this.maybeAutoSummary();
+    }
+    if (this._lastNow){ const dt=now-this._lastNow; this._fps=this._fps?this._fps*0.9+(1000/dt)*0.1:1000/dt; }
+    this._lastNow=now;
+    if (this._fpsTick==null) this._fpsTick=0;
+    if (++this._fpsTick%20===0) document.getElementById('fps').textContent=(this._fps||0).toFixed(0)+' fps · '+(this.sim.prey.length+this.sim.pred.length)+' critters';
+    requestAnimationFrame(this.loop);
+  },
+  renderAll(){
+    this.renderer.draw(this.sim, this.selectedId);
+    drawPopChart(document.getElementById('popchart'), this.sim, 700);
+    drawPhaseChart(document.getElementById('phasechart'), this.sim);
+    drawTraitChart(document.getElementById('traitchart'), this.sim, 700);
+    if (this.selectedId) this.updateInspector();
+  },
+  refreshReadouts(){
+    const s=this.sim;
+    const items=[
+      ['Tick',s.tick.toLocaleString(),''],
+      ['Bubble-folk',s.prey.length,'prey'],
+      ['Hunters',s.pred.length,'pred'],
+      ['Fruit %',(s.hist.food.length?(s.hist.food[s.hist.food.length-1]*100):0).toFixed(0),'food'],
+      ['Births',s.births.toLocaleString(),''],
+      ['Deaths',(s.deathsStarve+s.deathsPred).toLocaleString(),''],
+      ['Avg energy',s.avgEnergy(s.prey).toFixed(0),''],
+      ['Avg lifespan',s.avgLifespan().toFixed(0),''],
+    ];
+    document.getElementById('readouts').innerHTML=items.map(it=>`<div class="ro ${it[2]}"><b>${it[1]}</b><span>${it[0]}</span></div>`).join('');
+  },
+  maybeAutoSummary(){
+    if (!this._autoDone && this.sim.tick>5 && this.sim.prey.length===0 && this.sim.pred.length===0){
+      this._autoDone=true; this.running=false; this.updatePlayBtn(); this.showSummary();
+    }
+    if (this.sim.prey.length>0 || this.sim.pred.length>0) this._autoDone=false;
+  },
+  flash(text){ const b=document.getElementById('banner'); b.textContent=text; b.style.display='block'; clearTimeout(this._flashT); this._flashT=setTimeout(()=>{b.style.display='none';},1600); },
+
+  showSummary(){
+    const s=this.sim, stats=this.computeStats();
+    document.getElementById('verdict').textContent=stats.verdict;
+    document.getElementById('modal').classList.add('show'); // show first so canvas has layout size
+    drawPopChart(document.getElementById('summarycanvas'), s, 0);
+    const g=document.getElementById('statgrid');
+    const cells=[
+      ['Ticks run',s.tick.toLocaleString()],['Osc. cycles',stats.cycles],
+      ['Peak prey',stats.peakPrey],['Peak hunters',stats.peakPred],
+      ['Prey min/max',`${stats.minPrey}/${stats.maxPrey}`],['Hunter min/max',`${stats.minPred}/${stats.maxPred}`],
+      ['Avg prey',stats.avgPrey],['Avg hunters',stats.avgPred],
+      ['Total births',s.births.toLocaleString()],['Starvations',s.deathsStarve.toLocaleString()],
+      ['Catches',s.deathsPred.toLocaleString()],['Extinctions',stats.extinctions],
+    ];
+    g.innerHTML=cells.map(c=>`<div class="stat"><b>${c[1]}</b><span>${c[0]}</span></div>`).join('');
+    const ev=document.getElementById('eventlist');
+    ev.innerHTML=s.events.length?s.events.map(e=>`<div>tick ${e.tick.toLocaleString()} — ${e.text}</div>`).join(''):'<div class="none">No extinction/recovery events recorded.</div>';
+  },
+  computeStats(){
+    const H=this.sim.hist, n=H.prey.length;
+    const stat=arr=>{ let mn=Infinity,mx=-Infinity,sum=0; for(let i=0;i<n;i++){ mn=Math.min(mn,arr[i]); mx=Math.max(mx,arr[i]); sum+=arr[i]; } return {min:n?mn:0,max:n?mx:0,avg:n?Math.round(sum/n):0}; };
+    const sp=stat(H.prey), sd=stat(H.pred);
+    let cycles=0;
+    if (n>6){
+      const sm=[]; for(let i=0;i<n;i++){ let a=0,c=0; for(let k=-2;k<=2;k++){ const j=i+k; if(j>=0&&j<n){a+=H.prey[j];c++;} } sm.push(a/c); }
+      const th=(sp.max-sp.min)*0.12;
+      for(let i=2;i<n-2;i++) if(sm[i]>sm[i-1]&&sm[i]>=sm[i+1]&&sm[i]-sp.min>th&&sm[i]>sm[i-2]&&sm[i]>sm[i+2]) cycles++;
+    }
+    const extinctions=this.sim.events.filter(e=>e.text.includes('EXTINCT')).length;
+    let verdict;
+    const pa=this.sim.prey.length>0, da=this.sim.pred.length>0;
+    if (!pa && !da){ const first=this.sim.events.find(e=>e.text.includes('EXTINCT')); verdict=first?`Collapse — ${first.text.toLowerCase()}, then the rest starved.`:'Total collapse — the meadow is empty.'; }
+    else if (!da) verdict=`Hunters died out; bubble-folk thrive. ${cycles} oscillation cycle(s) recorded.`;
+    else if (!pa) verdict='Hunters wiped out the bubble-folk — starvation collapse imminent.';
+    else if (cycles>=3) verdict=`Stable coexistence: ${cycles} predator–prey oscillation cycles over ${this.sim.tick.toLocaleString()} ticks.`;
+    else verdict=`Coexisting for ${this.sim.tick.toLocaleString()} ticks (${cycles} cycle(s) so far).`;
+    return { cycles, extinctions, verdict, peakPrey:sp.max, peakPred:sd.max, minPrey:sp.min, maxPrey:sp.max, minPred:sd.min, maxPred:sd.max, avgPrey:sp.avg, avgPred:sd.avg };
+  },
+};
+
+window.App = App; // exposed for tinkering in the console
+window.addEventListener('load', ()=>App.init());
+</script>
+</body>
+</html>

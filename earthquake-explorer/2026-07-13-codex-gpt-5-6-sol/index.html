@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="oklch(0.29 0.08 150)" />
+    <meta name="description" content="Explore live global earthquake activity from the USGS." />
+    <title>Groundwave · Live earthquake observatory</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#event-stream">Skip to earthquake events</a>
+    <div id="app" aria-busy="true">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Groundwave home">
+          <svg class="brand-mark" viewBox="0 0 42 42" aria-hidden="true"><circle cx="21" cy="21" r="18"/><path d="M4 21h8l3-7 5 15 5-20 5 12h8"/></svg>
+          <span><strong>Groundwave</strong><small>Global seismic observatory</small></span>
+        </a>
+        <div class="status-block">
+          <span class="live-status" id="live-status"><i></i>Connecting to USGS</span>
+          <span id="updated-time">Awaiting live data</span>
+        </div>
+        <button class="icon-button refresh-button" id="refresh-button" type="button" aria-label="Refresh earthquake data" title="Refresh earthquake data">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+          <span>Refresh</span>
+        </button>
+      </header>
+
+      <section class="control-deck" aria-label="Earthquake controls">
+        <div class="period-control" role="group" aria-label="Time period">
+          <button data-period="hour" type="button">1 hour</button>
+          <button data-period="day" type="button">24 hours</button>
+          <button data-period="week" class="active" type="button" aria-pressed="true">7 days</button>
+          <button data-period="month" type="button">30 days</button>
+        </div>
+        <label class="search-field">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+          <span class="sr-only">Search places or regions</span>
+          <input id="search-input" type="search" placeholder="Search places or regions" autocomplete="off" />
+          <kbd>/</kbd>
+        </label>
+        <button class="filter-button" id="filter-button" type="button" aria-expanded="false" aria-controls="filter-panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          Filters <span id="filter-count" hidden>0</span>
+        </button>
+      </section>
+
+      <section class="filter-panel" id="filter-panel" hidden aria-label="Advanced filters">
+        <button class="filter-done" id="filter-done" type="button">Done</button>
+        <label>Minimum magnitude <output id="magnitude-output">0.0+</output><input id="magnitude-filter" type="range" min="0" max="8" step="0.5" value="0" /></label>
+        <label>Depth<select id="depth-filter"><option value="all">Any depth</option><option value="shallow">Shallow, under 70 km</option><option value="intermediate">Intermediate, 70–300 km</option><option value="deep">Deep, over 300 km</option></select></label>
+        <label>Alert level<select id="alert-filter"><option value="all">Any alert</option><option value="green">Green</option><option value="yellow">Yellow</option><option value="orange">Orange</option><option value="red">Red</option><option value="none">Not assigned</option></select></label>
+        <label>Review status<select id="review-filter"><option value="all">Any status</option><option value="reviewed">Reviewed</option><option value="automatic">Automatic</option></select></label>
+        <label class="check-control"><input id="tsunami-filter" type="checkbox" /> <span><strong>Tsunami flag only</strong><small>Shows events marked by USGS for tsunami review</small></span></label>
+        <button id="reset-filters" class="text-button" type="button">Reset all filters</button>
+      </section>
+
+      <nav class="mobile-view-switch" aria-label="Primary view">
+        <button data-view="map" class="active" aria-pressed="true" type="button">Map</button>
+        <button data-view="events" aria-pressed="false" type="button">Events <span id="mobile-count"></span></button>
+      </nav>
+
+      <main class="observatory">
+        <section class="map-column" id="map-view" aria-labelledby="map-heading">
+          <div class="insight-bar" id="insight-bar">
+            <div><span class="eyebrow">Strongest match</span><strong id="strongest-event">Loading live activity…</strong><span id="strongest-meta">USGS all-week feed</span></div>
+            <button id="focus-strongest" type="button" disabled>Inspect event</button>
+          </div>
+
+          <div class="map-frame">
+            <div class="map-heading-row">
+              <h1 id="map-heading">Recent activity</h1>
+              <p id="result-summary" aria-live="polite">Loading earthquakes from USGS…</p>
+            </div>
+            <div id="map" class="map" role="region" aria-label="Interactive global earthquake map. Use plus or minus to zoom. The event stream provides a complete keyboard-accessible alternative." tabindex="0">
+              <div class="map-skeleton" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+              <svg id="map-svg" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                <defs><pattern id="depth-lines" width="6" height="6" patternUnits="userSpaceOnUse"><path d="M0 6 6 0" stroke="currentColor" stroke-width="1" opacity=".4"/></pattern></defs>
+                <g id="map-viewport">
+                  <g class="graticule"></g>
+                  <g class="land"></g>
+                  <g class="plates"></g>
+                  <g id="event-marks"></g>
+                </g>
+              </svg>
+              <div class="map-controls" aria-label="Map zoom controls">
+                <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+                <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+                <button id="reset-map" type="button" aria-label="Reset map view">⌂</button>
+              </div>
+              <div class="map-legend" aria-label="Map legend">
+                <span><i class="legend-mag"></i>Size = magnitude</span>
+                <span><i class="legend-depth"></i>Texture = depth</span>
+              </div>
+              <div class="map-tooltip" id="map-tooltip" hidden></div>
+            </div>
+          </div>
+
+          <section class="timeline-panel" aria-labelledby="timeline-title">
+            <div class="timeline-header">
+              <div><h2 id="timeline-title">Seismic timeline</h2><p id="timeline-description">Each bar shows event frequency; height reflects count and the cap marks the strongest magnitude.</p></div>
+              <button id="clear-time-brush" class="text-button" type="button" hidden>Show full period</button>
+            </div>
+            <div id="timeline" class="timeline" role="listbox" aria-label="Earthquake activity over time"></div>
+            <div class="timeline-axis"><span id="timeline-start">7 days ago</span><span id="timeline-now">Now</span></div>
+          </section>
+        </section>
+
+        <aside class="event-column" id="event-stream" aria-labelledby="event-stream-title">
+          <div class="stream-header">
+            <div><h2 id="event-stream-title">Event stream</h2><p id="stream-count">Loading…</p></div>
+            <label class="sort-control">Sort <select id="sort-select"><option value="significance">Most significant</option><option value="newest">Newest first</option><option value="magnitude">Highest magnitude</option><option value="depth">Deepest first</option></select></label>
+          </div>
+          <div class="active-filters" id="active-filters" aria-label="Active filters"></div>
+          <div class="event-list" id="event-list" aria-live="polite">
+            <div class="event-skeleton"></div><div class="event-skeleton"></div><div class="event-skeleton"></div><div class="event-skeleton"></div>
+          </div>
+          <div class="empty-state" id="empty-state" hidden>
+            <svg viewBox="0 0 80 48" aria-hidden="true"><path d="M2 28h12l5-13 8 26 8-36 9 28 7-13 7 8h20"/></svg>
+            <h3>No events match this view</h3><p id="empty-explanation">Try widening the magnitude, depth, or place constraints.</p><button id="empty-reset" type="button">Reset filters</button>
+          </div>
+        </aside>
+
+        <aside class="detail-panel" id="detail-panel" hidden aria-labelledby="detail-title">
+          <div class="detail-topbar"><button id="close-detail" class="icon-button" type="button" aria-label="Close event details">← <span>Back to events</span></button><button id="copy-link" class="icon-button" type="button">Copy link</button></div>
+          <div id="detail-content"></div>
+        </aside>
+      </main>
+
+      <footer>
+        <p>Live earthquake data from <a href="https://earthquake.usgs.gov/" target="_blank" rel="noreferrer">U.S. Geological Survey</a>. Events may be revised after review.</p>
+        <p>Groundwave is for exploration, not emergency alerts or prediction. Follow official local authorities for safety information.</p>
+      </footer>
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+      <div class="sr-only" id="announcer" aria-live="assertive"></div>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini 3.1 Pro Preview</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #000;
+        }
+        canvas {
+            display: block; width: 100%; height: 100%;
+        }
+        #title-container {
+            position: absolute; top: 30px; left: 30px;
+            color: rgba(255, 255, 255, 0.8);
+            font-family: system-ui, -apple-system, sans-serif;
+            pointer-events: none; text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+        #title {
+            font-size: 28px; font-weight: 300; letter-spacing: 2px;
+        }
+        #subtitle {
+            font-size: 13px; font-weight: 600; color: rgba(255, 150, 50, 0.9);
+            letter-spacing: 5px; margin-top: 8px; text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div id="title-container">
+        <div id="title">Gemini 3.1 Pro Preview</div>
+        <div id="subtitle">Cinematic Launch Sequence</div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        let w, h, padX, padY;
+
+        function resize() {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+            padX = w / 2;
+            padY = h - 150;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        const rand = (min, max) => Math.random() * (max - min) + min;
+
+        // Pre-render smoke clouds for performance
+        function createSmokePuff(r, g, b) {
+            let c = document.createElement('canvas');
+            c.width = 128; c.height = 128;
+            let cx = c.getContext('2d', { alpha: true });
+            let grad = cx.createRadialGradient(64, 64, 0, 64, 64, 64);
+            grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
+            grad.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, 0.6)`);
+            grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+            cx.fillStyle = grad;
+            cx.beginPath(); cx.arc(64, 64, 64, 0, Math.PI*2); cx.fill();
+            return c;
+        }
+        const smokeLight = createSmokePuff(235, 240, 245);
+        const smokeDark = createSmokePuff(140, 145, 150);
+        const smokeFire = createSmokePuff(255, 130, 40);
+
+        // Environment Entities
+        const stars = [];
+        for(let i=0; i<400; i++) stars.push({x: rand(0, 3000), y: rand(0, 1500), r: rand(0.5, 2), phase: rand(0, 6.28), s: rand(1, 4)});
+        const clouds = [];
+        for(let i=0; i<8; i++) clouds.push({x: rand(0, 3000), y: rand(50, 400), w: rand(150, 300), h: rand(40, 80), speed: rand(10, 30), opacity: rand(0.05, 0.15)});
+
+        // Particle System
+        const particles = [];
+        let baseAcc = 0, trailAcc = 0, sparkAcc = 0;
+
+        function spawnBaseSmoke(x, y) {
+            let side = rand(0, 1) > 0.5 ? 1 : -1;
+            let vx = side * rand(50, 250);
+            let vy = rand(-30, 0);
+            let r = Math.random();
+            let tint = r < 0.15 ? smokeFire : (r < 0.6 ? smokeLight : smokeDark);
+            let maxLife = rand(3, 5.5);
+            particles.push({
+                x: x + rand(-20, 20), y: y + rand(-10, 10), vx, vy, size: rand(30, 80), maxLife, life: maxLife, type: 'base',
+                rot: rand(0, 6.28), rotSpeed: rand(-0.3, 0.3), tint
+            });
+        }
+
+        function spawnTrailSmoke(x, y, scale = 1.0) {
+            let vx = (Math.random() < 0.5 ? rand(-40, -10) : rand(10, 40)) * scale;
+            let vy = rand(50, 150) * scale;
+            let maxLife = rand(2.5, 4.5);
+            particles.push({
+                x: x + rand(-10 * scale, 10 * scale), y: y + rand(-5 * scale, 10 * scale), vx, vy,
+                size: rand(40, 60) * scale, maxLife, life: maxLife, type: 'trail',
+                rot: rand(0, 6.28), rotSpeed: rand(-0.5, 0.5), tint: Math.random() < 0.7 ? smokeLight : smokeDark
+            });
+        }
+
+        function spawnSparks(x, y, scale = 1.0) {
+            particles.push({
+                x: x + rand(-10 * scale, 10 * scale), y,
+                vx: rand(-1, 1) * rand(20, 100) * scale, vy: rand(100, 300) * scale,
+                size: rand(2, 5) * scale, maxLife: rand(0.5, 1.5), life: rand(0.5, 1.5), type: 'spark'
+            });
+        }
+
+        function drawPalm(x, y, txt, scale=1, flipped=false) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(flipped ? -scale : scale, scale);
+            let sway = Math.sin(txt * 2 + x) * 0.08;
+            ctx.rotate(sway);
+
+            ctx.strokeStyle = '#2c221a';
+            ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(5, -30, 15, -70); ctx.stroke();
+
+            ctx.translate(15, -70);
+            ctx.fillStyle = '#1e3814';
+            for(let i=0; i<6; i++) {
+                ctx.save();
+                ctx.rotate((i * 45) * Math.PI/180 - Math.PI/1.5);
+                ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(15, -15, 35, 0); ctx.quadraticCurveTo(15, 5, 0, 0); ctx.fill();
+                ctx.restore();
+            }
+            ctx.restore();
+        }
+
+        function drawIsland(txt) {
+            ctx.fillStyle = '#111522';
+            ctx.beginPath(); ctx.moveTo(0, padY + 60); ctx.quadraticCurveTo(padX/2, padY + 20, padX - 200, padY + 70); ctx.fill();
+
+            ctx.fillStyle = '#30281b';
+            ctx.beginPath();
+            ctx.moveTo(padX - 400, h + 150);
+            ctx.bezierCurveTo(padX - 250, padY + 80, padX - 150, padY + 60, padX, padY + 60);
+            ctx.bezierCurveTo(padX + 150, padY + 60, padX + 250, padY + 80, padX + 400, h + 150);
+            ctx.fill();
+
+            ctx.fillStyle = '#1a2b10';
+            ctx.beginPath();
+            ctx.moveTo(padX - 380, h + 150);
+            ctx.bezierCurveTo(padX - 200, padY + 70, padX - 100, padY + 45, padX, padY + 45);
+            ctx.bezierCurveTo(padX + 100, padY + 45, padX + 200, padY + 70, padX + 380, h + 150);
+            ctx.fill();
+
+            drawPalm(padX - 180, padY + 60, txt, 0.8, false);
+            drawPalm(padX - 120, padY + 50, txt, 0.6, false);
+            drawPalm(padX + 220, padY + 70, txt, 0.9, true);
+        }
+
+        function drawRocket(rx, ry, rScale) {
+            ctx.save();
+            ctx.translate(rx, ry);
+            ctx.scale(rScale, rScale);
+
+            ctx.fillStyle = '#444';
+            for(let e of [-8, 0, 8]) {
+                ctx.beginPath(); ctx.moveTo(e-3, 0); ctx.lineTo(e-5, 10); ctx.lineTo(e+5, 10); ctx.lineTo(e+3, 0); ctx.fill();
+            }
+
+            ctx.fillStyle = '#fdfdfd';
+            ctx.beginPath(); ctx.roundRect(-15, -140, 30, 140, 2); ctx.fill();
+
+            ctx.fillStyle = '#f0f0f0';
+            ctx.beginPath(); ctx.roundRect(-15, -180, 30, 40, 2); ctx.fill();
+
+            ctx.beginPath(); ctx.moveTo(-15, -180); ctx.bezierCurveTo(-15, -200, -5, -230, 0, -230); ctx.bezierCurveTo(5, -230, 15, -200, 15, -180); ctx.fill();
+
+            ctx.fillStyle = '#111'; ctx.fillRect(-15, -140, 30, 4);
+            ctx.fillRect(10, -135, 3, 110);
+            ctx.fillStyle = '#204080'; ctx.fillRect(-15, -90, 30, 15);
+            ctx.fillStyle = '#da3030'; ctx.beginPath(); ctx.arc(-15, -82, 12, -Math.PI/2, Math.PI/2); ctx.fill();
+
+            ctx.fillStyle = '#333';
+            ctx.fillRect(-18, -135, 3, 15); ctx.fillRect(15, -135, 3, 15);
+
+            ctx.fillStyle = '#aaa';
+            ctx.beginPath(); ctx.moveTo(-15, -30); ctx.lineTo(-25, 0); ctx.lineTo(-15, 0); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(15, -30); ctx.lineTo(25, 0); ctx.lineTo(15, 0); ctx.fill();
+
+            let shadow = ctx.createLinearGradient(-15, 0, 15, 0);
+            shadow.addColorStop(0, 'rgba(0,0,0,0.5)'); shadow.addColorStop(0.2, 'rgba(0,0,0,0)'); shadow.addColorStop(0.8, 'rgba(0,0,0,0)'); shadow.addColorStop(1, 'rgba(0,0,0,0.4)');
+            ctx.fillStyle = shadow; ctx.fillRect(-15, -230, 30, 230);
+            ctx.restore();
+        }
+
+        function drawTower(armExt) {
+            let tw = 25, tx = padX + 45;
+            ctx.strokeStyle = '#2d2d3d'; ctx.lineWidth = 3;
+
+            ctx.strokeRect(tx, padY - 220, tw, 240);
+            ctx.beginPath();
+            for(let y=padY-220; y<padY; y+=20) { ctx.moveTo(tx, y); ctx.lineTo(tx+tw, y+20); ctx.moveTo(tx+tw, y); ctx.lineTo(tx, y+20); }
+            ctx.stroke();
+
+            ctx.lineWidth = 4;
+            let endX1 = tx - (tx - (padX + 15)) * armExt;
+            let endX2 = tx - (tx - (padX + 12)) * armExt;
+            ctx.beginPath(); ctx.moveTo(tx, padY - 70); ctx.lineTo(endX1, padY - 70); ctx.moveTo(tx, padY - 150); ctx.lineTo(endX2, padY - 150); ctx.stroke();
+        }
+
+        function drawFlame(rx, ry, rScale, power) {
+            if (power <= 0) return;
+            ctx.save();
+            ctx.translate(rx, ry); ctx.scale(rScale, rScale);
+            let length = power * rand(140, 190);
+            let wT = 12 * power;
+
+            ctx.globalCompositeOperation = 'screen';
+            function drawT(wd, l, col) {
+                ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-wd, 5); ctx.quadraticCurveTo(0, l, wd, 5); ctx.quadraticCurveTo(0, l*0.1, -wd, 5); ctx.fill();
+            }
+            drawT(wT, length, '#ff4400'); drawT(wT*0.7, length*0.7, '#ffaa00'); drawT(wT*0.4, length*0.4, '#ffffff');
+            ctx.restore();
+        }
+
+        let lastTime = Date.now();
+        let startTime = Date.now();
+        const CYCLE = 13.0; // Total 13s cycle
+        let prevRocketY = 0;
+
+        function loop() {
+            requestAnimationFrame(loop);
+            let now = Date.now();
+            let dt = (now - lastTime) / 1000;
+            if (dt > 0.05) dt = 0.05;
+            lastTime = now;
+
+            let absT = ((now - startTime) / 1000) % CYCLE;
+
+            let state = 'pre-launch';
+            if (absT >= 1.5 && absT < 4.0) state = 'liftoff';
+            else if (absT >= 4.0 && absT < 7.0) state = 'ascent';
+            else if (absT >= 7.0) state = 'reset';
+
+            let targetY = -400, dist = padY - targetY;
+            let rocketY = padY, rocketScale = 1.0, enginePower = 0;
+            let shakeX = 0, shakeY = 0, shakeMag = 0, armExt = 1.0;
+
+            if (state === 'pre-launch') {
+                enginePower = absT / 1.5;
+                shakeMag = enginePower * 4;
+            } else if (state === 'liftoff' || state === 'ascent') {
+                enginePower = 1.0 + rand(-0.1, 0.1);
+                let ratio = Math.max(0, Math.min(1, (absT - 1.5) / 5.5));
+                rocketY = padY - dist * Math.pow(ratio, 3);
+                rocketScale = 1.0 - ratio * 0.4;
+                if (state === 'liftoff') shakeMag = Math.max(0, 4 * (1 - (absT - 1.5)/2.5));
+                if (absT > 1.5 && absT < 2.5) armExt = 1.0 - (absT - 1.5);
+                else armExt = 0;
+            } else if (state === 'reset') {
+                enginePower = 0; armExt = 0;
+                let dtReset = absT - 7.0;
+                if (dtReset < 1.0) { rocketY = targetY; rocketScale = 0.6; }
+                else {
+                    let rRatio = Math.max(0, Math.min(1, (dtReset - 1.0) / 3.5));
+                    let ease = rRatio < 0.5 ? 2 * rRatio * rRatio : 1 - Math.pow(-2 * rRatio + 2, 2) / 2;
+                    rocketY = targetY + dist * ease;
+                    rocketScale = 0.6 + ease * 0.4;
+                    if (rRatio === 1) armExt = 1.0;
+                }
+            }
+
+            if (prevRocketY === 0) prevRocketY = rocketY;
+
+            if (shakeMag > 0) { shakeX = rand(-shakeMag, shakeMag); shakeY = rand(-shakeMag, shakeMag); }
+
+            // Physics Update (Particles)
+            if (state === 'pre-launch') baseAcc += dt * 80 * enginePower;
+            else if (state === 'liftoff' && absT < 3.0) baseAcc += dt * 50 * ((3.0 - absT)/1.5);
+            while (baseAcc >= 1) { spawnBaseSmoke(padX, padY + 10); baseAcc -= 1; }
+
+            if (state === 'liftoff' || state === 'ascent') {
+                let frTrail = dt * 150; trailAcc += frTrail;
+                while (trailAcc >= 1) {
+                    let f = trailAcc / Math.max(1, frTrail);
+                    spawnTrailSmoke(padX, prevRocketY + (rocketY - prevRocketY)*f + 10, rocketScale);
+                    trailAcc -= 1;
+                }
+                let frSparks = dt * 25; sparkAcc += frSparks;
+                while (sparkAcc >= 1) {
+                    let f = sparkAcc / Math.max(1, frSparks);
+                    spawnSparks(padX, prevRocketY + (rocketY - prevRocketY)*f + 10, rocketScale);
+                    sparkAcc -= 1;
+                }
+            }
+            prevRocketY = rocketY;
+
+            for(let i = particles.length-1; i>=0; i--) {
+                let p = particles[i]; p.life -= dt;
+                if (p.life <= 0 || p.x < -200 || p.x > w+200 || p.y < -300 || p.y > h+200) { particles.splice(i,1); continue; }
+                p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.rotSpeed * dt;
+                if (p.type === 'base') { p.vx *= 0.96; p.vy *= 0.98; p.size += 50 * dt; }
+                else if (p.type === 'trail') { p.vx *= 0.97; p.vy *= 0.95; p.size += 50 * dt; }
+                else if (p.type === 'spark') { p.vy += 300 * dt; }
+            }
+
+            // Rendering
+            let gSk = ctx.createLinearGradient(0,0,0,h);
+            gSk.addColorStop(0, '#020111'); gSk.addColorStop(0.3, '#100b2e'); gSk.addColorStop(1, '#bf5841');
+            ctx.fillStyle = gSk; ctx.fillRect(0, 0, w, h);
+
+            let txt = Date.now()/1000;
+            ctx.fillStyle = 'white';
+            stars.forEach(s => {
+                if(s.x > w || s.y > h*0.7) return;
+                ctx.globalAlpha = 0.3 + 0.7 * Math.sin(txt * s.s + s.phase);
+                ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.28); ctx.fill();
+            });
+            ctx.globalAlpha = 1.0;
+
+            clouds.forEach(c => {
+                c.x -= c.speed * dt; if(c.x < -c.w) { c.x = w + c.w; c.y = rand(50, 400); }
+                ctx.fillStyle = `rgba(255,255,255,${c.opacity})`;
+                ctx.beginPath(); ctx.ellipse(c.x, c.y, c.w/2, c.h/2, 0, 0, 6.28); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(c.x+c.w*0.2, c.y-c.h*0.3, c.w*0.4, c.h*0.4, 0, 0, 6.28); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(c.x-c.w*0.2, c.y-c.h*0.2, c.w*0.3, c.h*0.3, 0, 0, 6.28); ctx.fill();
+            });
+
+            ctx.save();
+            if(shakeMag > 0) ctx.translate(shakeX, shakeY);
+
+            // Ocean
+            ctx.fillStyle = '#0a1a3a'; ctx.beginPath(); ctx.moveTo(0, h);
+            for(let x=0; x<=w; x+=30) ctx.lineTo(x, padY + 90 + Math.sin(x*0.01 + txt*1.5)*6 + Math.cos(x*0.03 + txt)*4);
+            ctx.lineTo(w, h); ctx.fill();
+
+            if (enginePower > 0) {
+                let streak = ctx.createLinearGradient(0, padY+45, 0, h);
+                streak.addColorStop(0, `rgba(255,120,40,${0.4*enginePower})`); streak.addColorStop(1, 'rgba(255,120,40,0)');
+                ctx.fillStyle = streak; ctx.beginPath();
+                let twW = 150 + enginePower*100, bwW = 350 + enginePower*250;
+                ctx.moveTo(padX - twW/2, padY+45); ctx.lineTo(padX + twW/2, padY+45); ctx.lineTo(padX + bwW/2, h); ctx.lineTo(padX - bwW/2, h); ctx.fill();
+            }
+
+            function drawPart(arr) {
+                for(let i=0; i<particles.length; i++) {
+                    let p = particles[i];
+                    if (!arr.includes(p.type)) continue;
+                    if (p.x < -100 || p.x > w+100 || p.y < -100 || p.y > h+100) continue;
+                    ctx.save();
+                    if(p.type === 'spark') {
+                        ctx.strokeStyle = '#ffaa33'; ctx.lineCap='round'; ctx.lineWidth = p.size; ctx.globalAlpha = p.life/p.maxLife;
+                        let stretchX = p.vx*0.04, stretchY = p.vy*0.04;
+                        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - stretchX, p.y - stretchY); ctx.stroke();
+                    } else {
+                        ctx.globalAlpha = Math.max(0, Math.pow(p.life/p.maxLife, 1.5));
+                        ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.drawImage(p.tint, -p.size/2, -p.size/2, p.size, p.size);
+                    }
+                    ctx.restore();
+                }
+            }
+
+            drawPart(['trail']);
+            drawTargetPadBg = drawTower(armExt);
+            drawIsland(txt);
+
+            drawFlame(padX, rocketY, rocketScale, enginePower);
+            drawRocket(padX, rocketY, rocketScale);
+
+            drawPart(['base', 'spark']);
+
+            if(absT < 0.2) {
+                ctx.fillStyle = `rgba(255,255,255,${(1 - absT/0.2)*0.5})`; ctx.fillRect(-100,-100,w+200,h+200);
+            }
+            ctx.restore();
+
+            if (enginePower > 0) {
+                let glow = ctx.createRadialGradient(padX, rocketY, 0, padX, rocketY, 1000);
+                glow.addColorStop(0, `rgba(255,180,80,${0.25*enginePower})`); glow.addColorStop(1, 'rgba(255,180,80,0)');
+                ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = glow; ctx.fillRect(0,0,w,h); ctx.globalCompositeOperation = 'source-over';
+            }
+        }
+        loop();
+    </script>
+</body>
+</html>

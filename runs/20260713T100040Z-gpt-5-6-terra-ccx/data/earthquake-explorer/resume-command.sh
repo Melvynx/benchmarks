@@ -1,0 +1,3 @@
+#!/usr/bin/env zsh
+source "$HOME/.zshrc"
+ccx --resume a99e3ada-84cc-4d19-9e25-44c18880d62d 

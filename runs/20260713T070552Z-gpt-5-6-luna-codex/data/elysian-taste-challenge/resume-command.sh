@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+codex exec resume 019f5a4b-ef49-7cf0-b509-d4fea3f568eb

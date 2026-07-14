@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GPT 5.3 Codex</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000000;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #000000;
+    }
+    .controls {
+      position: fixed;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: #ffffff;
+      font: 12px/1 sans-serif;
+      z-index: 2;
+    }
+    .controls input[type="range"] {
+      width: 120px;
+    }
+    .controls button {
+      background: transparent;
+      color: #ffffff;
+      border: 1px solid #ffffff;
+      padding: 4px 8px;
+      font: 12px/1 sans-serif;
+      cursor: pointer;
+    }
+    h1 {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      transform: none;
+      margin: 0;
+      color: #ffffff;
+      font: 18px/1 sans-serif;
+      font-weight: 400;
+      pointer-events: none;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="sim"></canvas>
+  <h1>GPT 5.3 Codex</h1>
+  <div class="controls">
+    <label for="speed">Rapidité</label>
+    <input id="speed" type="range" min="0.25" max="2.5" step="0.05" value="1" />
+    <label for="bounce">Rebond</label>
+    <input id="bounce" type="range" min="0.5" max="2" step="0.05" value="1" />
+    <button id="addBall" type="button">Ajouter une balle</button>
+  </div>
+  <script>
+    (() => {
+      const canvas = document.getElementById("sim");
+      const ctx = canvas.getContext("2d");
+      const speedInput = document.getElementById("speed");
+      const bounceInput = document.getElementById("bounce");
+      const addBallButton = document.getElementById("addBall");
+
+      const GRAVITY = 500;
+      const RESTITUTION = 0.8;
+      const FRICTION = 0.98;
+      const BALL_RADIUS = 15;
+      const BALL_DIAMETER = BALL_RADIUS * 2;
+      const POLY_RADIUS = 250;
+      const SIDES = 7;
+      const ROT_SPEED = 0.5;
+
+      let width = 0;
+      let height = 0;
+      let center = { x: 0, y: 0 };
+      let timeScale = 1;
+      let bounceScale = 1;
+
+      const balls = [];
+      let theta = 0;
+      let initialized = false;
+
+      const localVerts = [];
+      const edges = [];
+      const worldVerts = new Array(SIDES).fill(0).map(() => ({ x: 0, y: 0 }));
+
+      function dot(ax, ay, bx, by) {
+        return ax * bx + ay * by;
+      }
+
+      function rotate(x, y, a) {
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        return { x: x * c - y * s, y: x * s + y * c };
+      }
+
+      function normalize(x, y) {
+        const m = Math.hypot(x, y) || 1;
+        return { x: x / m, y: y / m };
+      }
+
+      function crossOmegaP(omega, p) {
+        return { x: -omega * p.y, y: omega * p.x };
+      }
+
+      function currentRestitution() {
+        return Math.min(1.2, RESTITUTION * bounceScale);
+      }
+
+      function createBall(speed = 120) {
+        const a = Math.random() * Math.PI * 2;
+        balls.push({
+          x: center.x,
+          y: center.y,
+          vx: Math.cos(a) * speed,
+          vy: Math.sin(a) * speed
+        });
+      }
+
+      function buildPolygonLocal() {
+        localVerts.length = 0;
+        edges.length = 0;
+
+        const step = (Math.PI * 2) / SIDES;
+        const start = -Math.PI / 2;
+        for (let i = 0; i < SIDES; i++) {
+          const a = start + i * step;
+          localVerts.push({
+            x: Math.cos(a) * POLY_RADIUS,
+            y: Math.sin(a) * POLY_RADIUS
+          });
+        }
+
+        for (let i = 0; i < SIDES; i++) {
+          const a = localVerts[i];
+          const b = localVerts[(i + 1) % SIDES];
+          const ex = b.x - a.x;
+          const ey = b.y - a.y;
+
+          const nIn = normalize(-ey, ex);
+          const nOut = { x: -nIn.x, y: -nIn.y };
+
+          edges.push({
+            ax: a.x, ay: a.y,
+            bx: b.x, by: b.y,
+            nInx: nIn.x, nIny: nIn.y,
+            nOutx: nOut.x, nOuty: nOut.y
+          });
+        }
+      }
+
+      function updateWorldVerts() {
+        for (let i = 0; i < SIDES; i++) {
+          const r = rotate(localVerts[i].x, localVerts[i].y, theta);
+          worldVerts[i].x = center.x + r.x;
+          worldVerts[i].y = center.y + r.y;
+        }
+      }
+
+      function resolveCollision(ball) {
+        const rwx = ball.x - center.x;
+        const rwy = ball.y - center.y;
+
+        let pLocal = rotate(rwx, rwy, -theta);
+
+        const vRot = rotate(ball.vx, ball.vy, -theta);
+        const frameVel = crossOmegaP(ROT_SPEED, pLocal);
+
+        let vLocal = {
+          x: vRot.x - frameVel.x,
+          y: vRot.y - frameVel.y
+        };
+
+        for (let iter = 0; iter < 12; iter++) {
+          let mostPenetration = 0;
+          let hit = -1;
+
+          for (let i = 0; i < edges.length; i++) {
+            const e = edges[i];
+            const distToInsetLine =
+              dot(pLocal.x - e.ax, pLocal.y - e.ay, e.nInx, e.nIny) - BALL_RADIUS;
+
+            if (distToInsetLine < mostPenetration) {
+              mostPenetration = distToInsetLine;
+              hit = i;
+            }
+          }
+
+          if (hit === -1) break;
+
+          const e = edges[hit];
+          const push = -mostPenetration + 1e-6;
+
+          pLocal.x += e.nInx * push;
+          pLocal.y += e.nIny * push;
+
+          const vn = dot(vLocal.x, vLocal.y, e.nOutx, e.nOuty);
+
+          if (vn > 0) {
+            const restitution = currentRestitution();
+            const vtx = vLocal.x - vn * e.nOutx;
+            const vty = vLocal.y - vn * e.nOuty;
+
+            vLocal.x = -restitution * vn * e.nOutx + FRICTION * vtx;
+            vLocal.y = -restitution * vn * e.nOuty + FRICTION * vty;
+          }
+        }
+
+        const backR = rotate(pLocal.x, pLocal.y, theta);
+        ball.x = center.x + backR.x;
+        ball.y = center.y + backR.y;
+
+        const addFrame = crossOmegaP(ROT_SPEED, pLocal);
+        const worldVRot = {
+          x: vLocal.x + addFrame.x,
+          y: vLocal.y + addFrame.y
+        };
+        const worldV = rotate(worldVRot.x, worldVRot.y, theta);
+
+        ball.vx = worldV.x;
+        ball.vy = worldV.y;
+      }
+
+      function resolveBallBallCollisions() {
+        for (let i = 0; i < balls.length - 1; i++) {
+          const a = balls[i];
+          for (let j = i + 1; j < balls.length; j++) {
+            const b = balls[j];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let distSq = dx * dx + dy * dy;
+
+            if (distSq >= BALL_DIAMETER * BALL_DIAMETER) continue;
+
+            if (distSq < 1e-12) {
+              const angle = (i * 37 + j * 53) * 0.12345;
+              dx = Math.cos(angle);
+              dy = Math.sin(angle);
+              distSq = 1;
+            }
+
+            const dist = Math.sqrt(distSq);
+            const nx = dx / dist;
+            const ny = dy / dist;
+
+            const overlap = BALL_DIAMETER - dist;
+            const halfPush = (overlap + 1e-6) * 0.5;
+            a.x -= nx * halfPush;
+            a.y -= ny * halfPush;
+            b.x += nx * halfPush;
+            b.y += ny * halfPush;
+
+            const rvx = b.vx - a.vx;
+            const rvy = b.vy - a.vy;
+            const vn = rvx * nx + rvy * ny;
+            if (vn >= 0) continue;
+
+            const restitution = currentRestitution();
+            const tx = rvx - vn * nx;
+            const ty = rvy - vn * ny;
+            const outN = -restitution * vn;
+
+            const newRvx = outN * nx + FRICTION * tx;
+            const newRvy = outN * ny + FRICTION * ty;
+
+            const cmvx = 0.5 * (a.vx + b.vx);
+            const cmvy = 0.5 * (a.vy + b.vy);
+            a.vx = cmvx - 0.5 * newRvx;
+            a.vy = cmvy - 0.5 * newRvy;
+            b.vx = cmvx + 0.5 * newRvx;
+            b.vy = cmvy + 0.5 * newRvy;
+          }
+        }
+      }
+
+      function step(dt) {
+        let maxPredictedMove = 0;
+        for (let i = 0; i < balls.length; i++) {
+          const b = balls[i];
+          const move = Math.hypot(b.vx, b.vy) * dt + 0.5 * GRAVITY * dt * dt;
+          if (move > maxPredictedMove) maxPredictedMove = move;
+        }
+        const substeps = Math.min(64, Math.max(1, Math.ceil(maxPredictedMove / (BALL_RADIUS * 0.25))));
+        const h = dt / substeps;
+
+        for (let i = 0; i < substeps; i++) {
+          theta += ROT_SPEED * h;
+          if (theta > Math.PI * 2) theta -= Math.PI * 2;
+
+          for (let j = 0; j < balls.length; j++) {
+            const ball = balls[j];
+            ball.vy += GRAVITY * h;
+            ball.x += ball.vx * h;
+            ball.y += ball.vy * h;
+          }
+
+          for (let iter = 0; iter < 3; iter++) {
+            for (let j = 0; j < balls.length; j++) {
+              resolveCollision(balls[j]);
+            }
+            resolveBallBallCollisions();
+          }
+        }
+      }
+
+      function draw() {
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, width, height);
+
+        updateWorldVerts();
+
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(worldVerts[0].x, worldVerts[0].y);
+        for (let i = 1; i < SIDES; i++) {
+          ctx.lineTo(worldVerts[i].x, worldVerts[i].y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.fillStyle = "#FF0000";
+        for (let i = 0; i < balls.length; i++) {
+          const ball = balls[i];
+          ctx.beginPath();
+          ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      function resize() {
+        const old = { x: center.x, y: center.y };
+
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+
+        center.x = width * 0.5;
+        center.y = height * 0.5;
+
+        if (!initialized) {
+          createBall(120);
+          initialized = true;
+        } else {
+          const dx = center.x - old.x;
+          const dy = center.y - old.y;
+          for (let i = 0; i < balls.length; i++) {
+            balls[i].x += dx;
+            balls[i].y += dy;
+          }
+        }
+      }
+
+      buildPolygonLocal();
+      resize();
+      window.addEventListener("resize", resize);
+      speedInput.addEventListener("input", () => {
+        timeScale = Number(speedInput.value) || 1;
+      });
+      bounceInput.addEventListener("input", () => {
+        bounceScale = Number(bounceInput.value) || 1;
+      });
+      addBallButton.addEventListener("click", () => {
+        createBall(100 + Math.random() * 80);
+      });
+
+      let last = performance.now();
+      function loop(now) {
+        let dt = (now - last) / 1000;
+        last = now;
+        if (dt > 0.05) dt = 0.05;
+        dt *= timeScale;
+
+        step(dt);
+        draw();
+        requestAnimationFrame(loop);
+      }
+
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>

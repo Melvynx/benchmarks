@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Claude Code - Claude Sonnet 4.6</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; }
+
+    #title {
+      position: fixed;
+      top: 52px;
+      width: 100%;
+      text-align: center;
+      color: rgba(255,255,255,0.35);
+      font: 11px/1 'Courier New', monospace;
+      letter-spacing: 0.15em;
+      pointer-events: none;
+    }
+
+    #controls {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 40px;
+      background: rgba(18,18,18,0.92);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      font: 12px/1 'Courier New', monospace;
+      color: rgba(255,255,255,0.75);
+      user-select: none;
+    }
+
+    #controls label { white-space: nowrap; }
+
+    #controls .val {
+      min-width: 36px;
+      color: rgba(255,255,255,0.55);
+      font-size: 11px;
+    }
+
+    /* Red range slider */
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 3px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.2);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: #e03030;
+      cursor: pointer;
+      box-shadow: 0 0 0 2px rgba(224,48,48,0.25);
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: #e03030;
+      border: none;
+      cursor: pointer;
+    }
+    #speedSlider  { width: 110px; }
+    #bounceSlider { width: 110px; }
+
+    #addBall {
+      margin-left: 6px;
+      padding: 4px 10px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 4px;
+      color: rgba(255,255,255,0.8);
+      font: 12px/1 'Courier New', monospace;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    #addBall:hover {
+      border-color: rgba(255,255,255,0.7);
+      color: #fff;
+    }
+    #addBall:active { opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="controls">
+    <label>Speed</label>
+    <input type="range" id="speedSlider" min="0.1" max="3" step="0.05" value="1">
+    <span class="val" id="speedVal">1.0x</span>
+    <label>Bounce</label>
+    <input type="range" id="bounceSlider" min="0" max="1" step="0.01" value="0.80">
+    <span class="val" id="bounceVal">0.80</span>
+    <button id="addBall">+ Ball</button>
+  </div>
+
+  <h1 id="title">Claude Code - Claude Sonnet 4.6</h1>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx    = canvas.getContext('2d');
+
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // ── Tunable parameters (live) ─────────────────────────────────────────────
+    let speedMult = 1.0;   // multiplies simulation dt
+    let restCoeff = 0.80;  // restitution coefficient
+
+    const speedSlider  = document.getElementById('speedSlider');
+    const bounceSlider = document.getElementById('bounceSlider');
+    const speedVal     = document.getElementById('speedVal');
+    const bounceVal    = document.getElementById('bounceVal');
+
+    speedSlider.addEventListener('input', () => {
+      speedMult = parseFloat(speedSlider.value);
+      speedVal.textContent = speedMult.toFixed(1) + 'x';
+    });
+    bounceSlider.addEventListener('input', () => {
+      restCoeff = parseFloat(bounceSlider.value);
+      bounceVal.textContent = restCoeff.toFixed(2);
+    });
+
+    document.getElementById('addBall').addEventListener('click', spawnBall);
+
+    // ── Fixed constants ───────────────────────────────────────────────────────
+    const N    = 7;     // polygon sides
+    const PR   = 250;   // polygon circumradius (px)
+    const BR   = 15;    // ball radius (px)
+    const ROT  = 0.5;   // rotation speed (rad/s)
+    const GRAV = 500;   // gravity (px/s²)
+    const FRIC = 0.98;  // tangential friction
+    const SUBS = 10;    // substeps per frame
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    let angle = 0;
+    let balls = [];
+
+    function spawnBall() {
+      const cx = canvas.width  / 2;
+      const cy = canvas.height / 2;
+      balls.push({
+        x:  cx + (Math.random() - 0.5) * 20,
+        y:  cy + (Math.random() - 0.5) * 20,
+        vx: (Math.random() - 0.5) * 80,
+        vy: (Math.random() - 0.5) * 80,
+      });
+    }
+    spawnBall(); // initial ball
+
+    // ── Geometry ──────────────────────────────────────────────────────────────
+    function getVerts() {
+      const cx = canvas.width  / 2;
+      const cy = canvas.height / 2;
+      const v  = [];
+      for (let k = 0; k < N; k++) {
+        const a = angle + k * (2 * Math.PI / N);
+        v.push({ x: cx + PR * Math.cos(a), y: cy + PR * Math.sin(a) });
+      }
+      return v;
+    }
+
+    // ── Collision for one ball ────────────────────────────────────────────────
+    function collide(ball) {
+      const cx    = canvas.width  / 2;
+      const cy    = canvas.height / 2;
+      const verts = getVerts();
+
+      for (let k = 0; k < N; k++) {
+        const A = verts[k];
+        const B = verts[(k + 1) % N];
+
+        const edx  = B.x - A.x;
+        const edy  = B.y - A.y;
+        const elen = Math.hypot(edx, edy);
+        const ex   = edx / elen;
+        const ey   = edy / elen;
+
+        // Outward normal
+        let nx = ey, ny = -ex;
+        const mx = (A.x + B.x) * 0.5 - cx;
+        const my = (A.y + B.y) * 0.5 - cy;
+        if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+
+        const tbx  = ball.x - A.x;
+        const tby  = ball.y - A.y;
+        const dist = tbx * nx + tby * ny;
+
+        if (dist > -BR) {
+          const t = tbx * ex + tby * ey;
+          if (t >= 0 && t <= elen) {
+            // Positional correction
+            const pen = dist + BR;
+            ball.x -= pen * nx;
+            ball.y -= pen * ny;
+
+            // Contact point
+            const cpx = ball.x + BR * nx;
+            const cpy = ball.y + BR * ny;
+
+            // Wall velocity at contact (rigid rotation)
+            const wvx = -ROT * speedMult * (cpy - cy);
+            const wvy =  ROT * speedMult * (cpx - cx);
+
+            // Relative velocity
+            const rvx = ball.vx - wvx;
+            const rvy = ball.vy - wvy;
+            const rvn = rvx * nx + rvy * ny;
+
+            if (rvn > 0) {
+              const rnx = rvn * nx,  rny = rvn * ny;
+              const rtx = rvx - rnx, rty = rvy - rny;
+              ball.vx = wvx + FRIC * rtx - restCoeff * rnx;
+              ball.vy = wvy + FRIC * rty - restCoeff * rny;
+            }
+          }
+        }
+      }
+    }
+
+    // ── Main loop ─────────────────────────────────────────────────────────────
+    let last = null;
+
+    function frame(ts) {
+      if (!last) last = ts;
+      const dt  = Math.min((ts - last) / 1000, 0.05) * speedMult;
+      last = ts;
+
+      const sdt = dt / SUBS;
+      for (let s = 0; s < SUBS; s++) {
+        angle += ROT * sdt;
+        for (const ball of balls) {
+          ball.vy += GRAV * sdt;
+          ball.x  += ball.vx * sdt;
+          ball.y  += ball.vy * sdt;
+          collide(ball);
+        }
+      }
+
+      // ── Render ──────────────────────────────────────────────────────────────
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const verts = getVerts();
+      ctx.beginPath();
+      ctx.moveTo(verts[0].x, verts[0].y);
+      for (let k = 1; k < N; k++) ctx.lineTo(verts[k].x, verts[k].y);
+      ctx.closePath();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+
+      for (const ball of balls) {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, BR, 0, 2 * Math.PI);
+        ctx.fillStyle = '#f00';
+        ctx.fill();
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

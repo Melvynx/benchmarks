@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bikini Bottom 3D - SpongeBob World</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden;
+            background: #001220;
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+        }
+        canvas { display: block; }
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #0077be 0%, #001220 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.8s ease;
+        }
+        #loading.hidden { opacity: 0; pointer-events: none; }
+        #loading h1 {
+            color: #ffdd00;
+            font-size: 2.5rem;
+            text-shadow: 3px 3px 0 #c41e3a, -1px -1px 0 #000;
+            margin-bottom: 20px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .bubbles {
+            display: flex;
+            gap: 10px;
+        }
+        .bubble {
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9), rgba(255,255,255,0.3));
+            border-radius: 50%;
+            animation: rise 2s ease-in infinite;
+        }
+        .bubble:nth-child(2) { animation-delay: 0.3s; width: 15px; height: 15px; }
+        .bubble:nth-child(3) { animation-delay: 0.6s; width: 25px; height: 25px; }
+        .bubble:nth-child(4) { animation-delay: 0.9s; width: 12px; height: 12px; }
+        .bubble:nth-child(5) { animation-delay: 1.2s; width: 18px; height: 18px; }
+        @keyframes rise {
+            0% { transform: translateY(0) scale(1); opacity: 0.8; }
+            100% { transform: translateY(-100px) scale(0.5); opacity: 0; }
+        }
+        #info {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.6);
+            font-size: 12px;
+            text-align: center;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <h1>🎬 Loading Bikini Bottom...</h1>
+        <div class="bubbles">
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+        </div>
+    </div>
+    <div id="info">Drag to rotate • Scroll to zoom</div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+        // ============================================
+        // SCENE SETUP
+        // ============================================
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x003366);
+        scene.fog = new THREE.FogExp2(0x004466, 0.012);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(22, 12, 25);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(renderer.domElement);
+
+        // ============================================
+        // CONTROLS
+        // ============================================
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 12;
+        controls.maxDistance = 60;
+        controls.maxPolarAngle = Math.PI / 2.15;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.25;
+        controls.target.set(0, 2, 0);
+
+        // ============================================
+        // POST PROCESSING
+        // ============================================
+
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            0.5, 0.5, 0.7
+        );
+        composer.addPass(bloomPass);
+
+        // Underwater color grading shader
+        const underwaterShader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                time: { value: 0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                varying vec2 vUv;
+
+                void main() {
+                    vec2 uv = vUv;
+                    uv.x += sin(uv.y * 8.0 + time * 0.5) * 0.001;
+                    uv.y += cos(uv.x * 8.0 + time * 0.5) * 0.001;
+
+                    vec4 color = texture2D(tDiffuse, uv);
+
+                    // Underwater tint - boost blues and greens
+                    color.r *= 0.9;
+                    color.g *= 1.0;
+                    color.b *= 1.15;
+
+                    // Vignette
+                    float vignette = 1.0 - smoothstep(0.5, 1.4, length(uv - 0.5) * 1.6);
+                    color.rgb *= mix(0.6, 1.0, vignette);
+
+                    gl_FragColor = color;
+                }
+            `
+        };
+        const underwaterPass = new ShaderPass(underwaterShader);
+        composer.addPass(underwaterPass);
+
+        // ============================================
+        // LIGHTING
+        // ============================================
+
+        // Ambient - more vibrant underwater
+        const ambientLight = new THREE.AmbientLight(0x3399aa, 0.7);
+        scene.add(ambientLight);
+
+        // Sun light - warm underwater sunlight
+        const sunLight = new THREE.DirectionalLight(0xffeebb, 1.4);
+        sunLight.position.set(15, 35, 10);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 1;
+        sunLight.shadow.camera.far = 80;
+        sunLight.shadow.camera.left = -35;
+        sunLight.shadow.camera.right = 35;
+        sunLight.shadow.camera.top = 35;
+        sunLight.shadow.camera.bottom = -35;
+        sunLight.shadow.bias = -0.0005;
+        scene.add(sunLight);
+
+        // Secondary fill light
+        const fillLight = new THREE.DirectionalLight(0x88bbdd, 0.4);
+        fillLight.position.set(-15, 15, -10);
+        scene.add(fillLight);
+
+        // ============================================
+        // MATERIALS - VIBRANT CARTOON COLORS
+        // ============================================
+
+        const materials = {
+            sand: new THREE.MeshStandardMaterial({
+                color: 0xf4d03f,
+                roughness: 0.85,
+                metalness: 0.0
+            }),
+            pineapple: new THREE.MeshStandardMaterial({
+                color: 0xffaa00,
+                roughness: 0.65,
+                metalness: 0.0
+            }),
+            pineappleLeaves: new THREE.MeshStandardMaterial({
+                color: 0x2ecc71,
+                roughness: 0.5,
+                metalness: 0.0
+            }),
+            pineappleDoor: new THREE.MeshStandardMaterial({
+                color: 0x8b4513,
+                roughness: 0.75,
+                metalness: 0.0
+            }),
+            pineappleWindow: new THREE.MeshStandardMaterial({
+                color: 0xffffaa,
+                emissive: 0xffff44,
+                emissiveIntensity: 0.6,
+                roughness: 0.2,
+                metalness: 0.0
+            }),
+            moai: new THREE.MeshStandardMaterial({
+                color: 0x5a6a7a,
+                roughness: 0.75,
+                metalness: 0.05
+            }),
+            rock: new THREE.MeshStandardMaterial({
+                color: 0x8b7355,
+                roughness: 0.9,
+                metalness: 0.0
+            }),
+            krustyKrab: new THREE.MeshStandardMaterial({
+                color: 0xcc2222,
+                roughness: 0.55,
+                metalness: 0.15
+            }),
+            krustyKrabSign: new THREE.MeshStandardMaterial({
+                color: 0xffdd00,
+                emissive: 0xffaa00,
+                emissiveIntensity: 0.4,
+                roughness: 0.35,
+                metalness: 0.4
+            }),
+            // Character materials - vibrant
+            spongeBob: new THREE.MeshStandardMaterial({
+                color: 0xffdd00,
+                roughness: 0.45,
+                metalness: 0.0
+            }),
+            spongeBobPants: new THREE.MeshStandardMaterial({
+                color: 0x6b4423,
+                roughness: 0.7,
+                metalness: 0.0
+            }),
+            spongeBobShirt: new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.45,
+                metalness: 0.0
+            }),
+            spongeBobTie: new THREE.MeshStandardMaterial({
+                color: 0xdd2222,
+                roughness: 0.45,
+                metalness: 0.0
+            }),
+            patrick: new THREE.MeshStandardMaterial({
+                color: 0xffb6c1,
+                roughness: 0.65,
+                metalness: 0.0
+            }),
+            patrickShorts: new THREE.MeshStandardMaterial({
+                color: 0x6a0dad,
+                roughness: 0.65,
+                metalness: 0.0
+            }),
+            squidward: new THREE.MeshStandardMaterial({
+                color: 0x4a9ea8,
+                roughness: 0.55,
+                metalness: 0.0
+            }),
+            squidwardShirt: new THREE.MeshStandardMaterial({
+                color: 0x5a3a1a,
+                roughness: 0.65,
+                metalness: 0.0
+            }),
+            gary: new THREE.MeshStandardMaterial({
+                color: 0x6ab4d4,
+                roughness: 0.45,
+                metalness: 0.0
+            }),
+            garyShell: new THREE.MeshStandardMaterial({
+                color: 0xe8a0b0,
+                roughness: 0.55,
+                metalness: 0.0
+            }),
+            jellyfish: new THREE.MeshStandardMaterial({
+                color: 0xff88bb,
+                transparent: true,
+                opacity: 0.75,
+                roughness: 0.25,
+                metalness: 0.0,
+                emissive: 0xff44aa,
+                emissiveIntensity: 0.4
+            }),
+            kelp: new THREE.MeshStandardMaterial({
+                color: 0x27ae60,
+                roughness: 0.65,
+                metalness: 0.0,
+                side: THREE.DoubleSide
+            }),
+            coral: new THREE.MeshStandardMaterial({
+                color: 0xff6b4a,
+                roughness: 0.75,
+                metalness: 0.0
+            }),
+            bubble: new THREE.MeshStandardMaterial({
+                color: 0xaaddff,
+                transparent: true,
+                opacity: 0.35,
+                roughness: 0.05,
+                metalness: 0.0,
+                emissive: 0x88ccff,
+                emissiveIntensity: 0.3
+            })
+        };
+
+        // ============================================
+        // OCEAN FLOOR
+        // ============================================
+
+        function createOceanFloor() {
+            const floorGeometry = new THREE.PlaneGeometry(100, 100, 50, 50);
+            const positions = floorGeometry.attributes.position;
+
+            for (let i = 0; i < positions.count; i++) {
+                const x = positions.getX(i);
+                const y = positions.getY(i);
+                const z = Math.sin(x * 0.08) * Math.cos(y * 0.08) * 0.6 +
+                         Math.sin(x * 0.25 + y * 0.15) * 0.25;
+                positions.setZ(i, z);
+            }
+
+            floorGeometry.computeVertexNormals();
+
+            const floor = new THREE.Mesh(floorGeometry, materials.sand);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Caustics
+            const causticsGeometry = new THREE.PlaneGeometry(100, 100);
+            const causticsMaterial = new THREE.ShaderMaterial({
+                transparent: true,
+                uniforms: { time: { value: 0 } },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform float time;
+                    varying vec2 vUv;
+
+                    float caustic(vec2 uv) {
+                        float c = 0.0;
+                        vec2 p = uv * 10.0;
+                        c += sin(p.x + time * 1.2) * sin(p.y + time * 0.9);
+                        c += sin(p.x * 1.7 - time * 0.7) * sin(p.y * 1.5 + time * 0.5);
+                        c += sin(p.x * 2.3 + time * 1.0) * sin(p.y * 2.0 - time * 0.6);
+                        return c * 0.12 + 0.55;
+                    }
+
+                    void main() {
+                        float c = caustic(vUv);
+                        gl_FragColor = vec4(1.0, 0.98, 0.8, c * 0.25);
+                    }
+                `,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            const caustics = new THREE.Mesh(causticsGeometry, causticsMaterial);
+            caustics.rotation.x = -Math.PI / 2;
+            caustics.position.y = -1.97;
+            scene.add(caustics);
+
+            return causticsMaterial;
+        }
+
+        const causticsMaterial = createOceanFloor();
+
+        // ============================================
+        // PINEAPPLE HOUSE - positioned on left
+        // ============================================
+
+        function createPineappleHouse() {
+            const house = new THREE.Group();
+
+            // Main body - stacked spheres
+            for (let i = 0; i < 7; i++) {
+                const radius = 2.8 - i * 0.18;
+                const sphere = new THREE.Mesh(
+                    new THREE.SphereGeometry(radius, 18, 14),
+                    materials.pineapple
+                );
+                sphere.position.y = i * 1.6;
+                sphere.castShadow = true;
+                sphere.receiveShadow = true;
+                house.add(sphere);
+            }
+
+            // Texture bumps
+            for (let i = 0; i < 50; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                const y = Math.random() * 11;
+                const radius = 2.8 - y * 0.12;
+                const bump = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.12, 6, 6),
+                    new THREE.MeshStandardMaterial({ color: 0xdd8800, roughness: 0.85 })
+                );
+                bump.position.setFromSphericalCoords(radius, phi, theta);
+                bump.position.y = y;
+                house.add(bump);
+            }
+
+            // Leaves crown
+            for (let i = 0; i < 14; i++) {
+                const leaf = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.5, 2.8, 4),
+                    materials.pineappleLeaves
+                );
+                const angle = (i / 14) * Math.PI * 2;
+                leaf.position.set(
+                    Math.cos(angle) * 1.0,
+                    11.2 + Math.random() * 0.6,
+                    Math.sin(angle) * 1.0
+                );
+                leaf.rotation.x = -0.35;
+                leaf.rotation.z = Math.cos(angle) * 0.35;
+                leaf.castShadow = true;
+                house.add(leaf);
+            }
+
+            // Door
+            const door = new THREE.Mesh(
+                new THREE.BoxGeometry(1.4, 2.5, 0.25),
+                materials.pineappleDoor
+            );
+            door.position.set(0, 0.6, 2.6);
+            house.add(door);
+
+            // Handle
+            const handle = new THREE.Mesh(
+                new THREE.SphereGeometry(0.12, 8, 8),
+                new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.85, roughness: 0.15 })
+            );
+            handle.position.set(0.5, 0.6, 2.8);
+            house.add(handle);
+
+            // Windows with lights
+            const windowConfigs = [[-1.8, 4.2, 1.8], [1.8, 4.2, 1.8], [0, 6.5, 2.0]];
+            windowConfigs.forEach(pos => {
+                const frame = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.4, 1.4, 0.25),
+                    materials.pineappleDoor
+                );
+                frame.position.set(...pos);
+                house.add(frame);
+
+                const glass = new THREE.Mesh(
+                    new THREE.PlaneGeometry(1.1, 1.1),
+                    materials.pineappleWindow
+                );
+                glass.position.set(pos[0], pos[1], pos[2] + 0.18);
+                house.add(glass);
+
+                const light = new THREE.PointLight(0xffffaa, 0.6, 6);
+                light.position.set(pos[0], pos[1], pos[2] + 0.8);
+                house.add(light);
+            });
+
+            // Chimney
+            const chimney = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.35, 0.45, 2.2, 10),
+                new THREE.MeshStandardMaterial({ color: 0x7a3a10, roughness: 0.8 })
+            );
+            chimney.position.set(1.4, 11.5, 0);
+            chimney.castShadow = true;
+            house.add(chimney);
+
+            // Position: left side of scene
+            house.position.set(-8, -1.2, -2);
+            scene.add(house);
+            return house;
+        }
+
+        // ============================================
+        // MOAI HOUSE - positioned on right
+        // ============================================
+
+        function createMoaiHouse() {
+            const house = new THREE.Group();
+
+            // Main body
+            const body = new THREE.Mesh(
+                new THREE.CylinderGeometry(3.0, 2.4, 10, 18),
+                materials.moai
+            );
+            body.position.y = 3.5;
+            body.castShadow = true;
+            body.receiveShadow = true;
+            house.add(body);
+
+            // Head
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(2.7, 16, 14),
+                materials.moai
+            );
+            head.position.y = 9.2;
+            head.scale.y = 0.55;
+            head.castShadow = true;
+            house.add(head);
+
+            // Brow
+            const brow = new THREE.Mesh(
+                new THREE.BoxGeometry(3.8, 0.55, 0.9),
+                materials.moai
+            );
+            brow.position.set(0, 8.0, 2.0);
+            house.add(brow);
+
+            // Eyes
+            const eyeMat = new THREE.MeshStandardMaterial({ color: 0x151528, roughness: 0.92 });
+            [-1.1, 1.1].forEach(x => {
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 10), eyeMat);
+                eye.position.set(x, 7.5, 2.2);
+                house.add(eye);
+            });
+
+            // Nose
+            const nose = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.22, 0.32, 1.1, 8),
+                materials.moai
+            );
+            nose.position.set(0, 6.5, 2.7);
+            nose.rotation.x = Math.PI / 2;
+            house.add(nose);
+
+            // Mouth
+            const mouth = new THREE.Mesh(
+                new THREE.BoxGeometry(1.7, 0.35, 0.35),
+                eyeMat
+            );
+            mouth.position.set(0, 5.5, 2.5);
+            house.add(mouth);
+
+            // Door
+            const door = new THREE.Mesh(
+                new THREE.BoxGeometry(1.7, 3.2, 0.35),
+                new THREE.MeshStandardMaterial({ color: 0x252538, roughness: 0.92 })
+            );
+            door.position.set(0, 0.3, 2.4);
+            house.add(door);
+
+            // Arms
+            [-2.8, 2.8].forEach((x, i) => {
+                const arm = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.45, 0.45, 3.2, 10),
+                    materials.moai
+                );
+                arm.position.set(x, 4.2, 0);
+                arm.rotation.z = (i === 0 ? 1 : -1) * Math.PI / 4;
+                house.add(arm);
+            });
+
+            // Position: right side of scene
+            house.position.set(10, -1.2, -4);
+            scene.add(house);
+            return house;
+        }
+
+        // ============================================
+        // PATRICK'S ROCK
+        // ============================================
+
+        function createPatricksRock() {
+            const rock = new THREE.Group();
+
+            const body = new THREE.Mesh(
+                new THREE.SphereGeometry(4.2, 18, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+                materials.rock
+            );
+            body.castShadow = true;
+            body.receiveShadow = true;
+            rock.add(body);
+
+            // Bumps
+            for (let i = 0; i < 25; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const r = Math.random() * 3.2;
+                const bump = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.25 + Math.random() * 0.35, 6, 6),
+                    new THREE.MeshStandardMaterial({ color: 0x6b5344, roughness: 0.95 })
+                );
+                bump.position.set(Math.cos(angle) * r, Math.random() * 2.2, Math.sin(angle) * r);
+                rock.add(bump);
+            }
+
+            // House opening
+            const opening = new THREE.Mesh(
+                new THREE.CircleGeometry(1.3, 20),
+                new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 1 })
+            );
+            opening.position.set(0, 0.15, 2.2);
+            opening.rotation.x = -Math.PI / 2;
+            rock.add(opening);
+
+            // Position: back left
+            rock.position.set(-5, -1.7, 8);
+            scene.add(rock);
+            return rock;
+        }
+
+        // ============================================
+        // KRUSTY KRAB
+        // ============================================
+
+        function createKrustyKrab() {
+            const krab = new THREE.Group();
+
+            // Main building
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(9, 5.5, 6.5),
+                materials.krustyKrab
+            );
+            body.position.y = 2.75;
+            body.castShadow = true;
+            body.receiveShadow = true;
+            krab.add(body);
+
+            // Roof
+            const roof = new THREE.Mesh(
+                new THREE.CylinderGeometry(3.8, 4.3, 9, 18, 1, false, 0, Math.PI),
+                materials.krustyKrab
+            );
+            roof.position.set(0, 6.0, 0);
+            roof.rotation.z = Math.PI / 2;
+            roof.rotation.y = Math.PI / 2;
+            roof.scale.y = 0.38;
+            roof.castShadow = true;
+            krab.add(roof);
+
+            // Deck
+            const deck = new THREE.Mesh(
+                new THREE.BoxGeometry(7, 0.6, 3.5),
+                new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.88 })
+            );
+            deck.position.set(0, 0.3, 5);
+            deck.receiveShadow = true;
+            krab.add(deck);
+
+            // Pillars
+            const pillarMat = new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.7 });
+            [-3, 3].forEach(x => {
+                const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 4.5, 10), pillarMat);
+                pillar.position.set(x, 2.8, 5);
+                pillar.castShadow = true;
+                krab.add(pillar);
+            });
+
+            // Sign pole
+            const pole = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.12, 0.12, 7, 8),
+                pillarMat
+            );
+            pole.position.set(5, 5, 3.5);
+            krab.add(pole);
+
+            // Sign
+            const sign = new THREE.Mesh(
+                new THREE.BoxGeometry(3.5, 1.8, 0.25),
+                materials.krustyKrabSign
+            );
+            sign.position.set(5, 8.5, 3.5);
+            sign.castShadow = true;
+            krab.add(sign);
+
+            // Sign text
+            const signText = new THREE.Mesh(
+                new THREE.BoxGeometry(2.8, 1.0, 0.28),
+                new THREE.MeshStandardMaterial({ color: 0xbb1111, roughness: 0.45 })
+            );
+            signText.position.set(5, 8.5, 3.42);
+            krab.add(signText);
+
+            // Anchor
+            const anchor = new THREE.Group();
+            const shank = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.18, 0.18, 3.5, 10),
+                new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.85, roughness: 0.25 })
+            );
+            anchor.add(shank);
+            const arm = new THREE.Mesh(
+                new THREE.TorusGeometry(0.65, 0.12, 8, 14, Math.PI),
+                new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.85, roughness: 0.25 })
+            );
+            arm.rotation.x = Math.PI / 2;
+            arm.position.y = -1.2;
+            anchor.add(arm);
+            anchor.position.set(-5.5, 2.2, 3.5);
+            krab.add(anchor);
+
+            // Windows with lights
+            [[-2.5, 2.5, 3.35], [2.5, 2.5, 3.35]].forEach(pos => {
+                const frame = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.7, 1.7, 0.25),
+                    new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 })
+                );
+                frame.position.set(...pos);
+                krab.add(frame);
+                const light = new THREE.PointLight(0xffcc66, 0.5, 5);
+                light.position.set(pos[0], pos[1], pos[2] + 0.7);
+                krab.add(light);
+            });
+
+            // Door
+            const mainDoor = new THREE.Mesh(
+                new THREE.BoxGeometry(2.2, 3.8, 0.35),
+                new THREE.MeshStandardMaterial({ color: 0x3a2515, roughness: 0.8 })
+            );
+            mainDoor.position.set(0, 1.9, 5.1);
+            krab.add(mainDoor);
+
+            // Position: back right
+            krab.position.set(6, -1.2, 10);
+            scene.add(krab);
+            return krab;
+        }
+
+        // ============================================
+        // CHARACTERS
+        // ============================================
+
+        function createSpongeBob() {
+            const sb = new THREE.Group();
+
+            // Body
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(1.6, 2.2, 1.3),
+                materials.spongeBob
+            );
+            body.position.y = 2.2;
+            body.castShadow = true;
+            sb.add(body);
+
+            // Pores
+            for (let i = 0; i < 18; i++) {
+                const pore = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.07, 5, 5),
+                    new THREE.MeshStandardMaterial({ color: 0xccaa00, roughness: 0.9 })
+                );
+                pore.position.set(
+                    (Math.random() - 0.5) * 1.4,
+                    1.6 + Math.random() * 1.8,
+                    0.55 + Math.random() * 0.25
+                );
+                sb.add(pore);
+            }
+
+            // Head
+            const head = new THREE.Mesh(
+                new THREE.BoxGeometry(1.5, 1.3, 1.1),
+                materials.spongeBob
+            );
+            head.position.y = 3.9;
+            head.castShadow = true;
+            sb.add(head);
+
+            // Eyes
+            const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 });
+            const eyePupilMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.15 });
+            [-0.45, 0.45].forEach(x => {
+                const white = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14), eyeWhiteMat);
+                white.position.set(x, 4.0, 0.45);
+                sb.add(white);
+                const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), eyePupilMat);
+                pupil.position.set(x, 4.0, 0.78);
+                sb.add(pupil);
+            });
+
+            // Nose
+            const nose = new THREE.Mesh(
+                new THREE.BoxGeometry(0.18, 0.22, 0.18),
+                new THREE.MeshStandardMaterial({ color: 0xeecc00, roughness: 0.45 })
+            );
+            nose.position.set(0, 3.55, 0.6);
+            sb.add(nose);
+
+            // Mouth
+            const mouth = new THREE.Mesh(
+                new THREE.BoxGeometry(0.65, 0.18, 0.12),
+                new THREE.MeshStandardMaterial({ color: 0x6b3510, roughness: 0.8 })
+            );
+            mouth.position.set(0, 3.1, 0.6);
+            sb.add(mouth);
+
+            // Teeth
+            const teeth = new THREE.Mesh(
+                new THREE.BoxGeometry(0.28, 0.22, 0.16),
+                new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 })
+            );
+            teeth.position.set(0, 2.92, 0.6);
+            sb.add(teeth);
+
+            // Cheeks
+            const cheekMat = new THREE.MeshStandardMaterial({ color: 0xffaaaa, roughness: 0.55 });
+            [-0.6, 0.6].forEach(x => {
+                const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), cheekMat);
+                cheek.position.set(x, 3.3, 0.45);
+                sb.add(cheek);
+            });
+
+            // Legs
+            [-0.45, 0.45].forEach(x => {
+                const leg = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.22, 0.28, 1.1, 10),
+                    materials.spongeBobPants
+                );
+                leg.position.set(x, 0.55, 0);
+                leg.castShadow = true;
+                sb.add(leg);
+            });
+
+            // Shoes
+            const shoeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.75 });
+            [-0.45, 0.45].forEach(x => {
+                const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.35, 0.75), shoeMat);
+                shoe.position.set(x, 0.17, 0.12);
+                shoe.castShadow = true;
+                sb.add(shoe);
+            });
+
+            // Arms
+            [-1.0, 1.0].forEach(x => {
+                const arm = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.16, 0.22, 1.3, 10),
+                    materials.spongeBob
+                );
+                arm.position.set(x, 2.35, 0);
+                arm.rotation.z = x > 0 ? -0.35 : 0.35;
+                arm.castShadow = true;
+                sb.add(arm);
+                const hand = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), materials.spongeBob);
+                hand.position.set(x > 0 ? x + 0.65 : x - 0.65, 1.7, 0);
+                sb.add(hand);
+            });
+
+            // Shirt
+            const shirt = new THREE.Mesh(
+                new THREE.BoxGeometry(1.7, 1.1, 1.4),
+                materials.spongeBobShirt
+            );
+            shirt.position.y = 2.5;
+            sb.add(shirt);
+
+            // Tie
+            const tie = new THREE.Mesh(
+                new THREE.ConeGeometry(0.16, 0.9, 5),
+                materials.spongeBobTie
+            );
+            tie.position.set(0, 2.25, 0.75);
+            sb.add(tie);
+
+            // Position: in front of pineapple
+            sb.position.set(-6.5, -1.2, 3);
+            scene.add(sb);
+            return sb;
+        }
+
+        function createPatrick() {
+            const pat = new THREE.Group();
+
+            // Body
+            const body = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.6, 1.9, 1.6, 6),
+                materials.patrick
+            );
+            body.position.y = 1.6;
+            body.rotation.y = Math.PI / 6;
+            body.castShadow = true;
+            pat.add(body);
+
+            // Belly
+            const belly = new THREE.Mesh(
+                new THREE.SphereGeometry(1.1, 14, 14),
+                new THREE.MeshStandardMaterial({ color: 0xffeef2, roughness: 0.55 })
+            );
+            belly.position.set(0, 1.6, 0.55);
+            belly.scale.set(0.85, 0.95, 0.5);
+            pat.add(belly);
+
+            // Head
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(1.2, 14, 14),
+                materials.patrick
+            );
+            head.position.y = 3.2;
+            head.castShadow = true;
+            pat.add(head);
+
+            // Eyes
+            const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 });
+            [-0.38, 0.38].forEach(x => {
+                const white = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), eyeWhiteMat);
+                white.position.set(x, 3.4, 0.75);
+                pat.add(white);
+                const pupil = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.13, 10, 10),
+                    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.15 })
+                );
+                pupil.position.set(x, 3.4, 1.05);
+                pat.add(pupil);
+            });
+
+            // Mouth
+            const mouth = new THREE.Mesh(
+                new THREE.BoxGeometry(0.55, 0.18, 0.12),
+                new THREE.MeshStandardMaterial({ color: 0x6b3510, roughness: 0.8 })
+            );
+            mouth.position.set(0, 2.8, 1.1);
+            pat.add(mouth);
+
+            // Arms
+            [-1.0, 1.0].forEach(x => {
+                const arm = new THREE.Mesh(
+                    new THREE.CapsuleGeometry(0.38, 1.1, 8, 8),
+                    materials.patrick
+                );
+                arm.position.set(x, 1.9, 0);
+                arm.rotation.z = x > 0 ? -1.25 : 1.25;
+                arm.castShadow = true;
+                pat.add(arm);
+            });
+
+            // Legs
+            [-0.55, 0.55].forEach(x => {
+                const leg = new THREE.Mesh(
+                    new THREE.CapsuleGeometry(0.32, 0.9, 8, 8),
+                    materials.patrickShorts
+                );
+                leg.position.set(x, 0.55, 0);
+                leg.castShadow = true;
+                pat.add(leg);
+            });
+
+            // Shorts
+            const shorts = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.4, 1.6, 0.9, 10),
+                materials.patrickShorts
+            );
+            shorts.position.y = 1.05;
+            pat.add(shorts);
+
+            // Position: near Patrick's rock
+            pat.position.set(-2.5, -1.2, 5.5);
+            scene.add(pat);
+            return pat;
+        }
+
+        function createSquidward() {
+            const sq = new THREE.Group();
+
+            // Body
+            const body = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.85, 0.95, 3.2, 14),
+                materials.squidward
+            );
+            body.position.y = 2.2;
+            body.castShadow = true;
+            sq.add(body);
+
+            // Head
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(1.1, 16, 16),
+                materials.squidward
+            );
+            head.position.y = 4.35;
+            head.scale.set(1, 1.25, 0.95);
+            head.castShadow = true;
+            sq.add(head);
+
+            // Eyes
+            const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffdd, roughness: 0.25 });
+            [-0.5, 0.5].forEach(x => {
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 12), eyeWhiteMat);
+                eye.position.set(x, 4.55, 0.65);
+                eye.scale.set(1, 1.35, 0.7);
+                sq.add(eye);
+                const pupil = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.16, 10, 10),
+                    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.15 })
+                );
+                pupil.position.set(x, 4.55, 0.95);
+                sq.add(pupil);
+            });
+
+            // Nose
+            const nose = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.16, 0.28, 0.9, 8),
+                new THREE.MeshStandardMaterial({ color: 0x3a8a8c, roughness: 0.45 })
+            );
+            nose.position.set(0, 3.8, 1.1);
+            nose.rotation.x = Math.PI / 6;
+            sq.add(nose);
+
+            // Mouth
+            const mouth = new THREE.Mesh(
+                new THREE.BoxGeometry(0.45, 0.12, 0.12),
+                new THREE.MeshStandardMaterial({ color: 0x1a4a4c, roughness: 0.8 })
+            );
+            mouth.position.set(0, 3.25, 1.0);
+            sq.add(mouth);
+
+            // Shirt
+            const shirt = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.9, 1.0, 1.6, 14),
+                materials.squidwardShirt
+            );
+            shirt.position.y = 2.4;
+            sq.add(shirt);
+
+            // Legs
+            const legMat = new THREE.MeshStandardMaterial({ color: 0x3a3a4a, roughness: 0.65);
+            [-0.45, 0.45].forEach(x => {
+                const leg = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.22, 0.28, 1.3, 10),
+                    legMat
+                );
+                leg.position.set(x, 0.45, 0);
+                leg.castShadow = true;
+                sq.add(leg);
+            });
+
+            // Feet
+            const footMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.75 });
+            [-0.45, 0.45].forEach(x => {
+                const foot = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.22, 0.75), footMat);
+                foot.position.set(x, -0.1, 0.12);
+                foot.castShadow = true;
+                sq.add(foot);
+            });
+
+            // Arms crossed
+            const armMat = new THREE.MeshStandardMaterial({ color: 0x3a8a8c, roughness: 0.45 });
+            [-1.1, 1.1].forEach((x, i) => {
+                const arm = new THREE.Mesh(
+                    new THREE.CapsuleGeometry(0.16, 1.3, 8, 8),
+                    armMat
+                );
+                arm.position.set(x, 2.4, 0);
+                arm.rotation.z = (i === 0 ? 1 : -1) * Math.PI / 2.8;
+                arm.rotation.y = (i === 0 ? 0.35 : -0.35);
+                sq.add(arm);
+            });
+
+            // Tentacles
+            for (let i = 0; i < 6; i++) {
+                const angle = (i / 6) * Math.PI * 2;
+                const tent = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.09, 0.13, 0.9, 6),
+                    armMat
+                );
+                tent.position.set(Math.cos(angle) * 0.75, 5.35, Math.sin(angle) * 0.55);
+                tent.rotation.x = 0.55;
+                tent.rotation.z = Math.cos(angle) * 0.35;
+                sq.add(tent);
+            }
+
+            // Position: in front of Moai house
+            sq.position.set(7, -1.2, 2);
+            scene.add(sq);
+            return sq;
+        }
+
+        function createGary() {
+            const gary = new THREE.Group();
+
+            // Body
+            const body = new THREE.Mesh(
+                new THREE.SphereGeometry(0.45, 12, 12),
+                materials.gary
+            );
+            body.position.y = 0.35;
+            body.castShadow = true;
+            gary.add(body);
+
+            // Shell
+            const shell = new THREE.Mesh(
+                new THREE.SphereGeometry(0.55, 14, 14),
+                materials.garyShell
+            );
+            shell.position.set(0, 0.55, -0.22);
+            shell.scale.set(0.85, 0.65, 0.75);
+            shell.castShadow = true;
+            gary.add(shell);
+
+            // Spiral
+            for (let i = 0; i < 4; i++) {
+                const spiral = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.14 + i * 0.13, 0.035, 6, 14, Math.PI),
+                    new THREE.MeshStandardMaterial({ color: 0xdd88a0, roughness: 0.45 })
+                );
+                spiral.position.set(0, 0.55 + i * 0.06, -0.22);
+                spiral.rotation.x = Math.PI / 2;
+                gary.add(spiral);
+            }
+
+            // Eye stalks
+            [-0.22, 0.22].forEach(x => {
+                const stalk = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.06, 0.09, 0.45, 6),
+                    materials.gary
+                );
+                stalk.position.set(x, 0.75, 0.12);
+                gary.add(stalk);
+
+                const eye = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.14, 10, 10),
+                    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 })
+                );
+                eye.position.set(x, 0.98, 0.18);
+                gary.add(eye);
+
+                const pupil = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.055, 8, 8),
+                    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.15 })
+                );
+                pupil.position.set(x, 0.98, 0.28);
+                gary.add(pupil);
+            });
+
+            // Antennae
+            [-0.18, 0.18].forEach(x => {
+                const ant = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.025, 0.035, 0.28, 4),
+                    materials.gary
+                );
+                ant.position.set(x, 1.1, 0);
+                ant.rotation.x = -0.35;
+                gary.add(ant);
+
+                const tip = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.045, 5, 5),
+                    new THREE.MeshStandardMaterial({ color: 0xdd88a0, roughness: 0.45 })
+                );
+                tip.position.set(x, 1.22, -0.06);
+                gary.add(tip);
+            });
+
+            // Position: near SpongeBob
+            gary.position.set(-5.8, -1.2, 4.5);
+            gary.scale.set(1.6, 1.6, 1.6);
+            scene.add(gary);
+            return gary;
+        }
+
+        function createJellyfish() {
+            const jellyfish = [];
+            const positions = [[-12, 10, -8], [15, 12, -5], [5, 14, 10], [-8, 11, 12]];
+
+            positions.forEach((pos, i) => {
+                const jelly = new THREE.Group();
+
+                const bell = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.9, 18, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+                    materials.jellyfish
+                );
+                bell.castShadow = true;
+                jelly.add(bell);
+
+                const rim = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.9, 0.12, 10, 28),
+                    new THREE.MeshStandardMaterial({
+                        color: 0xff55aa,
+                        emissive: 0xff44aa,
+                        emissiveIntensity: 0.35,
+                        roughness: 0.35
+                    })
+                );
+                rim.position.y = -0.06;
+                jelly.add(rim);
+
+                for (let t = 0; t < 10; t++) {
+                    const angle = (t / 10) * Math.PI * 2;
+                    const tent = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.035, 0.055, 2.2 + Math.random() * 0.8, 6),
+                        new THREE.MeshStandardMaterial({
+                            color: 0xff77bb,
+                            transparent: true,
+                            opacity: 0.55,
+                            emissive: 0xff44aa,
+                            emissiveIntensity: 0.25
+                        })
+                    );
+                    tent.position.set(Math.cos(angle) * 0.55, -1.3, Math.sin(angle) * 0.55);
+                    jelly.add(tent);
+                }
+
+                jelly.position.set(...pos);
+                scene.add(jelly);
+                jellyfish.push(jelly);
+            });
+
+            return jellyfish;
+        }
+
+        // ============================================
+        // ENVIRONMENT
+        // ============================================
+
+        function createKelp() {
+            const kelps = [];
+            for (let i = 0; i < 18; i++) {
+                const kelp = new THREE.Group();
+                for (let j = 0; j < 6; j++) {
+                    const leaf = new THREE.Mesh(
+                        new THREE.PlaneGeometry(0.9, 1.6),
+                        materials.kelp
+                    );
+                    leaf.position.y = j * 0.85;
+                    leaf.rotation.y = Math.random() * Math.PI;
+                    kelp.add(leaf);
+                }
+                const x = (Math.random() - 0.5) * 55;
+                const z = (Math.random() - 0.5) * 45 - 8;
+                kelp.position.set(x, -1, z);
+                kelp.userData = {
+                    swaySpeed: 0.45 + Math.random() * 0.55,
+                    swayAmount: 0.08 + Math.random() * 0.12
+                };
+                scene.add(kelp);
+                kelps.push(kelp);
+            }
+            return kelps;
+        }
+
+        function createCoral() {
+            const coralPos = [
+                [-18, 0, 8], [-22, 0, -6], [15, 0, -8], [20, 0, 5],
+                [-12, 0, 18], [10, 0, -18], [-24, 0, -18], [24, 0, 12]
+            ];
+
+            coralPos.forEach(pos => {
+                const coral = new THREE.Group();
+                for (let i = 0; i < 6; i++) {
+                    const branch = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.28 + Math.random() * 0.32, 1.6 + Math.random() * 1.4, 6),
+                        new THREE.MeshStandardMaterial({
+                            color: [0xff5a3a, 0xff5599, 0xdd66aa, 0xff7744][Math.floor(Math.random() * 4)],
+                            roughness: 0.75
+                        })
+                    );
+                    branch.position.set(
+                        (Math.random() - 0.5) * 1.1,
+                        0.55 + Math.random() * 0.55,
+                        (Math.random() - 0.5) * 1.1
+                    );
+                    branch.rotation.x = (Math.random() - 0.5) * 0.45;
+                    branch.rotation.z = (Math.random() - 0.5) * 0.45;
+                    branch.castShadow = true;
+                    coral.add(branch);
+                }
+                coral.position.set(...pos);
+                scene.add(coral);
+            });
+        }
+
+        function createRocks() {
+            const rockPos = [
+                [-14, -1.7, 12], [18, -1.7, 10], [-8, -1.9, 15], [12, -1.7, -10],
+                [-22, -1.7, -4], [25, -1.7, -6], [-10, -1.9, -15], [6, -1.7, 18]
+            ];
+
+            rockPos.forEach(pos => {
+                const rock = new THREE.Mesh(
+                    new THREE.DodecahedronGeometry(1.2 + Math.random() * 1.4, 0),
+                    new THREE.MeshStandardMaterial({
+                        color: 0x5a5a5a + Math.random() * 0x252525,
+                        roughness: 0.92,
+                        metalness: 0.0
+                    })
+                );
+                rock.position.set(...pos);
+                rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+                rock.scale.y = 0.55 + Math.random() * 0.45;
+                rock.castShadow = true;
+                rock.receiveShadow = true;
+                scene.add(rock);
+            });
+        }
+
+        function createBubbleSystem() {
+            const bubbles = [];
+            for (let i = 0; i < 60; i++) {
+                const size = 0.06 + Math.random() * 0.22;
+                const bubble = new THREE.Mesh(
+                    new THREE.SphereGeometry(size, 10, 10),
+                    materials.bubble
+                );
+                bubble.position.set(
+                    (Math.random() - 0.5) * 55,
+                    -2 + Math.random() * 22,
+                    (Math.random() - 0.5) * 45
+                );
+                bubble.userData = {
+                    speed: 0.018 + Math.random() * 0.035,
+                    wobble: Math.random() * Math.PI * 2,
+                    wobbleSpeed: 0.9 + Math.random() * 2.2
+                };
+                scene.add(bubble);
+                bubbles.push(bubble);
+            }
+            return bubbles;
+        }
+
+        function createGodRays() {
+            const rays = [];
+            for (let i = 0; i < 10; i++) {
+                const rayGeom = new THREE.ConeGeometry(3.5 + Math.random() * 2.5, 32, 4, 1, true);
+                const rayMat = new THREE.MeshBasicMaterial({
+                    color: 0x77bbff,
+                    transparent: true,
+                    opacity: 0.025,
+                    side: THREE.DoubleSide,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                });
+                const ray = new THREE.Mesh(rayGeom, rayMat);
+                ray.position.set(
+                    (Math.random() - 0.5) * 35,
+                    16,
+                    (Math.random() - 0.5) * 25
+                );
+                ray.rotation.x = Math.PI;
+                ray.userData = {
+                    swaySpeed: 0.18 + Math.random() * 0.32,
+                    swayAmount: 0.015 + Math.random() * 0.025
+                };
+                scene.add(ray);
+                rays.push(ray);
+            }
+            return rays;
+        }
+
+        // ============================================
+        // CREATE ALL OBJECTS
+        // ============================================
+
+        createPineappleHouse();
+        createMoaiHouse();
+        createPatricksRock();
+        createKrustyKrab();
+
+        const spongeBob = createSpongeBob();
+        const patrick = createPatrick();
+        const squidward = createSquidward();
+        const gary = createGary();
+        const jellyfish = createJellyfish();
+
+        const kelps = createKelp();
+        createCoral();
+        createRocks();
+
+        const bubbles = createBubbleSystem();
+        const godRays = createGodRays();
+
+        // ============================================
+        // ANIMATION LOOP
+        // ============================================
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = clock.getElapsedTime();
+
+            controls.update();
+            causticsMaterial.uniforms.time.value = time;
+            underwaterPass.uniforms.time.value = time;
+
+            // SpongeBob - bounce
+            spongeBob.position.y = -1.2 + Math.sin(time * 2.2) * 0.12;
+            spongeBob.scale.y = 1 + Math.sin(time * 2.2) * 0.025;
+
+            // Patrick - sway
+            patrick.rotation.z = Math.sin(time * 0.55) * 0.06;
+            patrick.position.y = -1.2 + Math.sin(time * 0.85) * 0.06;
+
+            // Squidward - annoyed
+            squidward.rotation.y = Math.sin(time * 0.35) * 0.12;
+
+            // Gary - crawl
+            gary.position.x = -5.8 + Math.sin(time * 0.22) * 0.6;
+            gary.position.z = 4.5 + Math.cos(time * 0.18) * 0.35;
+
+            // Jellyfish
+            jellyfish.forEach((j, i) => {
+                j.position.y += Math.sin(time + i * 2.2) * 0.012;
+                j.rotation.y = time * 0.12;
+                const scale = 1 + Math.sin(time * 2.2 + i) * 0.12;
+                j.scale.set(scale, scale * 0.88, scale);
+            });
+
+            // Kelp
+            kelps.forEach(kelp => {
+                const d = kelp.userData;
+                kelp.rotation.z = Math.sin(time * d.swaySpeed + kelp.position.x) * d.swayAmount;
+                kelp.rotation.x = Math.cos(time * d.swaySpeed * 0.7 + kelp.position.z) * d.swayAmount * 0.5;
+            });
+
+            // Bubbles
+            bubbles.forEach(bubble => {
+                const d = bubble.userData;
+                bubble.position.y += d.speed;
+                bubble.position.x += Math.sin(time * d.wobbleSpeed + d.wobble) * 0.012;
+                if (bubble.position.y > 22) {
+                    bubble.position.y = -2;
+                    bubble.position.x = (Math.random() - 0.5) * 55;
+                    bubble.position.z = (Math.random() - 0.5) * 45;
+                }
+            });
+
+            // God rays
+            godRays.forEach(ray => {
+                const d = ray.userData;
+                ray.rotation.z = Math.sin(time * d.swaySpeed) * d.swayAmount;
+                ray.rotation.x = Math.cos(time * d.swaySpeed * 0.5) * d.swayAmount;
+            });
+
+            composer.render();
+        }
+
+        // ============================================
+        // RESIZE
+        // ============================================
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ============================================
+        // START
+        // ============================================
+
+        setTimeout(() => {
+            document.getElementById('loading').classList.add('hidden');
+        }, 1800);
+
+        animate();
+    </script>
+</body>
+</html>

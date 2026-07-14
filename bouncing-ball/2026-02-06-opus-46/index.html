@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Opus 4.6</title>
+    <style>
+        * { margin: 0; padding: 0; }
+        body { overflow: hidden; background: #000; }
+        canvas { display: block; }
+        #controls {
+            position: fixed;
+            top: 12px;
+            right: 16px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            z-index: 1;
+        }
+        #controls label {
+            color: #fff;
+            font: 14px monospace;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #controls input[type="range"] {
+            width: 120px;
+            accent-color: #f00;
+        }
+        #controls button {
+            background: none;
+            border: 1px solid #fff;
+            color: #fff;
+            font: 14px monospace;
+            padding: 4px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        #controls button:hover { background: rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label>Speed <input type="range" id="speed" min="0.1" max="3" step="0.1" value="1"><span id="speedVal">1.0x</span></label>
+        <label>Bounce <input type="range" id="bounce" min="0.5" max="1.5" step="0.05" value="0.8"><span id="bounceVal">0.80</span></label>
+        <button id="addBall">+ Ball</button>
+    </div>
+    <canvas id="c"></canvas>
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+
+        const BALL_RADIUS = 15;
+        const POLY_RADIUS = 250;
+        const SIDES = 7;
+        const ROT_SPEED = 0.5;
+        const GRAVITY = 500;
+        let RESTITUTION = 0.8;
+        const FRICTION = 0.98;
+        const SUB_STEPS = 8;
+
+        const COLORS = ['#F00','#0AF','#0F0','#FF0','#F0F','#FA0','#0FF','#F55','#5F5','#55F'];
+
+        let W, H, cx, cy;
+        let angle = 0;
+        let lastTime = null;
+        let speed = 1;
+
+        const balls = [];
+
+        function makeBall() {
+            balls.push({
+                x: cx, y: cy,
+                vx: (Math.random() - 0.5) * 200,
+                vy: (Math.random() - 0.5) * 200,
+                color: COLORS[balls.length % COLORS.length]
+            });
+        }
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+            cx = W / 2;
+            cy = H / 2;
+        }
+
+        function init() {
+            resize();
+            makeBall();
+        }
+
+        function getVertices() {
+            const v = [];
+            for (let i = 0; i < SIDES; i++) {
+                const a = (2 * Math.PI * i / SIDES) + angle;
+                v.push({ x: cx + POLY_RADIUS * Math.cos(a), y: cy + POLY_RADIUS * Math.sin(a) });
+            }
+            return v;
+        }
+
+        function updateBall(ball, dt) {
+            ball.vy += GRAVITY * dt;
+            ball.x += ball.vx * dt;
+            ball.y += ball.vy * dt;
+
+            const verts = getVertices();
+
+            for (let i = 0; i < SIDES; i++) {
+                const a = verts[i];
+                const b = verts[(i + 1) % SIDES];
+
+                const ex = b.x - a.x;
+                const ey = b.y - a.y;
+
+                let nx = -ey;
+                let ny = ex;
+
+                const mx = cx - (a.x + b.x) * 0.5;
+                const my = cy - (a.y + b.y) * 0.5;
+                if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+
+                const len = Math.sqrt(nx * nx + ny * ny);
+                nx /= len;
+                ny /= len;
+
+                const dist = (ball.x - a.x) * nx + (ball.y - a.y) * ny;
+
+                if (dist < BALL_RADIUS) {
+                    ball.x += nx * (BALL_RADIUS - dist);
+                    ball.y += ny * (BALL_RADIUS - dist);
+
+                    const vn = ball.vx * nx + ball.vy * ny;
+
+                    if (vn < 0) {
+                        const vnx = vn * nx;
+                        const vny = vn * ny;
+                        const vtx = ball.vx - vnx;
+                        const vty = ball.vy - vny;
+
+                        ball.vx = -RESTITUTION * vnx + FRICTION * vtx;
+                        ball.vy = -RESTITUTION * vny + FRICTION * vty;
+                    }
+                }
+            }
+        }
+
+        function collideBalls() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    const a = balls[i], b = balls[j];
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const minDist = BALL_RADIUS * 2;
+
+                    if (dist < minDist && dist > 0) {
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+
+                        const overlap = minDist - dist;
+                        a.x -= nx * overlap * 0.5;
+                        a.y -= ny * overlap * 0.5;
+                        b.x += nx * overlap * 0.5;
+                        b.y += ny * overlap * 0.5;
+
+                        const dvx = a.vx - b.vx;
+                        const dvy = a.vy - b.vy;
+                        const dvn = dvx * nx + dvy * ny;
+
+                        if (dvn > 0) {
+                            const impulse = dvn * RESTITUTION;
+                            a.vx -= impulse * nx;
+                            a.vy -= impulse * ny;
+                            b.vx += impulse * nx;
+                            b.vy += impulse * ny;
+                        }
+                    }
+                }
+            }
+        }
+
+        function render() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.fillStyle = '#FFF';
+            ctx.font = '18px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('Opus 4.6', 16, 30);
+
+            const verts = getVertices();
+
+            ctx.beginPath();
+            ctx.moveTo(verts[0].x, verts[0].y);
+            for (let i = 1; i < SIDES; i++) ctx.lineTo(verts[i].x, verts[i].y);
+            ctx.closePath();
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            for (const ball of balls) {
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+                ctx.fillStyle = ball.color;
+                ctx.fill();
+            }
+        }
+
+        function loop(time) {
+            if (lastTime === null) lastTime = time;
+            let dt = (time - lastTime) / 1000 * speed;
+            lastTime = time;
+            if (dt > 0.05) dt = 0.05;
+
+            angle += ROT_SPEED * dt;
+
+            const subDt = dt / SUB_STEPS;
+            for (let s = 0; s < SUB_STEPS; s++) {
+                for (const ball of balls) updateBall(ball, subDt);
+                collideBalls();
+            }
+
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        document.getElementById('speed').addEventListener('input', function() {
+            speed = parseFloat(this.value);
+            document.getElementById('speedVal').textContent = speed.toFixed(1) + 'x';
+        });
+
+        document.getElementById('bounce').addEventListener('input', function() {
+            RESTITUTION = parseFloat(this.value);
+            document.getElementById('bounceVal').textContent = RESTITUTION.toFixed(2);
+        });
+
+        document.getElementById('addBall').addEventListener('click', makeBall);
+
+        window.addEventListener('resize', resize);
+        init();
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+#!/usr/bin/env zsh
+source "$HOME/.zshrc"
+ccx -p --model gpt-5.6-luna --effort xhigh --permission-mode bypassPermissions --output-format stream-json --verbose --session-id 445747c0-f2f9-4485-9cdc-adbd6d0ec210 $'Build a cinematic interactive car-crash simulation as a standalone HTML experience.\n\nWork only inside: /Users/melvynx/Developer/experiments/benchmarks/runs/20260712T171928Z-gpt-5-6-luna-ccx/data/car-crash/app\n\nRun the relevant checks yourself. Do not edit other benchmark results or the run evidence outside the app directory.\nEnd your final response with exactly BENCHMARK_COMPLETE.' 

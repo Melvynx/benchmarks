@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini 3.1 Pro</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000000;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #title-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            pointer-events: none;
+            z-index: 10;
+        }
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            font-weight: normal;
+        }
+    </style>
+</head>
+<body>
+    <div id="title-overlay">
+        <h1>Gemini 3.1 Pro</h1>
+    </div>
+    <canvas id="sim"></canvas>
+    <script>
+        const canvas = document.getElementById('sim');
+        const ctx = canvas.getContext('2d');
+
+        let cx = 0, cy = 0;
+        let ball = { x: 0, y: 0, vx: 0, vy: 0 };
+
+        function resize() {
+            const newCx = window.innerWidth / 2;
+            const newCy = window.innerHeight / 2;
+
+            if (cx !== 0 && cy !== 0) {
+                ball.x += (newCx - cx);
+                ball.y += (newCy - cy);
+            } else {
+                ball.x = newCx;
+                ball.y = newCy;
+            }
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            cx = newCx;
+            cy = newCy;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        const G = 500;
+        const RESTITUTION = 0.8;
+        const FRICTION = 0.98;
+        const OMEGA = 0.5;
+        const R_BALL = 15;
+        const R_POLY = 250;
+        const SIDES = 7;
+
+        let theta = 0;
+        let lastTime = performance.now();
+
+        function loop(time) {
+            const dt = Math.min((time - lastTime) / 1000, 0.05); // Cap to 50ms to prevent huge jumps
+            lastTime = time;
+
+            // Use sub-stepping to ensure continuous collision and zero tunneling
+            const steps = 10;
+            const sdt = dt / steps;
+
+            for (let s = 0; s < steps; s++) {
+                // Gravity
+                ball.vy += G * sdt;
+
+                // Position update
+                ball.x += ball.vx * sdt;
+                ball.y += ball.vy * sdt;
+
+                // Rotate polygon
+                theta += OMEGA * sdt;
+
+                // Check collisions against all sides
+                for (let i = 0; i < SIDES; i++) {
+                    const alpha = theta + i * 2 * Math.PI / SIDES + Math.PI / SIDES;
+                    const nx = Math.cos(alpha);
+                    const ny = Math.sin(alpha);
+                    const apothem = R_POLY * Math.cos(Math.PI / SIDES);
+
+                    const dx = ball.x - cx;
+                    const dy = ball.y - cy;
+                    const proj = dx * nx + dy * ny;
+                    const pen = proj + R_BALL - apothem;
+
+                    // If penetration occurs, resolve it
+                    if (pen > 0) {
+                        // 1. Correct positional tunneling
+                        ball.x -= pen * nx;
+                        ball.y -= pen * ny;
+
+                        // Calculate contact point to find the local wall velocity
+                        const dx_res = ball.x - cx;
+                        const dy_res = ball.y - cy;
+                        const cx_cont = dx_res + R_BALL * nx;
+                        const cy_cont = dy_res + R_BALL * ny;
+
+                        // Velocity of the rotating wall at the point of contact
+                        const vwx = -OMEGA * cy_cont;
+                        const vwy = OMEGA * cx_cont;
+
+                        // Velocity of the ball relative to the wall
+                        const vrx = ball.vx - vwx;
+                        const vry = ball.vy - vwy;
+
+                        // Normal relative velocity
+                        const vrn = vrx * nx + vry * ny;
+
+                        // Only bounce if the ball is moving into the wall relatively
+                        if (vrn > 0) {
+                            const tx = -ny;
+                            const ty = nx;
+                            const vrt = vrx * tx + vry * ty; // Tangential relative velocity
+
+                            const vrn_new = -RESTITUTION * vrn;
+                            const vrt_new = FRICTION * vrt;
+
+                            const vrx_new = vrn_new * nx + vrt_new * tx;
+                            const vry_new = vrn_new * ny + vrt_new * ty;
+
+                            // Convert back to global velocity
+                            ball.vx = vrx_new + vwx;
+                            ball.vy = vry_new + vwy;
+                        }
+                    }
+                }
+            }
+
+            // Draw Background
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Polygon
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < SIDES; i++) {
+                const angle = theta + i * 2 * Math.PI / SIDES;
+                const x = cx + R_POLY * Math.cos(angle);
+                const y = cy + R_POLY * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.closePath();
+            ctx.stroke();
+
+            // Draw Ball
+            ctx.fillStyle = "#FF0000";
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, R_BALL, 0, 2 * Math.PI);
+            ctx.fill();
+
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>

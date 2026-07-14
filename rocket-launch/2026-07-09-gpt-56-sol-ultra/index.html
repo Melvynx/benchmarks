@@ -1,0 +1,1512 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>GPT 5.6</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #020713;
+    }
+    body { overscroll-behavior: none; }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene" role="img" aria-label="GPT 5.6 cinematic rocket launch from a tropical island"></canvas>
+  <script>
+    (() => {
+      'use strict';
+
+      const MODEL_NAME = 'GPT 5.6';
+      const canvas = document.getElementById('scene');
+      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+      const TAU = Math.PI * 2;
+      const MAX_PARTICLES = 760;
+
+      const TIMING = Object.freeze({
+        ignition: 0.18,
+        liftoff: 1.5,
+        ascent: 4.0,
+        exit: 7.0,
+        returnStart: 12.0,
+        returnEnd: 15.25,
+        cycleEnd: 15.85
+      });
+
+      let width = 1;
+      let height = 1;
+      let dpr = 1;
+      let origin = performance.now();
+      let lastFrame = origin;
+      let activeCycle = -1;
+      let manualTime = null;
+      let particles = [];
+      let particlePool = [];
+      let previousNozzle = null;
+      let random = mulberry32(0x56A11CE);
+      let smokeSprites = [];
+      let stars = [];
+      let clouds = [];
+      let shrubs = [];
+      let noisePattern = null;
+      let hazeCanvas = document.createElement('canvas');
+      let hazeCtx = hazeCanvas.getContext('2d');
+      let latestState = null;
+      let latestCycleTime = 0;
+      let fpsEMA = 60;
+
+      const emitters = {
+        base: 0,
+        trailTime: 0,
+        trailDistance: 0,
+        ember: 0,
+        steam: 0
+      };
+
+      const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const smoothstep = (a, b, value) => {
+        const t = clamp((value - a) / Math.max(0.000001, b - a), 0, 1);
+        return t * t * (3 - 2 * t);
+      };
+      const smootherstep = t => {
+        t = clamp(t, 0, 1);
+        return t * t * t * (t * (t * 6 - 15) + 10);
+      };
+      const easeOutCubic = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+      const easeOutQuint = t => 1 - Math.pow(1 - clamp(t, 0, 1), 5);
+
+      function mulberry32(seed) {
+        return function next() {
+          seed |= 0;
+          seed = seed + 0x6D2B79F5 | 0;
+          let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      function rand(min = 0, max = 1) {
+        return min + (max - min) * random();
+      }
+
+      function mod(value, divisor) {
+        return ((value % divisor) + divisor) % divisor;
+      }
+
+      function roundedRectPath(context, x, y, w, h, r) {
+        const radius = Math.min(Math.abs(w) * 0.5, Math.abs(h) * 0.5, r);
+        context.beginPath();
+        context.moveTo(x + radius, y);
+        context.lineTo(x + w - radius, y);
+        context.quadraticCurveTo(x + w, y, x + w, y + radius);
+        context.lineTo(x + w, y + h - radius);
+        context.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+        context.lineTo(x + radius, y + h);
+        context.quadraticCurveTo(x, y + h, x, y + h - radius);
+        context.lineTo(x, y + radius);
+        context.quadraticCurveTo(x, y, x + radius, y);
+        context.closePath();
+      }
+
+      function buildSmokeSprite(rgb, seed) {
+        const size = 128;
+        const sprite = document.createElement('canvas');
+        sprite.width = size;
+        sprite.height = size;
+        const sctx = sprite.getContext('2d');
+        const sr = mulberry32(seed);
+
+        for (let i = 0; i < 28; i++) {
+          const angle = sr() * TAU;
+          const distance = Math.pow(sr(), 0.72) * 29;
+          const x = size * 0.5 + Math.cos(angle) * distance;
+          const y = size * 0.5 + Math.sin(angle) * distance * 0.82;
+          const radius = 18 + sr() * 28;
+          const shade = Math.round((sr() - 0.5) * 26);
+          const r = clamp(rgb[0] + shade, 0, 255);
+          const g = clamp(rgb[1] + shade, 0, 255);
+          const b = clamp(rgb[2] + shade, 0, 255);
+          const gradient = sctx.createRadialGradient(x - radius * 0.18, y - radius * 0.2, 0, x, y, radius);
+          gradient.addColorStop(0, 'rgba(' + r + ',' + g + ',' + b + ',0.22)');
+          gradient.addColorStop(0.45, 'rgba(' + r + ',' + g + ',' + b + ',0.16)');
+          gradient.addColorStop(1, 'rgba(' + r + ',' + g + ',' + b + ',0)');
+          sctx.fillStyle = gradient;
+          sctx.beginPath();
+          sctx.arc(x, y, radius, 0, TAU);
+          sctx.fill();
+        }
+
+        const core = sctx.createRadialGradient(58, 54, 4, 64, 64, 52);
+        core.addColorStop(0, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.3)');
+        core.addColorStop(0.62, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.1)');
+        core.addColorStop(1, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0)');
+        sctx.fillStyle = core;
+        sctx.fillRect(0, 0, size, size);
+        return sprite;
+      }
+
+      function buildRasterAssets() {
+        smokeSprites = [
+          buildSmokeSprite([242, 239, 224], 11),
+          buildSmokeSprite([219, 225, 228], 29),
+          buildSmokeSprite([184, 191, 199], 47),
+          buildSmokeSprite([139, 148, 158], 71),
+          buildSmokeSprite([226, 211, 190], 89),
+          buildSmokeSprite([205, 214, 218], 107)
+        ];
+
+        const noise = document.createElement('canvas');
+        noise.width = 192;
+        noise.height = 192;
+        const nctx = noise.getContext('2d');
+        const image = nctx.createImageData(noise.width, noise.height);
+        const nr = mulberry32(19071969);
+        for (let i = 0; i < image.data.length; i += 4) {
+          const value = nr() > 0.51 ? 255 : 0;
+          image.data[i] = value;
+          image.data[i + 1] = value;
+          image.data[i + 2] = value;
+          image.data[i + 3] = Math.floor(nr() * 20);
+        }
+        nctx.putImageData(image, 0, 0);
+        noisePattern = ctx.createPattern(noise, 'repeat');
+      }
+
+      function buildSceneData() {
+        const sr = mulberry32(0x1A51A6D);
+        const starCount = clamp(Math.floor(width * height / 5400), 95, 240);
+        stars = Array.from({ length: starCount }, () => ({
+          x: sr(),
+          y: Math.pow(sr(), 1.28) * 0.51,
+          radius: 0.35 + sr() * 1.35,
+          phase: sr() * TAU,
+          speed: 0.35 + sr() * 1.3,
+          blue: sr() > 0.72,
+          flare: sr() > 0.965
+        }));
+
+        clouds = [
+          { x: 0.04, y: 0.24, scale: 0.82, speed: 2.4, alpha: 0.30, phase: 0.3 },
+          { x: 0.68, y: 0.20, scale: 1.08, speed: 1.7, alpha: 0.25, phase: 2.1 },
+          { x: 0.34, y: 0.41, scale: 0.65, speed: 3.0, alpha: 0.19, phase: 4.0 },
+          { x: 0.88, y: 0.39, scale: 0.76, speed: 2.1, alpha: 0.20, phase: 5.4 }
+        ];
+
+        shrubs = Array.from({ length: 72 }, () => ({
+          x: (sr() - 0.5) * 0.93,
+          y: sr(),
+          size: 0.45 + sr() * 0.95,
+          hue: sr(),
+          lean: (sr() - 0.5) * 0.8
+        }));
+      }
+
+      function sceneLayout() {
+        const rocketHeight = clamp(Math.min(height * 0.45, width * 0.72), 140, 410);
+        const islandWidth = Math.min(900, Math.max(width * 0.72, Math.min(340, width * 0.92)));
+        return {
+          horizonY: height * 0.555,
+          oceanTop: height * 0.545,
+          islandX: width * 0.5,
+          islandY: height * 0.815,
+          islandWidth,
+          islandHeight: clamp(height * 0.17, 64, 160),
+          padX: width * 0.515,
+          padY: height * 0.755,
+          rocketHeight,
+          rocketWidth: rocketHeight * 0.142
+        };
+      }
+
+      function rocketStateAt(t, scene) {
+        let x = scene.padX;
+        let y = scene.padY;
+        let scale = 1;
+        let phase = 'prelaunch';
+        let engine = false;
+        let throttle = 0;
+        let visible = true;
+        let returnProgress = 0;
+
+        if (t < TIMING.liftoff) {
+          phase = 'prelaunch';
+          throttle = smoothstep(TIMING.ignition, TIMING.liftoff, t);
+          engine = t >= TIMING.ignition;
+        } else if (t < TIMING.exit) {
+          phase = t < TIMING.ascent ? 'liftoff' : 'ascent';
+          const p = clamp((t - TIMING.liftoff) / (TIMING.exit - TIMING.liftoff), 0, 1);
+          const travel = Math.pow(p, 2.35);
+          const targetY = -scene.rocketHeight * 0.46;
+          y = lerp(scene.padY, targetY, travel);
+          x += Math.sin(p * Math.PI) * width * 0.004 + Math.pow(p, 2) * width * 0.012;
+          scale = lerp(1, 0.68, smootherstep(p));
+          throttle = 1 - smoothstep(0.78, 1, p) * 0.22;
+          engine = true;
+        } else if (t < TIMING.returnStart) {
+          phase = 'calm';
+          visible = false;
+        } else if (t < TIMING.returnEnd) {
+          phase = 'return';
+          returnProgress = clamp((t - TIMING.returnStart) / (TIMING.returnEnd - TIMING.returnStart), 0, 1);
+          const settle = smootherstep(returnProgress);
+          y = lerp(-scene.rocketHeight * 0.46, scene.padY, settle);
+          scale = lerp(0.68, 1, easeOutQuint(returnProgress));
+          const floatEnvelope = Math.sin(returnProgress * Math.PI);
+          x += Math.sin(returnProgress * Math.PI * 4.25) * 7 * floatEnvelope * (1 - returnProgress * 0.55);
+        } else {
+          phase = 'settled';
+        }
+
+        return {
+          x,
+          y,
+          scale,
+          phase,
+          engine,
+          throttle,
+          visible,
+          returnProgress
+        };
+      }
+
+      function releaseAllParticles() {
+        while (particles.length) particlePool.push(particles.pop());
+      }
+
+      function resetCycle(cycle) {
+        activeCycle = cycle;
+        releaseAllParticles();
+        previousNozzle = null;
+        random = mulberry32(0x56A11CE);
+        for (const key in emitters) emitters[key] = 0;
+      }
+
+      function spawnParticle(values) {
+        if (particles.length >= MAX_PARTICLES) return null;
+        const p = particlePool.pop() || {};
+        p.kind = values.kind || 'smoke';
+        p.layer = values.layer || 1;
+        p.x = values.x;
+        p.y = values.y;
+        p.vx = values.vx || 0;
+        p.vy = values.vy || 0;
+        p.age = values.age || 0;
+        p.life = values.life || 1;
+        p.r0 = values.r0 || 2;
+        p.r1 = values.r1 || p.r0;
+        p.alpha = values.alpha == null ? 1 : values.alpha;
+        p.rotation = values.rotation || 0;
+        p.spin = values.spin || 0;
+        p.seed = values.seed || rand(0, TAU);
+        p.wobble = values.wobble || 0;
+        p.buoyancy = values.buoyancy || 0;
+        p.gravity = values.gravity || 0;
+        p.sprite = values.sprite || 0;
+        particles.push(p);
+        return p;
+      }
+
+      function emitRate(key, rate, dt, callback) {
+        if (rate <= 0 || dt <= 0) return;
+        emitters[key] += rate * dt;
+        const count = Math.min(80, Math.floor(emitters[key]));
+        emitters[key] -= count;
+        for (let i = 0; i < count; i++) callback(i, count);
+      }
+
+      function spawnBaseSmoke(scene, energy) {
+        const side = rand() < 0.5 ? -1 : 1;
+        const centerBias = rand(-0.08, 0.08) * scene.islandWidth;
+        const speed = rand(28, 76) * (0.55 + energy * 0.8);
+        spawnParticle({
+          kind: 'smoke',
+          layer: rand() < 0.46 ? 1 : 2,
+          x: scene.padX + centerBias + side * rand(0, scene.rocketWidth * 0.45),
+          y: scene.padY + rand(4, 18),
+          vx: side * speed + rand(-11, 11),
+          vy: rand(-23, 8),
+          life: rand(3.3, 5.3),
+          r0: rand(7, 15),
+          r1: rand(54, 96) * (0.72 + energy * 0.3),
+          alpha: rand(0.38, 0.66),
+          rotation: rand(0, TAU),
+          spin: rand(-0.16, 0.16),
+          wobble: rand(2, 7),
+          buoyancy: rand(7, 16),
+          sprite: random() < 0.2 ? 4 : Math.floor(rand(0, 4))
+        });
+      }
+
+      function spawnTrailSmoke(x, y, scene, state, highAltitude) {
+        const thin = highAltitude ? 0.68 : 1;
+        spawnParticle({
+          kind: 'smoke',
+          layer: 1,
+          x: x + rand(-scene.rocketWidth * 0.12, scene.rocketWidth * 0.12) * state.scale,
+          y: y + rand(-2, 5),
+          vx: rand(7, 22) + highAltitude * 8,
+          vy: rand(9, 34),
+          life: rand(2.5, 4.15) * thin,
+          r0: rand(4, 10) * state.scale,
+          r1: rand(32, 66) * thin,
+          alpha: rand(0.30, 0.53) * thin,
+          rotation: rand(0, TAU),
+          spin: rand(-0.22, 0.22),
+          wobble: rand(2, 8),
+          buoyancy: rand(4, 11),
+          sprite: highAltitude ? Math.floor(rand(1, 4)) : Math.floor(rand(0, 3))
+        });
+      }
+
+      function spawnEmber(x, y, scene, energy) {
+        const angle = rand(Math.PI * 0.18, Math.PI * 0.82);
+        const speed = rand(38, 132) * (0.55 + energy * 0.55);
+        spawnParticle({
+          kind: 'ember',
+          layer: 2,
+          x: x + rand(-scene.rocketWidth * 0.35, scene.rocketWidth * 0.35),
+          y,
+          vx: Math.cos(angle) * speed * (rand() < 0.5 ? -1 : 1),
+          vy: Math.sin(angle) * speed,
+          life: rand(0.35, 1.15),
+          r0: rand(0.8, 2.1),
+          r1: 0.2,
+          alpha: rand(0.65, 1),
+          gravity: rand(38, 78)
+        });
+      }
+
+      function emitLaunchParticles(dt, t, scene, state) {
+        if (!state.engine || !state.visible || t >= 6.72) {
+          previousNozzle = null;
+          return;
+        }
+
+        const nozzle = {
+          x: state.x,
+          y: state.y + scene.rocketHeight * 0.018 * state.scale
+        };
+
+        if (t < TIMING.liftoff) {
+          const energy = state.throttle;
+          emitRate('base', 20 + energy * 142, dt, () => spawnBaseSmoke(scene, energy));
+          emitRate('ember', energy * 26, dt, () => spawnEmber(nozzle.x, scene.padY + 8, scene, energy));
+          if (t > 0.55 && t < 1.25) {
+            emitRate('steam', 20, dt, () => {
+              spawnParticle({
+                kind: 'smoke', layer: 2,
+                x: scene.padX + scene.rocketWidth * rand(0.65, 1.0),
+                y: scene.padY - scene.rocketHeight * rand(0.42, 0.72),
+                vx: rand(20, 44), vy: rand(-8, 4), life: rand(1.5, 2.6),
+                r0: rand(3, 7), r1: rand(22, 40), alpha: rand(0.18, 0.32),
+                rotation: rand(0, TAU), spin: rand(-0.2, 0.2), wobble: 4,
+                buoyancy: rand(3, 7), sprite: 5
+              });
+            });
+          }
+        } else {
+          const launchP = clamp((t - TIMING.liftoff) / (TIMING.exit - TIMING.liftoff), 0, 1);
+          if (t < 4.75) {
+            emitRate('base', lerp(176, 22, smoothstep(1.5, 4.75, t)), dt, () => spawnBaseSmoke(scene, 1 - launchP * 0.4));
+          }
+
+          const last = previousNozzle || nozzle;
+          const dx = nozzle.x - last.x;
+          const dy = nozzle.y - last.y;
+          const distance = Math.hypot(dx, dy);
+          emitters.trailDistance += distance;
+          emitters.trailTime += dt * lerp(68, 19, smoothstep(0.38, 1, launchP));
+          const distanceCount = Math.floor(emitters.trailDistance / lerp(13, 25, launchP));
+          const timeCount = Math.floor(emitters.trailTime);
+          const count = Math.min(30, Math.max(timeCount, distanceCount));
+          if (count > 0) {
+            emitters.trailTime = Math.max(0, emitters.trailTime - count);
+            emitters.trailDistance = Math.max(0, emitters.trailDistance - count * lerp(13, 25, launchP));
+            for (let i = 0; i < count; i++) {
+              const u = (i + rand(0.15, 0.85)) / count;
+              spawnTrailSmoke(lerp(last.x, nozzle.x, u), lerp(last.y, nozzle.y, u), scene, state, launchP > 0.55);
+            }
+          }
+          emitRate('ember', lerp(35, 7, launchP), dt, () => spawnEmber(nozzle.x, nozzle.y + 5, scene, state.throttle));
+        }
+
+        previousNozzle = nozzle;
+      }
+
+      function updateParticles(dt, clock) {
+        const drag = Math.pow(0.986, dt * 60);
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.age += dt;
+          if (p.age >= p.life || !Number.isFinite(p.x + p.y)) {
+            particlePool.push(p);
+            particles[i] = particles[particles.length - 1];
+            particles.pop();
+            continue;
+          }
+
+          if (p.kind === 'smoke') {
+            p.vx *= drag;
+            p.vx += 2.7 * dt;
+            p.vy -= p.buoyancy * dt;
+            p.x += (p.vx + Math.sin(p.seed + clock * 1.3) * p.wobble) * dt;
+            p.y += p.vy * dt;
+            p.rotation += p.spin * dt;
+          } else {
+            p.vy += p.gravity * dt;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.vx *= Math.pow(0.97, dt * 60);
+          }
+        }
+      }
+
+      function drawSky(clock) {
+        const sky = ctx.createLinearGradient(0, 0, 0, height);
+        sky.addColorStop(0, '#020611');
+        sky.addColorStop(0.26, '#07142d');
+        sky.addColorStop(0.50, '#243456');
+        sky.addColorStop(0.68, '#9a5362');
+        sky.addColorStop(0.82, '#e58b66');
+        sky.addColorStop(1, '#f1b774');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, width, height);
+
+        const bloom = ctx.createRadialGradient(width * 0.77, height * 0.57, 0, width * 0.77, height * 0.57, width * 0.42);
+        bloom.addColorStop(0, 'rgba(255,190,116,0.28)');
+        bloom.addColorStop(0.42, 'rgba(240,116,101,0.09)');
+        bloom.addColorStop(1, 'rgba(24,37,67,0)');
+        ctx.fillStyle = bloom;
+        ctx.fillRect(0, 0, width, height * 0.74);
+
+        const zenith = ctx.createRadialGradient(width * 0.35, -height * 0.15, 0, width * 0.35, -height * 0.15, height * 0.8);
+        zenith.addColorStop(0, 'rgba(20,57,102,0.17)');
+        zenith.addColorStop(1, 'rgba(2,6,17,0)');
+        ctx.fillStyle = zenith;
+        ctx.fillRect(0, 0, width, height * 0.7);
+      }
+
+      function drawStars(clock) {
+        ctx.save();
+        for (let i = 0; i < stars.length; i++) {
+          const star = stars[i];
+          const x = star.x * width;
+          const y = star.y * height;
+          const horizonFade = 1 - smoothstep(0.34, 0.52, star.y);
+          const twinkle = 0.54 + Math.sin(clock * star.speed + star.phase) * 0.28;
+          const alpha = clamp(twinkle * horizonFade, 0.08, 0.9);
+          ctx.fillStyle = star.blue ? 'rgba(185,219,255,' + alpha + ')' : 'rgba(255,241,211,' + alpha + ')';
+          ctx.beginPath();
+          ctx.arc(x, y, star.radius, 0, TAU);
+          ctx.fill();
+          if (star.flare && alpha > 0.55) {
+            ctx.strokeStyle = 'rgba(225,239,255,' + alpha * 0.35 + ')';
+            ctx.lineWidth = 0.55;
+            ctx.beginPath();
+            ctx.moveTo(x - star.radius * 3.5, y);
+            ctx.lineTo(x + star.radius * 3.5, y);
+            ctx.moveTo(x, y - star.radius * 3.5);
+            ctx.lineTo(x, y + star.radius * 3.5);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+
+      function drawCloud(x, y, scale, alpha, clock, phase) {
+        const drift = Math.sin(clock * 0.08 + phase) * 4;
+        ctx.save();
+        ctx.translate(x + drift, y);
+        ctx.scale(scale, scale);
+        const gradient = ctx.createLinearGradient(0, -25, 0, 25);
+        gradient.addColorStop(0, 'rgba(255,226,214,' + alpha + ')');
+        gradient.addColorStop(0.62, 'rgba(196,169,183,' + alpha * 0.72 + ')');
+        gradient.addColorStop(1, 'rgba(79,83,117,0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.moveTo(-64, 16);
+        ctx.bezierCurveTo(-56, -5, -38, -8, -24, -4);
+        ctx.bezierCurveTo(-17, -27, 13, -32, 26, -9);
+        ctx.bezierCurveTo(48, -19, 71, -2, 72, 15);
+        ctx.bezierCurveTo(46, 26, -42, 26, -64, 16);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,239,224,' + alpha * 0.35 + ')';
+        ctx.beginPath();
+        ctx.ellipse(-17, -5, 31, 14, -0.1, 0, TAU);
+        ctx.ellipse(20, -3, 28, 12, 0.08, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawClouds(clock) {
+        for (const cloud of clouds) {
+          const travel = mod(cloud.x * width + clock * cloud.speed + width * 0.16, width * 1.32) - width * 0.16;
+          drawCloud(travel, cloud.y * height, cloud.scale * clamp(width / 900, 0.72, 1.25), cloud.alpha, clock, cloud.phase);
+        }
+      }
+
+      function drawOcean(scene, clock, state, cycleTime) {
+        const ocean = ctx.createLinearGradient(0, scene.oceanTop, 0, height);
+        ocean.addColorStop(0, '#174e69');
+        ocean.addColorStop(0.18, '#0b3856');
+        ocean.addColorStop(0.62, '#06223c');
+        ocean.addColorStop(1, '#020f21');
+        ctx.fillStyle = ocean;
+        ctx.fillRect(0, scene.oceanTop, width, height - scene.oceanTop);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, scene.oceanTop, width, height - scene.oceanTop);
+        ctx.clip();
+
+        const launchLight = state.engine ? state.throttle * (1 - smoothstep(scene.padY - scene.rocketHeight * 0.25, -scene.rocketHeight * 0.1, state.y)) : 0;
+        if (launchLight > 0.01) {
+          const reflection = ctx.createRadialGradient(scene.padX, scene.oceanTop, 0, scene.padX, scene.oceanTop, scene.islandWidth * 0.5);
+          reflection.addColorStop(0, 'rgba(255,150,57,' + launchLight * 0.31 + ')');
+          reflection.addColorStop(0.38, 'rgba(255,104,43,' + launchLight * 0.1 + ')');
+          reflection.addColorStop(1, 'rgba(255,80,30,0)');
+          ctx.fillStyle = reflection;
+          ctx.fillRect(scene.padX - scene.islandWidth * 0.55, scene.oceanTop, scene.islandWidth * 1.1, height - scene.oceanTop);
+
+          ctx.globalCompositeOperation = 'lighter';
+          for (let i = 0; i < 18; i++) {
+            const yy = scene.oceanTop + 8 + i * 8.5;
+            const spread = 14 + i * 3.4;
+            const offset = Math.sin(clock * 3.1 + i * 1.77) * (6 + i * 0.4);
+            ctx.strokeStyle = 'rgba(255,177,83,' + launchLight * (0.12 - i * 0.0045) + ')';
+            ctx.lineWidth = 1.1;
+            ctx.beginPath();
+            ctx.moveTo(scene.padX - spread + offset, yy);
+            ctx.lineTo(scene.padX + spread + offset * 0.4, yy);
+            ctx.stroke();
+          }
+          ctx.globalCompositeOperation = 'source-over';
+        }
+
+        for (let row = 0; row < 16; row++) {
+          const y = scene.oceanTop + 5 + row * ((height - scene.oceanTop) / 15.5);
+          const amp = 1.4 + row * 0.16;
+          const wavelength = 52 + row * 7;
+          ctx.strokeStyle = row < 6 ? 'rgba(151,210,217,' + (0.18 - row * 0.012) + ')' : 'rgba(64,133,166,' + (0.12 - row * 0.003) + ')';
+          ctx.lineWidth = row < 3 ? 1.15 : 0.8;
+          ctx.beginPath();
+          for (let x = -20; x <= width + 20; x += 8) {
+            const yy = y + Math.sin(x / wavelength * TAU + clock * (0.75 + row * 0.025) + row * 0.73) * amp;
+            if (x === -20) ctx.moveTo(x, yy);
+            else ctx.lineTo(x, yy);
+          }
+          ctx.stroke();
+        }
+
+        const rippleEnergy = state.engine ? state.throttle : Math.max(0, 1 - (cycleTime - TIMING.exit) / 2.2);
+        if (rippleEnergy > 0) {
+          ctx.strokeStyle = 'rgba(157,218,220,' + rippleEnergy * 0.2 + ')';
+          ctx.lineWidth = 1.1;
+          for (let i = 0; i < 5; i++) {
+            const radius = mod(clock * 46 + i * 31, Math.max(80, scene.islandWidth * 0.46));
+            ctx.beginPath();
+            ctx.ellipse(scene.padX, scene.islandY + scene.islandHeight * 0.15, radius * 1.65, radius * 0.24, 0, Math.PI * 1.05, Math.PI * 1.95);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+
+        ctx.strokeStyle = 'rgba(241,174,137,0.31)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(0, scene.oceanTop + Math.sin(clock) * 1.2);
+        ctx.lineTo(width, scene.oceanTop + Math.sin(clock + 1.4) * 1.2);
+        ctx.stroke();
+      }
+
+      function drawPalm(x, y, scale, lean, clock, rear) {
+        const sway = Math.sin(clock * 0.72 + x * 0.009) * 0.035;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(scale, scale);
+        ctx.rotate(lean * 0.06 + sway);
+
+        const trunk = ctx.createLinearGradient(-7, 0, 8, 0);
+        trunk.addColorStop(0, rear ? '#392f2b' : '#51402e');
+        trunk.addColorStop(0.45, rear ? '#77553a' : '#936b43');
+        trunk.addColorStop(1, '#2b2926');
+        ctx.strokeStyle = trunk;
+        ctx.lineWidth = 9;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(-5, -35, 5 + lean * 7, -70, lean * 13, -105);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(224,160,86,0.22)';
+        ctx.lineWidth = 1.2;
+        for (let i = 0; i < 8; i++) {
+          const yy = -10 - i * 11.5;
+          ctx.beginPath();
+          ctx.moveTo(-4, yy);
+          ctx.lineTo(5, yy - 4);
+          ctx.stroke();
+        }
+
+        ctx.translate(lean * 13, -106);
+        for (let f = 0; f < 9; f++) {
+          const a = -Math.PI * 0.96 + f * Math.PI * 0.235 + sway * 2;
+          const length = 48 + (f % 3) * 7;
+          const bend = f % 2 ? 10 : -5;
+          const ex = Math.cos(a) * length;
+          const ey = Math.sin(a) * length * 0.54 + 10;
+          ctx.strokeStyle = rear ? '#164d3b' : (f % 2 ? '#26704b' : '#1d5d42');
+          ctx.lineWidth = 4.1;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(ex * 0.55, ey * 0.42 + bend, ex, ey);
+          ctx.stroke();
+
+          ctx.strokeStyle = rear ? 'rgba(28,91,62,0.82)' : 'rgba(48,132,76,0.88)';
+          ctx.lineWidth = 1.35;
+          for (let l = 0.2; l < 0.92; l += 0.13) {
+            const lx = ex * l;
+            const ly = ey * l + Math.sin(l * Math.PI) * bend * 0.55;
+            const nx = -Math.sin(a) * (7 * (1 - l));
+            const ny = Math.cos(a) * (4 * (1 - l));
+            ctx.beginPath();
+            ctx.moveTo(lx, ly);
+            ctx.lineTo(lx + nx, ly + ny);
+            ctx.moveTo(lx, ly);
+            ctx.lineTo(lx - nx, ly - ny);
+            ctx.stroke();
+          }
+        }
+        ctx.fillStyle = '#284c31';
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.ellipse(-5 + i * 4, 7 + i % 2 * 3, 5, 8, -0.5 + i * 0.3, 0, TAU);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawIslandBase(scene, clock) {
+        const x = scene.islandX;
+        const y = scene.islandY;
+        const iw = scene.islandWidth;
+        const ih = scene.islandHeight;
+
+        ctx.fillStyle = 'rgba(0,6,14,0.42)';
+        ctx.beginPath();
+        ctx.ellipse(x + 8, y + ih * 0.43, iw * 0.57, ih * 0.32, 0, 0, TAU);
+        ctx.fill();
+
+        const sand = ctx.createLinearGradient(0, y - ih * 0.45, 0, y + ih * 0.5);
+        sand.addColorStop(0, '#dcc083');
+        sand.addColorStop(0.35, '#ba8b55');
+        sand.addColorStop(0.73, '#6b4d37');
+        sand.addColorStop(1, '#283331');
+        ctx.fillStyle = sand;
+        ctx.beginPath();
+        ctx.moveTo(x - iw * 0.53, y + ih * 0.14);
+        ctx.bezierCurveTo(x - iw * 0.42, y - ih * 0.29, x - iw * 0.19, y - ih * 0.49, x, y - ih * 0.42);
+        ctx.bezierCurveTo(x + iw * 0.27, y - ih * 0.48, x + iw * 0.48, y - ih * 0.17, x + iw * 0.55, y + ih * 0.11);
+        ctx.bezierCurveTo(x + iw * 0.42, y + ih * 0.37, x + iw * 0.13, y + ih * 0.47, x - iw * 0.18, y + ih * 0.39);
+        ctx.bezierCurveTo(x - iw * 0.38, y + ih * 0.38, x - iw * 0.5, y + ih * 0.28, x - iw * 0.53, y + ih * 0.14);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(255,230,174,0.42)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - iw * 0.49, y + ih * 0.17);
+        ctx.bezierCurveTo(x - iw * 0.21, y + ih * 0.31, x + iw * 0.25, y + ih * 0.31, x + iw * 0.5, y + ih * 0.13);
+        ctx.stroke();
+
+        const green = ctx.createLinearGradient(0, y - ih * 0.5, 0, y + ih * 0.02);
+        green.addColorStop(0, '#34754a');
+        green.addColorStop(0.5, '#1f583e');
+        green.addColorStop(1, '#103c31');
+        ctx.fillStyle = green;
+        ctx.beginPath();
+        ctx.moveTo(x - iw * 0.42, y - ih * 0.04);
+        ctx.bezierCurveTo(x - iw * 0.31, y - ih * 0.46, x - iw * 0.06, y - ih * 0.54, x + iw * 0.18, y - ih * 0.43);
+        ctx.bezierCurveTo(x + iw * 0.36, y - ih * 0.39, x + iw * 0.43, y - ih * 0.17, x + iw * 0.44, y - ih * 0.03);
+        ctx.bezierCurveTo(x + iw * 0.19, y - ih * 0.18, x - iw * 0.18, y - ih * 0.13, x - iw * 0.42, y - ih * 0.04);
+        ctx.fill();
+
+        drawPalm(x - iw * 0.34, y - ih * 0.18, clamp(iw / 620, 0.64, 1.15), -0.45, clock, false);
+        drawPalm(x + iw * 0.34, y - ih * 0.16, clamp(iw / 760, 0.55, 0.93), 0.55, clock, true);
+        drawPalm(x - iw * 0.45, y - ih * 0.02, clamp(iw / 920, 0.48, 0.72), 0.25, clock, true);
+
+        for (let i = 0; i < shrubs.length; i++) {
+          const s = shrubs[i];
+          const sx = x + s.x * iw * 0.48;
+          const arc = 1 - Math.pow(Math.abs(s.x), 1.6);
+          const sy = y - ih * (0.03 + arc * (0.16 + s.y * 0.19));
+          const radius = s.size * clamp(iw / 750, 0.65, 1.15) * 5;
+          ctx.fillStyle = s.hue > 0.66 ? '#3d7d49' : (s.hue > 0.28 ? '#235f3d' : '#174b38');
+          ctx.beginPath();
+          ctx.ellipse(sx, sy, radius * 1.35, radius, s.lean, 0, TAU);
+          ctx.fill();
+          if (i % 7 === 0) {
+            ctx.fillStyle = 'rgba(237,127,82,0.65)';
+            ctx.beginPath();
+            ctx.arc(sx + radius * 0.4, sy - radius * 0.5, Math.max(0.8, radius * 0.16), 0, TAU);
+            ctx.fill();
+          }
+        }
+
+        ctx.fillStyle = '#3f3a34';
+        ctx.beginPath();
+        ctx.ellipse(x - iw * 0.43, y + ih * 0.14, iw * 0.055, ih * 0.10, -0.18, 0, TAU);
+        ctx.ellipse(x + iw * 0.46, y + ih * 0.10, iw * 0.043, ih * 0.075, 0.3, 0, TAU);
+        ctx.fill();
+      }
+
+      function drawLaunchComplex(scene, clock, cycleTime) {
+        const H = scene.rocketHeight;
+        const W = scene.rocketWidth;
+        const towerX = scene.padX + W * 1.48;
+        const baseY = scene.padY + H * 0.055;
+        const towerTop = scene.padY - H * 0.77;
+        const towerW = W * 0.72;
+        const retract = smoothstep(1.05, 2.2, cycleTime);
+
+        ctx.save();
+        ctx.strokeStyle = '#343d43';
+        ctx.fillStyle = '#263139';
+        ctx.lineCap = 'square';
+
+        ctx.fillRect(towerX - towerW * 0.55, towerTop, towerW * 0.16, baseY - towerTop);
+        ctx.fillRect(towerX + towerW * 0.40, towerTop, towerW * 0.16, baseY - towerTop);
+        ctx.strokeStyle = '#687177';
+        ctx.lineWidth = Math.max(1.2, W * 0.045);
+        ctx.strokeRect(towerX - towerW * 0.55, towerTop, towerW * 1.11, baseY - towerTop);
+
+        const bays = 9;
+        const bayH = (baseY - towerTop) / bays;
+        ctx.lineWidth = Math.max(0.8, W * 0.025);
+        for (let i = 0; i < bays; i++) {
+          const y0 = towerTop + i * bayH;
+          const y1 = y0 + bayH;
+          ctx.beginPath();
+          if (i % 2 === 0) {
+            ctx.moveTo(towerX - towerW * 0.46, y0);
+            ctx.lineTo(towerX + towerW * 0.46, y1);
+            ctx.moveTo(towerX + towerW * 0.46, y0);
+            ctx.lineTo(towerX - towerW * 0.46, y1);
+          } else {
+            ctx.moveTo(towerX, y0);
+            ctx.lineTo(towerX - towerW * 0.46, y1);
+            ctx.moveTo(towerX, y0);
+            ctx.lineTo(towerX + towerW * 0.46, y1);
+          }
+          ctx.stroke();
+          ctx.fillStyle = '#4b565b';
+          ctx.fillRect(towerX - towerW * 0.66, y0 - 2, towerW * 1.3, Math.max(2, W * 0.055));
+        }
+
+        ctx.fillStyle = '#20292f';
+        for (const level of [0.15, 0.38, 0.63, 0.84]) {
+          const deckY = lerp(towerTop, baseY, level);
+          ctx.fillRect(towerX - towerW * 0.78, deckY - 3, towerW * 1.65, 6);
+          ctx.strokeStyle = 'rgba(155,166,166,0.48)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(towerX - towerW * 0.72, deckY - 4);
+          ctx.lineTo(towerX - towerW * 0.72, deckY - 12);
+          ctx.lineTo(towerX + towerW * 0.76, deckY - 12);
+          ctx.lineTo(towerX + towerW * 0.76, deckY - 4);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = '#6f7778';
+        ctx.fillRect(towerX - towerW * 0.05, towerTop - H * 0.05, towerW * 0.1, H * 0.05);
+        ctx.strokeStyle = '#7f898c';
+        ctx.beginPath();
+        ctx.moveTo(towerX, towerTop - H * 0.05);
+        ctx.lineTo(towerX + towerW * 0.34, towerTop - H * 0.10);
+        ctx.stroke();
+        ctx.fillStyle = Math.sin(clock * 3.2) > -0.4 ? '#f29055' : '#773f35';
+        ctx.beginPath();
+        ctx.arc(towerX + towerW * 0.34, towerTop - H * 0.10, Math.max(1.5, W * 0.055), 0, TAU);
+        ctx.fill();
+
+        const armLevels = [0.25, 0.48, 0.70];
+        for (let i = 0; i < armLevels.length; i++) {
+          const armY = towerTop + (baseY - towerTop) * armLevels[i];
+          const startX = towerX - towerW * 0.48;
+          const rocketEdge = scene.padX + W * (i === 1 ? 0.38 : 0.46);
+          const endX = lerp(rocketEdge, startX - towerW * 0.06, retract);
+          ctx.strokeStyle = i === 1 ? '#8d6a4b' : '#596269';
+          ctx.lineWidth = Math.max(2.2, W * 0.095);
+          ctx.beginPath();
+          ctx.moveTo(startX, armY);
+          ctx.lineTo(endX, armY + retract * (i - 1) * W * 0.22);
+          ctx.stroke();
+          ctx.fillStyle = '#202a30';
+          ctx.beginPath();
+          ctx.arc(startX, armY, W * 0.12, 0, TAU);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = '#3e4547';
+        ctx.fillRect(scene.padX - W * 1.18, scene.padY + H * 0.01, W * 2.42, H * 0.055);
+        const padGradient = ctx.createLinearGradient(0, scene.padY, 0, scene.padY + H * 0.12);
+        padGradient.addColorStop(0, '#73736d');
+        padGradient.addColorStop(1, '#34383a');
+        ctx.fillStyle = padGradient;
+        ctx.beginPath();
+        ctx.moveTo(scene.padX - W * 1.72, scene.padY + H * 0.06);
+        ctx.lineTo(scene.padX + W * 1.68, scene.padY + H * 0.06);
+        ctx.lineTo(scene.padX + W * 2.0, scene.padY + H * 0.15);
+        ctx.lineTo(scene.padX - W * 2.03, scene.padY + H * 0.15);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#10181d';
+        ctx.beginPath();
+        ctx.ellipse(scene.padX, scene.padY + H * 0.075, W * 0.72, H * 0.045, 0, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawParticles(layer) {
+        ctx.save();
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          if (p.layer !== layer) continue;
+          const n = clamp(p.age / p.life, 0, 1);
+          if (p.kind === 'smoke') {
+            const appear = smoothstep(0, 0.085, n);
+            const fade = 1 - smoothstep(0.52, 1, n);
+            const alpha = p.alpha * appear * Math.pow(fade, 1.18);
+            if (alpha < 0.004) continue;
+            const r = lerp(p.r0, p.r1, easeOutCubic(n));
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation);
+            ctx.drawImage(smokeSprites[p.sprite % smokeSprites.length], -r, -r, r * 2, r * 2);
+            ctx.restore();
+          } else {
+            const alpha = p.alpha * (1 - n) * (1 - n);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.strokeStyle = 'rgba(255,150,50,' + alpha + ')';
+            ctx.lineWidth = Math.max(0.6, p.r0 * (1 - n));
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x - p.vx * 0.026, p.y - p.vy * 0.026);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255,230,147,' + alpha + ')';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(0.35, p.r0 * (1 - n)), 0, TAU);
+            ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+          }
+        }
+        ctx.restore();
+      }
+
+      function drawHeatHaze(scene, state, flameLength, intensity) {
+        if (!state.engine || intensity < 0.08) return;
+        const sw = Math.max(20, scene.rocketWidth * 2.0 * state.scale);
+        const sh = Math.min(flameLength * 1.15, Math.max(0, height - state.y));
+        const sx = clamp(state.x - sw * 0.5, 0, Math.max(0, width - sw));
+        const sy = clamp(state.y, 0, height);
+        if (sh < 8 || sx + sw <= 0 || sy >= height) return;
+
+        const sourceW = Math.max(1, Math.floor(sw * dpr));
+        const sourceH = Math.max(1, Math.floor(sh * dpr));
+        if (hazeCanvas.width !== sourceW || hazeCanvas.height !== sourceH) {
+          hazeCanvas.width = sourceW;
+          hazeCanvas.height = sourceH;
+          hazeCtx = hazeCanvas.getContext('2d');
+        }
+        hazeCtx.setTransform(1, 0, 0, 1, 0, 0);
+        hazeCtx.clearRect(0, 0, sourceW, sourceH);
+        hazeCtx.drawImage(canvas, sx * dpr, sy * dpr, sourceW, sourceH, 0, 0, sourceW, sourceH);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(sx - 5, sy, sw + 10, sh);
+        ctx.clip();
+        ctx.globalAlpha = 0.09 * intensity;
+        const strips = 12;
+        const stripH = sh / strips;
+        for (let i = 0; i < strips; i++) {
+          const offset = Math.sin(latestCycleTime * 16 + i * 1.71) * (1.2 + intensity * 2.2);
+          const sourceY = i * sourceH / strips;
+          ctx.drawImage(
+            hazeCanvas,
+            0, sourceY, sourceW, sourceH / strips + 1,
+            sx + offset, sy + i * stripH, sw, stripH + 1
+          );
+        }
+        ctx.restore();
+      }
+
+      function drawFlame(scene, state, clock) {
+        if (!state.engine || !state.visible) return 0;
+        const H = scene.rocketHeight;
+        const W = scene.rocketWidth;
+        const flicker = 0.92 + Math.sin(clock * 31.7) * 0.045 + Math.sin(clock * 47.3 + 1.1) * 0.035;
+        const phaseBoost = state.phase === 'ascent' ? 1.19 : (state.phase === 'liftoff' ? 1.08 : 0.64 + state.throttle * 0.35);
+        const length = H * (0.105 + state.throttle * 0.235) * flicker * phaseBoost * state.scale;
+        const nozzleY = state.y + H * 0.012 * state.scale;
+        const localW = W * state.scale;
+
+        drawHeatHaze(scene, state, length, state.throttle);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const glow = ctx.createRadialGradient(state.x, nozzleY, 0, state.x, nozzleY, localW * 4.8);
+        glow.addColorStop(0, 'rgba(255,244,191,' + state.throttle * 0.38 + ')');
+        glow.addColorStop(0.18, 'rgba(255,150,45,' + state.throttle * 0.32 + ')');
+        glow.addColorStop(0.55, 'rgba(240,70,20,' + state.throttle * 0.12 + ')');
+        glow.addColorStop(1, 'rgba(220,45,10,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(state.x, nozzleY, localW * 4.8, 0, TAU);
+        ctx.fill();
+
+        function flamePath(widthFactor, lengthFactor, wobble, color) {
+          const fw = localW * widthFactor;
+          const fl = length * lengthFactor;
+          const sway = Math.sin(clock * wobble + widthFactor * 4.2) * fw * 0.18;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(state.x - fw * 0.52, nozzleY - 1);
+          ctx.bezierCurveTo(state.x - fw * 0.56, nozzleY + fl * 0.25, state.x - fw * 0.22 + sway, nozzleY + fl * 0.72, state.x + sway, nozzleY + fl);
+          ctx.bezierCurveTo(state.x + fw * 0.24 + sway, nozzleY + fl * 0.72, state.x + fw * 0.57, nozzleY + fl * 0.25, state.x + fw * 0.52, nozzleY - 1);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        flamePath(1.28, 1.0, 21.5, 'rgba(235,61,18,0.34)');
+        flamePath(0.96, 0.84, 29.1, 'rgba(255,123,24,0.68)');
+        flamePath(0.62, 0.64, 36.7, 'rgba(255,222,74,0.92)');
+        flamePath(0.29, 0.42, 43.8, 'rgba(255,255,236,0.98)');
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(219,239,243,' + state.throttle * 0.08 + ')';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          for (let j = 0; j <= 9; j++) {
+            const p = j / 9;
+            const xx = state.x + (i - 1.5) * localW * 0.35 + Math.sin(clock * 17 + p * 11 + i) * localW * 0.08;
+            const yy = nozzleY + p * length * 0.93;
+            if (j === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+        return length;
+      }
+
+      function drawFins(W, H) {
+        const finGradient = ctx.createLinearGradient(-W, 0, W, 0);
+        finGradient.addColorStop(0, '#4b5359');
+        finGradient.addColorStop(0.45, '#d8d9d3');
+        finGradient.addColorStop(1, '#6f7476');
+        ctx.fillStyle = finGradient;
+        ctx.strokeStyle = '#343b40';
+        ctx.lineWidth = W * 0.025;
+
+        ctx.beginPath();
+        ctx.moveTo(-W * 0.43, -H * 0.16);
+        ctx.lineTo(-W * 1.05, -H * 0.045);
+        ctx.lineTo(-W * 0.93, -H * 0.006);
+        ctx.lineTo(-W * 0.38, -H * 0.038);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(W * 0.43, -H * 0.16);
+        ctx.lineTo(W * 1.05, -H * 0.045);
+        ctx.lineTo(W * 0.93, -H * 0.006);
+        ctx.lineTo(W * 0.38, -H * 0.038);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(42,48,52,0.75)';
+        ctx.beginPath();
+        ctx.moveTo(-W * 0.22, -H * 0.10);
+        ctx.lineTo(0, -H * 0.02);
+        ctx.lineTo(W * 0.22, -H * 0.10);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      function drawRocket(scene, state, clock) {
+        if (!state.visible) return;
+        const H = scene.rocketHeight;
+        const W = scene.rocketWidth;
+        ctx.save();
+        ctx.translate(state.x, state.y);
+        ctx.scale(state.scale, state.scale);
+
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.34)';
+        ctx.shadowBlur = W * 0.34;
+        ctx.shadowOffsetX = W * 0.18;
+        drawFins(W, H);
+        ctx.restore();
+
+        const bodyGradient = ctx.createLinearGradient(-W * 0.56, 0, W * 0.56, 0);
+        bodyGradient.addColorStop(0, '#8f979c');
+        bodyGradient.addColorStop(0.13, '#d8ddd9');
+        bodyGradient.addColorStop(0.38, '#fffef2');
+        bodyGradient.addColorStop(0.67, '#eff1eb');
+        bodyGradient.addColorStop(0.88, '#b7bec1');
+        bodyGradient.addColorStop(1, '#707a80');
+
+        ctx.fillStyle = bodyGradient;
+        roundedRectPath(ctx, -W * 0.5, -H * 0.645, W, H * 0.625, W * 0.13);
+        ctx.fill();
+        ctx.strokeStyle = '#525c62';
+        ctx.lineWidth = Math.max(0.75, W * 0.022);
+        ctx.stroke();
+
+        const upperGradient = ctx.createLinearGradient(-W * 0.5, 0, W * 0.5, 0);
+        upperGradient.addColorStop(0, '#91999e');
+        upperGradient.addColorStop(0.25, '#f7f8ef');
+        upperGradient.addColorStop(0.62, '#fffef7');
+        upperGradient.addColorStop(1, '#8b9499');
+        ctx.fillStyle = upperGradient;
+        roundedRectPath(ctx, -W * 0.455, -H * 0.825, W * 0.91, H * 0.178, W * 0.09);
+        ctx.fill();
+        ctx.stroke();
+
+        const fairingGradient = ctx.createLinearGradient(-W * 0.5, 0, W * 0.5, 0);
+        fairingGradient.addColorStop(0, '#778188');
+        fairingGradient.addColorStop(0.22, '#e6e8e3');
+        fairingGradient.addColorStop(0.48, '#fffef4');
+        fairingGradient.addColorStop(0.78, '#c0c6c5');
+        fairingGradient.addColorStop(1, '#646e75');
+        ctx.fillStyle = fairingGradient;
+        ctx.beginPath();
+        ctx.moveTo(0, -H);
+        ctx.bezierCurveTo(-W * 0.08, -H * 0.978, -W * 0.43, -H * 0.898, -W * 0.455, -H * 0.825);
+        ctx.lineTo(W * 0.455, -H * 0.825);
+        ctx.bezierCurveTo(W * 0.43, -H * 0.898, W * 0.08, -H * 0.978, 0, -H);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#4c565e';
+        ctx.stroke();
+
+        ctx.fillStyle = '#303b45';
+        ctx.beginPath();
+        ctx.moveTo(0, -H);
+        ctx.bezierCurveTo(-W * 0.05, -H * 0.986, -W * 0.14, -H * 0.962, -W * 0.18, -H * 0.945);
+        ctx.lineTo(W * 0.18, -H * 0.945);
+        ctx.bezierCurveTo(W * 0.14, -H * 0.962, W * 0.05, -H * 0.986, 0, -H);
+        ctx.fill();
+
+        ctx.fillStyle = '#242c31';
+        ctx.fillRect(-W * 0.505, -H * 0.662, W * 1.01, H * 0.039);
+        ctx.fillRect(-W * 0.46, -H * 0.836, W * 0.92, H * 0.025);
+        ctx.fillRect(-W * 0.505, -H * 0.168, W * 1.01, H * 0.038);
+
+        const missionBand = ctx.createLinearGradient(-W * 0.5, 0, W * 0.5, 0);
+        missionBand.addColorStop(0, '#7c292a');
+        missionBand.addColorStop(0.35, '#d85f48');
+        missionBand.addColorStop(0.68, '#ef8560');
+        missionBand.addColorStop(1, '#78312f');
+        ctx.fillStyle = missionBand;
+        ctx.fillRect(-W * 0.49, -H * 0.485, W * 0.98, H * 0.043);
+        ctx.fillStyle = '#173f45';
+        ctx.fillRect(-W * 0.49, -H * 0.442, W * 0.98, H * 0.012);
+
+        ctx.strokeStyle = 'rgba(56,65,70,0.38)';
+        ctx.lineWidth = Math.max(0.55, W * 0.014);
+        const seams = [-0.755, -0.708, -0.57, -0.37, -0.29, -0.225, -0.083];
+        for (const seam of seams) {
+          ctx.beginPath();
+          ctx.moveTo(-W * (seam < -0.645 ? 0.43 : 0.48), H * seam);
+          ctx.lineTo(W * (seam < -0.645 ? 0.43 : 0.48), H * seam);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.moveTo(0, -H * 0.998);
+        ctx.lineTo(0, -H * 0.826);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = W * 0.035;
+        ctx.beginPath();
+        ctx.moveTo(-W * 0.25, -H * 0.79);
+        ctx.lineTo(-W * 0.25, -H * 0.68);
+        ctx.moveTo(-W * 0.3, -H * 0.61);
+        ctx.lineTo(-W * 0.3, -H * 0.21);
+        ctx.stroke();
+
+        ctx.fillStyle = '#556168';
+        roundedRectPath(ctx, W * 0.05, -H * 0.733, W * 0.29, H * 0.042, W * 0.05);
+        ctx.fill();
+        ctx.strokeStyle = '#222b31';
+        ctx.lineWidth = W * 0.014;
+        ctx.stroke();
+        ctx.fillStyle = '#a8c7c3';
+        ctx.beginPath();
+        ctx.arc(W * 0.255, -H * 0.712, W * 0.025, 0, TAU);
+        ctx.fill();
+
+        ctx.save();
+        ctx.translate(-W * 0.25, -H * 0.354);
+        ctx.fillStyle = '#173f45';
+        ctx.fillRect(0, 0, W * 0.27, H * 0.032);
+        ctx.fillStyle = '#f0e7d8';
+        ctx.fillRect(0, 0, W * 0.09, H * 0.032);
+        ctx.fillStyle = '#db654c';
+        ctx.fillRect(W * 0.18, 0, W * 0.09, H * 0.032);
+        ctx.restore();
+
+        ctx.fillStyle = '#f8efe0';
+        ctx.font = '600 ' + Math.max(6, W * 0.19) + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('56', 0, -H * 0.463);
+
+        ctx.fillStyle = '#26333a';
+        ctx.font = '600 ' + Math.max(5, W * 0.105) + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.save();
+        ctx.translate(W * 0.22, -H * 0.268);
+        ctx.rotate(Math.PI * 0.5);
+        ctx.fillText('ORBITAL 01', 0, 0);
+        ctx.restore();
+
+        ctx.fillStyle = 'rgba(43,53,59,0.55)';
+        for (let row = 0; row < 12; row++) {
+          const ry = -H * 0.60 + row * H * 0.045;
+          for (const side of [-1, 1]) {
+            ctx.beginPath();
+            ctx.arc(side * W * 0.405, ry, Math.max(0.45, W * 0.018), 0, TAU);
+            ctx.fill();
+          }
+        }
+
+        ctx.fillStyle = '#2f383d';
+        ctx.fillRect(-W * 0.42, -H * 0.035, W * 0.84, H * 0.038);
+        const nozzleGradient = ctx.createLinearGradient(0, -H * 0.005, 0, H * 0.055);
+        nozzleGradient.addColorStop(0, '#9a876e');
+        nozzleGradient.addColorStop(0.38, '#4b4c4a');
+        nozzleGradient.addColorStop(1, '#171d20');
+        ctx.fillStyle = nozzleGradient;
+        for (const nozzle of [-0.29, 0, 0.29]) {
+          ctx.beginPath();
+          ctx.moveTo(W * nozzle - W * 0.13, -H * 0.002);
+          ctx.lineTo(W * nozzle - W * 0.17, H * 0.035);
+          ctx.quadraticCurveTo(W * nozzle, H * 0.053, W * nozzle + W * 0.17, H * 0.035);
+          ctx.lineTo(W * nozzle + W * 0.13, -H * 0.002);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#0d1215';
+          ctx.lineWidth = W * 0.018;
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#101517';
+        for (const nx of [-0.29, 0, 0.29]) {
+          ctx.beginPath();
+          ctx.ellipse(W * nx, H * 0.036, W * 0.105, H * 0.013, 0, 0, TAU);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      function drawForegroundArms(scene, cycleTime) {
+        const H = scene.rocketHeight;
+        const W = scene.rocketWidth;
+        const retract = smoothstep(1.05, 2.15, cycleTime);
+        if (retract >= 0.99) return;
+        ctx.save();
+        ctx.strokeStyle = '#83878a';
+        ctx.lineWidth = Math.max(2, W * 0.11);
+        ctx.lineCap = 'round';
+        const levels = [-H * 0.59, -H * 0.315];
+        for (let i = 0; i < levels.length; i++) {
+          const y = scene.padY + levels[i];
+          const startX = scene.padX + W * 1.0;
+          const endX = lerp(scene.padX + W * 0.48, startX, retract);
+          ctx.beginPath();
+          ctx.moveTo(startX, y);
+          ctx.lineTo(endX, y + retract * W * (i ? 0.3 : -0.3));
+          ctx.stroke();
+          ctx.fillStyle = '#b6a16c';
+          ctx.beginPath();
+          ctx.arc(endX, y + retract * W * (i ? 0.3 : -0.3), W * 0.085, 0, TAU);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawForegroundVegetation(scene, clock) {
+        const y = scene.islandY + scene.islandHeight * 0.1;
+        ctx.save();
+        for (let i = 0; i < 24; i++) {
+          const p = i / 23;
+          const x = scene.islandX - scene.islandWidth * 0.46 + p * scene.islandWidth * 0.92;
+          const edge = Math.abs(p - 0.5) * 2;
+          const blade = (8 + (i % 5) * 2) * (1 - edge * 0.35);
+          const sway = Math.sin(clock * 0.75 + i * 1.1) * 2;
+          ctx.strokeStyle = i % 3 === 0 ? '#1d523b' : '#153f34';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.quadraticCurveTo(x + sway, y - blade * 0.55, x + sway * 1.5, y - blade);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function launchEnergyAt(t, state) {
+        if (!state.engine) return 0;
+        if (t < TIMING.liftoff) return state.throttle;
+        return 1 - smoothstep(4.8, TIMING.exit, t) * 0.72;
+      }
+
+      function cameraShake(t, state) {
+        let energy = 0;
+        if (state.engine && t < TIMING.liftoff) energy = state.throttle * 1.9;
+        else if (state.phase === 'liftoff') energy = lerp(2.2, 0.75, smoothstep(TIMING.liftoff, TIMING.ascent, t));
+        else if (state.phase === 'ascent') energy = lerp(0.55, 0, smoothstep(TIMING.ascent, TIMING.exit - 0.5, t));
+        return {
+          x: (Math.sin(t * 91.7) + Math.sin(t * 47.2) * 0.55) * energy,
+          y: (Math.sin(t * 76.4 + 1.3) + Math.sin(t * 39.9) * 0.45) * energy * 0.72
+        };
+      }
+
+      function drawLaunchGroundGlow(scene, state, cycleTime) {
+        const energy = launchEnergyAt(cycleTime, state);
+        if (energy <= 0.01) return;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const radius = scene.rocketWidth * (2.4 + energy * 3.6);
+        const glow = ctx.createRadialGradient(scene.padX, scene.padY + scene.rocketHeight * 0.055, 0, scene.padX, scene.padY + scene.rocketHeight * 0.055, radius);
+        glow.addColorStop(0, 'rgba(255,244,175,' + energy * 0.55 + ')');
+        glow.addColorStop(0.18, 'rgba(255,146,48,' + energy * 0.42 + ')');
+        glow.addColorStop(0.55, 'rgba(231,69,19,' + energy * 0.16 + ')');
+        glow.addColorStop(1, 'rgba(220,50,10,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.ellipse(scene.padX, scene.padY + scene.rocketHeight * 0.06, radius, radius * 0.44, 0, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawSpacedText(textValue, x, y, spacing) {
+        let cursor = x;
+        for (const char of textValue) {
+          ctx.fillText(char, cursor, y);
+          cursor += ctx.measureText(char).width + spacing;
+        }
+      }
+
+      function drawOverlay(clock, cycleTime, state) {
+        const margin = clamp(Math.min(width, height) * 0.035, 16, 34);
+        const titleSize = clamp(Math.min(width * 0.038, height * 0.038), 18, 28);
+        ctx.save();
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = 'rgba(238,244,246,0.91)';
+        ctx.font = '500 ' + titleSize + 'px system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(MODEL_NAME, margin, margin);
+
+        const lineY = margin + titleSize + 9;
+        ctx.fillStyle = 'rgba(224,111,77,0.85)';
+        ctx.fillRect(margin, lineY, Math.max(28, titleSize * 1.45), 2);
+        ctx.fillStyle = 'rgba(217,228,232,0.54)';
+        ctx.font = '600 ' + clamp(titleSize * 0.34, 7, 9.5) + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
+        drawSpacedText('TROPICAL FLIGHT  /  01', margin, lineY + 10, 1.05);
+
+        if (width > 620) {
+          const phaseText = state.phase === 'prelaunch' ? 'IGNITION SEQUENCE' :
+            state.phase === 'liftoff' ? 'LIFTOFF' :
+            state.phase === 'ascent' ? 'ASCENT' :
+            state.phase === 'return' ? 'AUTONOMOUS RETURN' :
+            state.phase === 'settled' ? 'PAD SECURE' : 'FLIGHT PATH CLEAR';
+          ctx.textAlign = 'right';
+          ctx.fillStyle = 'rgba(219,229,232,0.4)';
+          ctx.font = '500 8px ui-monospace, SFMono-Regular, Menlo, monospace';
+          ctx.fillText(phaseText + '  //  T+' + cycleTime.toFixed(1).padStart(4, '0'), width - margin, margin + 5);
+          ctx.fillStyle = state.phase === 'calm' ? 'rgba(112,179,177,0.7)' : 'rgba(225,119,76,0.72)';
+          ctx.beginPath();
+          ctx.arc(width - margin + 1, margin + 25, 2.5, 0, TAU);
+          ctx.fill();
+        }
+
+        const vignette = ctx.createRadialGradient(width * 0.5, height * 0.48, Math.min(width, height) * 0.22, width * 0.5, height * 0.48, Math.max(width, height) * 0.72);
+        vignette.addColorStop(0, 'rgba(0,0,0,0)');
+        vignette.addColorStop(0.72, 'rgba(0,3,10,0.08)');
+        vignette.addColorStop(1, 'rgba(0,3,10,0.48)');
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, width, height);
+
+        if (noisePattern) {
+          ctx.globalAlpha = 0.042;
+          ctx.fillStyle = noisePattern;
+          ctx.fillRect(0, 0, width, height);
+        }
+        ctx.restore();
+      }
+
+      function renderFrame(clock, cycleTime, dt) {
+        const scene = sceneLayout();
+        const state = rocketStateAt(cycleTime, scene);
+        latestState = state;
+        latestCycleTime = cycleTime;
+
+        if (dt > 0) {
+          updateParticles(dt, cycleTime);
+          emitLaunchParticles(dt, cycleTime, scene, state);
+        }
+
+        drawSky(clock);
+        drawStars(clock);
+        drawClouds(clock);
+        drawOcean(scene, clock, state, cycleTime);
+
+        const shake = cameraShake(cycleTime, state);
+        ctx.save();
+        ctx.translate(shake.x, shake.y);
+        drawParticles(0);
+        drawIslandBase(scene, clock);
+        drawLaunchComplex(scene, clock, cycleTime);
+        drawParticles(1);
+        drawLaunchGroundGlow(scene, state, cycleTime);
+        drawFlame(scene, state, clock);
+        drawRocket(scene, state, clock);
+        drawForegroundArms(scene, cycleTime);
+        drawParticles(2);
+        drawForegroundVegetation(scene, clock);
+        ctx.restore();
+
+        drawOverlay(clock, cycleTime, state);
+      }
+
+      function rebuildParticlesTo(targetTime) {
+        resetCycle(0);
+        const scene = sceneLayout();
+        const step = 1 / 60;
+        let t = 0;
+        while (t < targetTime) {
+          const dt = Math.min(step, targetTime - t);
+          t += dt;
+          const state = rocketStateAt(t, scene);
+          updateParticles(dt, t);
+          emitLaunchParticles(dt, t, scene, state);
+        }
+      }
+
+      function resize() {
+        width = Math.max(1, window.innerWidth);
+        height = Math.max(1, window.innerHeight);
+        const pixelBudgetDpr = Math.sqrt(5200000 / Math.max(1, width * height));
+        dpr = clamp(Math.min(window.devicePixelRatio || 1, pixelBudgetDpr), 1, 2);
+        canvas.width = Math.max(1, Math.round(width * dpr));
+        canvas.height = Math.max(1, Math.round(height * dpr));
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        buildSceneData();
+        if (manualTime != null) rebuildParticlesTo(manualTime);
+        else resetCycle(activeCycle < 0 ? 0 : activeCycle);
+      }
+
+      function animate(now) {
+        const elapsed = (now - origin) / 1000;
+        const rawCycle = manualTime == null ? elapsed : manualTime;
+        const cycle = manualTime == null ? Math.floor(rawCycle / TIMING.cycleEnd) : 0;
+        const cycleTime = manualTime == null ? mod(rawCycle, TIMING.cycleEnd) : manualTime;
+        const dt = manualTime == null ? Math.min(0.05, Math.max(0, (now - lastFrame) / 1000)) : 0;
+        lastFrame = now;
+
+        if (cycle !== activeCycle) resetCycle(cycle);
+        if (dt > 0.0001) {
+          const instantFps = 1 / dt;
+          fpsEMA = lerp(fpsEMA, instantFps, 0.045);
+        }
+        renderFrame(manualTime == null ? elapsed : manualTime, cycleTime, dt);
+        requestAnimationFrame(animate);
+      }
+
+      window.__ROCKET_LAUNCH__ = Object.freeze({
+        model: MODEL_NAME,
+        timing: TIMING,
+        seek(seconds) {
+          manualTime = clamp(Number(seconds) || 0, 0, TIMING.cycleEnd - 0.001);
+          rebuildParticlesTo(manualTime);
+          latestCycleTime = manualTime;
+          latestState = rocketStateAt(manualTime, sceneLayout());
+          return this.snapshot();
+        },
+        play() {
+          const resumeAt = manualTime == null ? latestCycleTime : manualTime;
+          origin = performance.now() - resumeAt * 1000;
+          lastFrame = performance.now();
+          manualTime = null;
+        },
+        restart() {
+          origin = performance.now();
+          lastFrame = origin;
+          manualTime = null;
+          resetCycle(0);
+        },
+        snapshot() {
+          const scene = sceneLayout();
+          const state = latestState || rocketStateAt(latestCycleTime, scene);
+          let smokeCount = 0;
+          let emberCount = 0;
+          for (const p of particles) {
+            if (p.kind === 'smoke') smokeCount++;
+            else emberCount++;
+          }
+          return {
+            model: MODEL_NAME,
+            cycleTime: Number(latestCycleTime.toFixed(3)),
+            phase: state.phase,
+            rocketX: Number(state.x.toFixed(2)),
+            rocketY: Number(state.y.toFixed(2)),
+            rocketTop: Number((state.y - scene.rocketHeight * state.scale).toFixed(2)),
+            rocketScale: Number(state.scale.toFixed(4)),
+            padY: Number(scene.padY.toFixed(2)),
+            flameActive: state.engine,
+            rocketVisible: state.visible,
+            smokeCount,
+            emberCount,
+            particleCount: particles.length,
+            maxParticles: MAX_PARTICLES,
+            fps: Number(fpsEMA.toFixed(1)),
+            viewport: { width, height, dpr }
+          };
+        }
+      });
+
+      buildRasterAssets();
+      resize();
+      window.addEventListener('resize', resize, { passive: true });
+      document.addEventListener('visibilitychange', () => {
+        lastFrame = performance.now();
+      });
+      requestAnimationFrame(animate);
+    })();
+  </script>
+</body>
+</html>

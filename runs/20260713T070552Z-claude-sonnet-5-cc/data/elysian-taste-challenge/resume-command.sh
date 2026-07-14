@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+claude --dangerously-skip-permissions --resume bc0993b2-5e12-4256-a33e-4ae8a4cbb107

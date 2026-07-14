@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Impact Lab — Head-On Collision</title>
+  <meta name="description" content="A cinematic, interactive car-crash simulation." />
+  <style>
+    :root {
+      --ink: #f4f1eb;
+      --muted: #a8a49f;
+      --line: rgba(244, 241, 235, .14);
+      --line-strong: rgba(244, 241, 235, .25);
+      --panel: #111211;
+      --panel-lift: #171817;
+      --signal: #ee5d43;
+      --signal-soft: rgba(238, 93, 67, .18);
+      --cyan: #86d7d4;
+      --yellow: #e4bf76;
+      --green: #81c88b;
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; background: #090a09; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 8% 0%, rgba(78, 95, 81, .14), transparent 32rem),
+        linear-gradient(180deg, #0e100f 0%, #090a09 100%);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: .01em;
+    }
+
+    button { font: inherit; }
+
+    .shell {
+      width: min(1440px, calc(100% - 48px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      height: 82px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      gap: 28px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      white-space: nowrap;
+    }
+
+    .brand-mark {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(238, 93, 67, .7);
+      color: var(--signal);
+      font-size: 11px;
+      font-weight: 800;
+      transform: rotate(45deg);
+    }
+
+    .brand-mark span { transform: rotate(-45deg); }
+
+    .brand-name {
+      font-size: 13px;
+      font-weight: 760;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    .brand-name em {
+      color: var(--signal);
+      font-style: normal;
+    }
+
+    .topnav {
+      display: flex;
+      align-items: center;
+      gap: 26px;
+      color: #898782;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .17em;
+      text-transform: uppercase;
+    }
+
+    .topnav span:first-child { color: var(--ink); }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .live {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--green);
+    }
+
+    .live::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(129, 200, 139, .12), 0 0 15px rgba(129, 200, 139, .8);
+    }
+
+    main { padding: 45px 0 58px; }
+
+    .intro {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 28px;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--signal);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 22px;
+      height: 1px;
+      background: var(--signal);
+    }
+
+    h1 {
+      max-width: 760px;
+      margin: 13px 0 0;
+      font-size: clamp(35px, 5vw, 74px);
+      font-weight: 520;
+      letter-spacing: -.058em;
+      line-height: .94;
+    }
+
+    .intro-copy {
+      max-width: 285px;
+      margin: 0 4px 3px 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+      text-align: right;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 276px;
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .stage-wrap {
+      position: relative;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: #0e1110;
+      box-shadow: 0 28px 72px rgba(0, 0, 0, .28);
+      overflow: hidden;
+    }
+
+    .stage-wrap::before,
+    .stage-wrap::after {
+      content: "";
+      position: absolute;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .stage-wrap::before {
+      inset: 13px;
+      border: 1px solid rgba(255,255,255,.08);
+    }
+
+    .stage-wrap::after {
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 26%;
+      background: linear-gradient(180deg, transparent, rgba(1, 2, 2, .62));
+    }
+
+    #stage {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1.62 / 1;
+      background: #222;
+    }
+
+    .stage-label,
+    .stage-code {
+      position: absolute;
+      z-index: 5;
+      top: 31px;
+      color: rgba(255,255,255,.72);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .stage-label { left: 31px; }
+    .stage-code { right: 31px; color: rgba(255,255,255,.4); }
+
+    .stage-footer {
+      position: absolute;
+      z-index: 5;
+      left: 31px;
+      right: 31px;
+      bottom: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      pointer-events: none;
+    }
+
+    .readout {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .readout strong {
+      font-size: 29px;
+      font-weight: 550;
+      letter-spacing: -.04em;
+    }
+
+    .readout small {
+      color: rgba(255,255,255,.5);
+      font-size: 9px;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .progress-track {
+      position: absolute;
+      z-index: 6;
+      left: 31px;
+      right: 31px;
+      bottom: 17px;
+      height: 2px;
+      background: rgba(255,255,255,.22);
+      pointer-events: none;
+    }
+
+    .progress-track span {
+      display: block;
+      width: 0%;
+      height: 100%;
+      background: var(--signal);
+      box-shadow: 0 0 10px rgba(238,93,67,.85);
+    }
+
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .panel-head {
+      padding: 24px 22px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-kicker {
+      margin-bottom: 9px;
+      color: #777a76;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 560;
+      letter-spacing: -.035em;
+    }
+
+    .panel-head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .metrics {
+      padding: 8px 22px 10px;
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      min-height: 45px;
+      padding: 13px 0 12px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+
+    .metric:last-child { border-bottom: 0; }
+
+    .metric span {
+      color: #858681;
+      font-size: 10px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .metric strong {
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 570;
+      letter-spacing: -.03em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric strong.signal { color: var(--signal); }
+    .metric strong.cyan { color: var(--cyan); }
+
+    .panel-actions {
+      margin-top: auto;
+      padding: 20px 22px 22px;
+      border-top: 1px solid var(--line);
+    }
+
+    .action-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 9px;
+    }
+
+    .button {
+      min-height: 42px;
+      padding: 0 13px;
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+      transition: background .2s ease, border-color .2s ease, color .2s ease, transform .2s ease;
+    }
+
+    .button:hover { border-color: rgba(255,255,255,.55); background: rgba(255,255,255,.06); }
+    .button:active { transform: translateY(1px); }
+    .button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+    .button.primary {
+      border-color: var(--signal);
+      background: var(--signal);
+      color: #170d0a;
+    }
+
+    .button.primary:hover { border-color: #ff795f; background: #ff795f; }
+
+    .button.full { width: 100%; }
+
+    .hint {
+      margin: 13px 0 0;
+      color: #71736e;
+      font-size: 9px;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .hint kbd {
+      display: inline-block;
+      min-width: 19px;
+      padding: 2px 4px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 3px;
+      color: #c9c7c1;
+      font-size: 9px;
+      text-align: center;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 15px;
+      padding-top: 13px;
+      border-top: 1px solid var(--line);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #767873;
+      font-size: 9px;
+      white-space: nowrap;
+    }
+
+    .legend-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--signal);
+    }
+
+    .legend-dot.cyan { background: var(--cyan); }
+    .legend-dot.yellow { background: var(--yellow); }
+
+    .footnote {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      padding-top: 17px;
+      color: #676964;
+      font-size: 9px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 900px) {
+      .workspace { grid-template-columns: 1fr; }
+      .control-panel { min-height: auto; }
+      .panel-head, .metrics, .panel-actions { padding-left: 18px; padding-right: 18px; }
+      .panel-actions { margin-top: 0; }
+      .intro-copy { max-width: 240px; }
+    }
+
+    @media (max-width: 640px) {
+      .shell { width: min(100% - 24px, 1440px); }
+      .topbar { height: 68px; }
+      .topnav { display: none; }
+      .header-meta { gap: 0; font-size: 9px; }
+      .header-meta > span:not(.live) { display: none; }
+      main { padding-top: 30px; }
+      .intro { display: block; margin-bottom: 20px; }
+      .intro-copy { margin-top: 15px; max-width: none; text-align: left; }
+      h1 { font-size: clamp(39px, 14vw, 62px); }
+      .stage-label { left: 21px; top: 22px; }
+      .stage-code { right: 21px; top: 22px; }
+      .stage-footer { left: 21px; right: 21px; bottom: 24px; }
+      .progress-track { left: 21px; right: 21px; bottom: 15px; }
+      .readout strong { font-size: 24px; }
+      .footnote { display: block; line-height: 1.8; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand" aria-label="Impact Lab">
+        <div class="brand-mark" aria-hidden="true"><span>+</span></div>
+        <div class="brand-name">Impact <em>Lab</em></div>
+      </div>
+      <nav class="topnav" aria-label="Simulation sections">
+        <span>Simulation</span>
+        <span>Methodology</span>
+        <span>Archive</span>
+      </nav>
+      <div class="header-meta">
+        <span>DL-04 / 2024</span>
+        <span class="live" id="liveStatus">Live preview</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <div class="eyebrow">Vehicle dynamics / test 07</div>
+          <h1 id="page-title">The moment<br />steel meets steel.</h1>
+        </div>
+        <p class="intro-copy">A slowed-down study of energy transfer in a controlled head-on collision. Drag the timeline, or replay the impact from the beginning.</p>
+      </section>
+
+      <section class="workspace" aria-label="Interactive crash simulation">
+        <div class="stage-wrap">
+          <canvas id="stage" width="1200" height="740" aria-label="Animated head-on car crash simulation"></canvas>
+          <div class="stage-label">CAMERA 01 / SIDE PROFILE</div>
+          <div class="stage-code">REC ● 00:06:00</div>
+          <div class="stage-footer">
+            <div class="readout"><strong id="timeReadout">T−00:00.0</strong><small id="phaseReadout">Approach</small></div>
+            <div class="readout"><strong id="speedReadout">72</strong><small>km/h each</small></div>
+          </div>
+          <div class="progress-track" aria-hidden="true"><span id="progressBar"></span></div>
+        </div>
+
+        <aside class="control-panel" aria-label="Simulation controls and live metrics">
+          <div class="panel-head">
+            <div class="panel-kicker">Scenario / 01</div>
+            <h2>Head-on collision</h2>
+            <p>Two identical sedans. Equal mass. Opposing momentum.</p>
+            <div class="legend" aria-label="Scene legend">
+              <span class="legend-item"><i class="legend-dot"></i>Impact</span>
+              <span class="legend-item"><i class="legend-dot cyan"></i>Vehicle A</span>
+              <span class="legend-item"><i class="legend-dot yellow"></i>Vehicle B</span>
+            </div>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span>Relative speed</span><strong class="cyan" id="relativeSpeed">144 km/h</strong></div>
+            <div class="metric"><span>Peak g-force</span><strong class="signal" id="gForce">0.0 g</strong></div>
+            <div class="metric"><span>Energy released</span><strong id="energy">0 MJ</strong></div>
+            <div class="metric"><span>Cabin intrusion</span><strong id="intrusion">0 mm</strong></div>
+            <div class="metric"><span>System state</span><strong id="systemState">Approaching</strong></div>
+          </div>
+          <div class="panel-actions">
+            <div class="action-row">
+              <button class="button primary" id="replayButton" type="button">Replay</button>
+              <button class="button" id="pauseButton" type="button">Pause</button>
+            </div>
+            <button class="button full" id="slowButton" type="button" aria-pressed="false">Slow motion · 0.5×</button>
+            <p class="hint"><kbd>Space</kbd> pause &nbsp; <kbd>R</kbd> replay &nbsp; <kbd>←</kbd><kbd>→</kbd> scrub</p>
+          </div>
+        </aside>
+      </section>
+      <div class="footnote"><span>All motion is simulated in-browser</span><span>Deterministic seed / no. 0041</span></div>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const canvas = document.getElementById('stage');
+      const ctx = canvas.getContext('2d');
+      const timeReadout = document.getElementById('timeReadout');
+      const phaseReadout = document.getElementById('phaseReadout');
+      const speedReadout = document.getElementById('speedReadout');
+      const relativeSpeed = document.getElementById('relativeSpeed');
+      const gForce = document.getElementById('gForce');
+      const energy = document.getElementById('energy');
+      const intrusion = document.getElementById('intrusion');
+      const systemState = document.getElementById('systemState');
+      const progressBar = document.getElementById('progressBar');
+      const liveStatus = document.getElementById('liveStatus');
+      const replayButton = document.getElementById('replayButton');
+      const pauseButton = document.getElementById('pauseButton');
+      const slowButton = document.getElementById('slowButton');
+
+      const DURATION = 6;
+      const impactAt = 2.85;
+      const LANDSCAPE = { width: 1200, height: 740 };
+      const TAU = Math.PI * 2;
+
+      const state = {
+        time: 0,
+        playing: true,
+        slow: false,
+        lastFrame: performance.now(),
+        shake: 0,
+        seed: 41,
+        pointerScrub: false,
+        particles: [],
+      };
+
+      const rand = (index, salt = 0) => {
+        const x = Math.sin((index + 1) * 12.9898 + (salt + 1) * 78.233 + state.seed) * 43758.5453;
+        return x - Math.floor(x);
+      };
+
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const easeOut = (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+      const easeIn = (t) => Math.pow(clamp(t, 0, 1), 3);
+      const smoothstep = (t) => { const n = clamp(t, 0, 1); return n * n * (3 - 2 * n); };
+
+      function resizeCanvas() {
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.round(rect.width * ratio));
+        canvas.height = Math.max(1, Math.round(rect.height * ratio));
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      }
+
+      function setupParticles() {
+        state.particles = Array.from({ length: 76 }, (_, index) => ({
+          index,
+          angle: lerp(-Math.PI + .15, -.1, rand(index, 2)) + (rand(index, 3) > .5 ? Math.PI : 0),
+          speed: lerp(80, 325, rand(index, 4)),
+          size: lerp(1, 5, rand(index, 5)),
+          delay: lerp(.02, .28, rand(index, 6)),
+          life: lerp(.45, 1.15, rand(index, 7)),
+          type: rand(index, 8) > .68 ? 'glass' : (rand(index, 9) > .65 ? 'spark' : 'smoke'),
+          seedX: rand(index, 10),
+        }));
+      }
+
+      function getMetrics(t) {
+        const collision = clamp((t - impactAt) / .54, 0, 1);
+        const settle = clamp((t - 3.55) / 1.5, 0, 1);
+        const impactPulse = Math.exp(-Math.pow((t - 3.06) / .26, 2));
+        return {
+          speed: t < impactAt ? 72 : Math.round(lerp(72, 0, easeOut(clamp((t - impactAt) / .8, 0, 1)))),
+          relative: t < impactAt ? 144 : Math.round(lerp(144, 0, easeOut(clamp((t - impactAt) / 1.25, 0, 1)))),
+          g: (impactPulse * 31 + collision * 4.2 + settle * 1.1).toFixed(1),
+          joules: Math.round(lerp(0, 1.34, easeOut(collision)) * 100) / 100,
+          intrusion: Math.round(lerp(0, 188, easeOut(collision)) * (1 - settle * .22)),
+          state: t < 2.2 ? 'Approaching' : t < impactAt ? 'Impact imminent' : t < 3.65 ? 'Collision' : 'Resting',
+          phase: t < 1.85 ? 'Approach' : t < impactAt ? 'Compression' : t < 3.8 ? 'Impact' : 'Aftermath',
+        };
+      }
+
+      function roundedRect(x, y, w, h, r) {
+        const radius = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.arcTo(x + w, y, x + w, y + h, radius);
+        ctx.arcTo(x + w, y + h, x, y + h, radius);
+        ctx.arcTo(x, y + h, x, y, radius);
+        ctx.arcTo(x, y, x + w, y, radius);
+        ctx.closePath();
+      }
+
+      function drawBackground(w, h, t) {
+        const sky = ctx.createLinearGradient(0, 0, 0, h * .74);
+        sky.addColorStop(0, '#16252b');
+        sky.addColorStop(.45, '#31484c');
+        sky.addColorStop(.72, '#a26856');
+        sky.addColorStop(1, '#d49c64');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, w, h);
+
+        const glow = ctx.createRadialGradient(w * .5, h * .39, 1, w * .5, h * .39, w * .47);
+        glow.addColorStop(0, 'rgba(250, 209, 132, .58)');
+        glow.addColorStop(.3, 'rgba(232, 152, 102, .23)');
+        glow.addColorStop(1, 'rgba(232, 152, 102, 0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, w, h * .68);
+
+        ctx.fillStyle = 'rgba(245, 208, 140, .8)';
+        ctx.beginPath();
+        ctx.arc(w * .52, h * .39, 36, 0, TAU);
+        ctx.fill();
+
+        const haze = ctx.createLinearGradient(0, h * .48, 0, h * .78);
+        haze.addColorStop(0, 'rgba(225, 162, 118, .03)');
+        haze.addColorStop(1, 'rgba(20, 26, 25, .55)');
+        ctx.fillStyle = haze;
+        ctx.fillRect(0, h * .38, w, h * .4);
+
+        ctx.fillStyle = '#1b302e';
+        ctx.beginPath();
+        ctx.moveTo(0, h * .56);
+        for (let x = 0; x <= w; x += 32) {
+          const hill = h * (.49 + .06 * Math.sin(x * .007 + .7) + .035 * Math.sin(x * .021));
+          ctx.lineTo(x, hill);
+        }
+        ctx.lineTo(w, h * .75); ctx.lineTo(0, h * .75); ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = 'rgba(12, 20, 20, .7)';
+        for (let x = -10; x < w + 40; x += 34) {
+          const top = h * (.57 + .04 * Math.sin(x * .04));
+          ctx.fillRect(x, top, 3, h * .17);
+          ctx.beginPath();
+          ctx.moveTo(x - 12, top + 20); ctx.lineTo(x + 2, top - 25); ctx.lineTo(x + 15, top + 20); ctx.closePath(); ctx.fill();
+        }
+
+        const road = ctx.createLinearGradient(0, h * .66, 0, h);
+        road.addColorStop(0, '#272d2b');
+        road.addColorStop(.3, '#191d1c');
+        road.addColorStop(1, '#0b0e0d');
+        ctx.fillStyle = road;
+        ctx.fillRect(0, h * .66, w, h * .34);
+
+        ctx.fillStyle = 'rgba(255, 213, 142, .35)';
+        ctx.fillRect(0, h * .657, w, 2);
+
+        ctx.save();
+        ctx.setLineDash([72, 46]);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(232, 222, 189, .34)';
+        ctx.beginPath(); ctx.moveTo(-100, h * .86); ctx.lineTo(w + 100, h * .86); ctx.stroke();
+        ctx.restore();
+
+        const laneGlow = ctx.createLinearGradient(w * .5, h * .68, w * .5, h);
+        laneGlow.addColorStop(0, 'rgba(238, 93, 67, .05)');
+        laneGlow.addColorStop(1, 'rgba(238, 93, 67, 0)');
+        ctx.fillStyle = laneGlow;
+        ctx.fillRect(w * .33, h * .68, w * .34, h * .32);
+
+        ctx.fillStyle = 'rgba(255,255,255,.16)';
+        ctx.font = '700 9px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('CONTROLLED TEST SURFACE / 04', w * .5, h * .96);
+
+        const vignette = ctx.createRadialGradient(w * .5, h * .48, h * .24, w * .5, h * .48, h * .76);
+        vignette.addColorStop(0, 'rgba(0,0,0,0)');
+        vignette.addColorStop(1, 'rgba(0,0,0,.48)');
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      function drawLamp(w, h) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(12, 18, 18, .86)';
+        ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(w * .14, h * .67); ctx.lineTo(w * .15, h * .37); ctx.quadraticCurveTo(w * .17, h * .32, w * .23, h * .33); ctx.stroke();
+        ctx.fillStyle = 'rgba(236, 197, 114, .65)';
+        ctx.beginPath(); ctx.arc(w * .23, h * .34, 6, 0, TAU); ctx.fill();
+        ctx.shadowColor = 'rgba(244, 180, 103, .64)'; ctx.shadowBlur = 28;
+        ctx.beginPath(); ctx.arc(w * .23, h * .34, 3, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+
+      function drawRoadMarks(w, h, t) {
+        const pulse = Math.max(0, Math.sin(t * 2.5)) * .08;
+        ctx.save();
+        ctx.strokeStyle = `rgba(239, 92, 66, ${.14 + pulse})`;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 8]);
+        ctx.beginPath(); ctx.moveTo(w * .5, h * .68); ctx.lineTo(w * .5, h); ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawWheel(x, y, r, spin, broken = false) {
+        ctx.save();
+        ctx.translate(x, y); ctx.rotate(spin);
+        ctx.fillStyle = '#080b0b';
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#3b4443';
+        ctx.beginPath(); ctx.arc(0, 0, r * .56, 0, TAU); ctx.fill();
+        ctx.strokeStyle = broken ? 'rgba(238,93,67,.82)' : 'rgba(218, 223, 215, .7)';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 5; i += 1) {
+          ctx.rotate(TAU / 5);
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r * .42, 0); ctx.stroke();
+        }
+        ctx.fillStyle = '#131716'; ctx.beginPath(); ctx.arc(0, 0, r * .17, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+
+      function drawCar(x, y, scale, color, accent, rotation, direction, deformation, spin) {
+        ctx.save();
+        ctx.translate(x, y); ctx.rotate(rotation); ctx.scale(scale * direction, scale);
+
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,.52)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 20;
+        ctx.fillStyle = 'rgba(0,0,0,.35)';
+        ctx.beginPath(); ctx.ellipse(0, 42, 196, 25, 0, 0, TAU); ctx.fill();
+        ctx.restore();
+
+        const crush = deformation;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(-180 + crush * 31, 17);
+        ctx.lineTo(-172 + crush * 31, -11);
+        ctx.quadraticCurveTo(-133, -24, -101, -26);
+        ctx.lineTo(-66, -85);
+        ctx.quadraticCurveTo(-51, -103, -22, -108);
+        ctx.lineTo(75, -108);
+        ctx.quadraticCurveTo(109, -103, 131, -74);
+        ctx.lineTo(166, -26);
+        ctx.quadraticCurveTo(187, -20, 193 - crush * 35, 2);
+        ctx.lineTo(193 - crush * 49, 25);
+        ctx.quadraticCurveTo(168, 34, 138, 34);
+        ctx.lineTo(-142, 34);
+        ctx.quadraticCurveTo(-170, 32, -180 + crush * 31, 17);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(0, 0, 0, .18)';
+        ctx.beginPath();
+        ctx.moveTo(-180 + crush * 31, 17); ctx.lineTo(-162, -4); ctx.lineTo(158, -4); ctx.lineTo(193 - crush * 49, 2); ctx.lineTo(193 - crush * 49, 25); ctx.lineTo(-142, 34); ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.moveTo(-65, -80); ctx.lineTo(-21, -101); ctx.lineTo(72, -101); ctx.lineTo(119, -73); ctx.lineTo(130, -31); ctx.lineTo(-90, -31); ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = 'rgba(9, 18, 23, .74)';
+        ctx.beginPath();
+        ctx.moveTo(-58, -77); ctx.lineTo(-19, -94); ctx.lineTo(10, -94); ctx.lineTo(10, -36); ctx.lineTo(-83, -36); ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(17, -94); ctx.lineTo(69, -94); ctx.lineTo(111, -71); ctx.lineTo(121, -36); ctx.lineTo(17, -36); ctx.closePath(); ctx.fill();
+
+        ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-92, -28); ctx.lineTo(130, -28); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(-125, 2); ctx.lineTo(163, 2); ctx.stroke();
+
+        ctx.fillStyle = 'rgba(239, 242, 224, .92)';
+        roundedRect(148 - crush * 20, -2, 21, 17, 4); ctx.fill();
+        ctx.fillStyle = 'rgba(238, 93, 67, .92)';
+        roundedRect(-174 + crush * 28, -1, 21, 16, 4); ctx.fill();
+
+        ctx.fillStyle = 'rgba(12, 14, 13, .72)';
+        roundedRect(-118, 20, 41, 10, 4); ctx.fill();
+        roundedRect(85, 20, 42, 10, 4); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.62)';
+        ctx.fillRect(-18, 24, 29, 2);
+
+        drawWheel(-118, 34, 28, spin, crush > .4);
+        drawWheel(118, 34, 28, spin, crush > .4);
+
+        if (crush > .45) {
+          ctx.strokeStyle = `rgba(238,93,67,${crush * .8})`;
+          ctx.lineWidth = 5;
+          ctx.beginPath(); ctx.moveTo(160, -19); ctx.lineTo(190 - crush * 28, -10); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(164, 7); ctx.lineTo(192 - crush * 36, 13); ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      function drawDust(w, h, t) {
+        const age = clamp((t - impactAt) / .32, 0, 1);
+        if (age <= 0) return;
+        const fade = clamp(1 - (t - impactAt) / 1.85, 0, 1);
+        ctx.save();
+        for (let i = 0; i < 15; i += 1) {
+          const radius = lerp(16, 76, rand(i, 22)) * age;
+          const x = w * .5 + (rand(i, 23) - .5) * 230 * age;
+          const y = h * .71 - rand(i, 24) * 25 - age * rand(i, 25) * 75;
+          const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+          gradient.addColorStop(0, `rgba(208, 185, 145, ${.16 * fade})`);
+          gradient.addColorStop(1, 'rgba(208,185,145,0)');
+          ctx.fillStyle = gradient;
+          ctx.beginPath(); ctx.arc(x, y, radius, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawParticles(w, h, t) {
+        const age = t - impactAt;
+        if (age <= 0) return;
+        ctx.save();
+        for (const particle of state.particles) {
+          const life = (age - particle.delay) / particle.life;
+          if (life <= 0 || life >= 1) continue;
+          const gravity = particle.type === 'smoke' ? -22 : 78;
+          const distance = particle.speed * life * (particle.type === 'smoke' ? .45 : 1);
+          const x = w * .5 + Math.cos(particle.angle) * distance;
+          const y = h * .62 + Math.sin(particle.angle) * distance + gravity * life * life;
+          const alpha = Math.sin(Math.PI * life) * (particle.type === 'spark' ? .9 : .5);
+          if (particle.type === 'smoke') {
+            ctx.fillStyle = `rgba(205, 198, 184, ${alpha * .16})`;
+            ctx.beginPath(); ctx.arc(x, y, particle.size * 4 + life * 12, 0, TAU); ctx.fill();
+          } else {
+            ctx.fillStyle = particle.type === 'spark' ? `rgba(255, 213, 125, ${alpha})` : `rgba(171, 219, 218, ${alpha})`;
+            ctx.fillRect(x, y, particle.size * (particle.type === 'spark' ? 2.6 : 1), particle.size);
+          }
+        }
+        ctx.restore();
+      }
+
+      function drawImpactFlash(w, h, t) {
+        const pulse = Math.exp(-Math.pow((t - 2.98) / .12, 2));
+        if (pulse < .01) return;
+        const gradient = ctx.createRadialGradient(w * .5, h * .59, 0, w * .5, h * .59, w * .34);
+        gradient.addColorStop(0, `rgba(255,248,209,${pulse * .78})`);
+        gradient.addColorStop(.12, `rgba(255,202,107,${pulse * .38})`);
+        gradient.addColorStop(1, 'rgba(255,202,107,0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      function drawScene(t) {
+        const rect = canvas.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+        if (!w || !h) return;
+        ctx.clearRect(0, 0, w, h);
+
+        const metrics = getMetrics(t);
+        const pre = clamp((t - .1) / (impactAt - .1), 0, 1);
+        const collision = clamp((t - impactAt) / .7, 0, 1);
+        const settle = clamp((t - 3.6) / 1.4, 0, 1);
+        const approachX = easeIn(pre) * 190;
+        const leftX = lerp(-160, w * .39, easeIn(pre)) + easeOut(collision) * 42 - settle * 18;
+        const rightX = lerp(w + 160, w * .61, easeIn(pre)) - easeOut(collision) * 42 + settle * 18;
+        const shake = state.shake * (1 - settle) * (0.5 + .5 * Math.sin(t * 57));
+
+        ctx.save();
+        ctx.translate(shake, -shake * .4);
+        drawBackground(w, h, t);
+        drawLamp(w, h);
+        drawRoadMarks(w, h, t);
+
+        const carY = h * .72;
+        const rotation = (collision * .055 + settle * .018) * Math.sin(t * 2.4);
+        drawCar(leftX, carY - collision * 12, Math.min(w / 1200, h / 740), '#4c9099', '#9dced1', rotation, 1, collision * .82, t * 8);
+        drawCar(rightX, carY - collision * 11, Math.min(w / 1200, h / 740), '#b55b46', '#e3b06f', -rotation, -1, collision * .82, -t * 8);
+        drawDust(w, h, t);
+        drawParticles(w, h, t);
+        drawImpactFlash(w, h, t);
+        ctx.restore();
+
+        const scan = (Math.sin(t * 1.6) + 1) * .5;
+        ctx.fillStyle = `rgba(255,255,255,${.018 + scan * .012})`;
+        ctx.fillRect(0, h * (.18 + scan * .56), w, 1);
+        return metrics;
+      }
+
+      function updateUI(metrics) {
+        const elapsed = Math.max(0, state.time);
+        timeReadout.textContent = `T−00:${elapsed.toFixed(1).padStart(4, '0')}`;
+        phaseReadout.textContent = metrics.phase;
+        speedReadout.textContent = metrics.speed;
+        relativeSpeed.textContent = `${metrics.relative} km/h`;
+        gForce.textContent = `${metrics.g} g`;
+        energy.textContent = `${metrics.joules.toFixed(2)} MJ`;
+        intrusion.textContent = `${metrics.intrusion} mm`;
+        systemState.textContent = metrics.state;
+        systemState.style.color = metrics.state === 'Collision' ? 'var(--signal)' : '';
+        progressBar.style.width = `${(state.time / DURATION) * 100}%`;
+        pauseButton.textContent = state.playing ? 'Pause' : 'Resume';
+        slowButton.setAttribute('aria-pressed', String(state.slow));
+        slowButton.textContent = state.slow ? 'Slow motion · on' : 'Slow motion · 0.5×';
+        liveStatus.textContent = state.playing ? (state.slow ? 'Slow preview' : 'Live preview') : 'Paused';
+        liveStatus.style.color = state.playing ? '' : 'var(--yellow)';
+      }
+
+      function replay() {
+        state.time = 0;
+        state.playing = true;
+        state.shake = 0;
+        setupParticles();
+        updateUI(getMetrics(state.time));
+      }
+
+      function togglePause() {
+        state.playing = !state.playing;
+        state.lastFrame = performance.now();
+        updateUI(getMetrics(state.time));
+      }
+
+      function scrubBy(amount) {
+        state.time = clamp(state.time + amount, 0, DURATION);
+        state.playing = false;
+        updateUI(getMetrics(state.time));
+      }
+
+      function setFromPointer(event) {
+        const rect = canvas.getBoundingClientRect();
+        const ratio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+        state.time = ratio * DURATION;
+        state.playing = false;
+        updateUI(getMetrics(state.time));
+      }
+
+      function frame(now) {
+        const delta = Math.min((now - state.lastFrame) / 1000, .05);
+        state.lastFrame = now;
+        if (state.playing) {
+          state.time += delta * (state.slow ? .5 : 1);
+          if (state.time >= DURATION) {
+            state.time = DURATION;
+            state.playing = false;
+          }
+        }
+        const collision = clamp((state.time - impactAt) / .35, 0, 1);
+        state.shake = Math.max(state.shake * .88, collision * 8);
+        const metrics = drawScene(state.time);
+        if (metrics) updateUI(metrics);
+        requestAnimationFrame(frame);
+      }
+
+      replayButton.addEventListener('click', replay);
+      pauseButton.addEventListener('click', togglePause);
+      slowButton.addEventListener('click', () => {
+        state.slow = !state.slow;
+        updateUI(getMetrics(state.time));
+      });
+      canvas.addEventListener('pointerdown', (event) => {
+        state.pointerScrub = true;
+        canvas.setPointerCapture(event.pointerId);
+        setFromPointer(event);
+      });
+      canvas.addEventListener('pointermove', (event) => {
+        if (state.pointerScrub) setFromPointer(event);
+      });
+      canvas.addEventListener('pointerup', () => { state.pointerScrub = false; });
+      window.addEventListener('keydown', (event) => {
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+        if (event.key === ' ') { event.preventDefault(); togglePause(); }
+        if (event.key.toLowerCase() === 'r') replay();
+        if (event.key === 'ArrowLeft') scrubBy(-.15);
+        if (event.key === 'ArrowRight') scrubBy(.15);
+      });
+      window.addEventListener('resize', resizeCanvas);
+
+      setupParticles();
+      resizeCanvas();
+      updateUI(getMetrics(state.time));
+      requestAnimationFrame((now) => { state.lastFrame = now; requestAnimationFrame(frame); });
+
+      window.__crashSim = {
+        getState: () => ({ time: state.time, playing: state.playing, slow: state.slow, metrics: getMetrics(state.time) }),
+        replay,
+        togglePause,
+        scrubBy,
+      };
+    })();
+  </script>
+</body>
+</html>

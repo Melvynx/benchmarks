@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Bouncing Ball in Rotating Heptagon</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --poly: #e9e9e9;
+      --ball-a: #ffcf66;
+      --ball-b: #ff8a00;
+      --timer: #d8d8d8;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at 50% 35%, #232323 0%, var(--bg) 65%);
+      overflow: hidden;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    (() => {
+      const canvas = document.getElementById("c");
+      const ctx = canvas.getContext("2d");
+
+      const SIDES = 7;
+      const POLY_RADIUS = 250;
+      const BALL_RADIUS = 15;
+      const GRAVITY = 500;
+      const RESTITUTION = 0.8;
+      const FRICTION = 0.98;
+      const ANGULAR_SPEED = 0.5;
+
+      const FIXED_DT = 1 / 120;
+      const MAX_FRAME_DT = 1 / 20;
+
+      let w = 0;
+      let h = 0;
+      let center = { x: 0, y: 0 };
+
+      let angle = 0;
+      let elapsed = 0;
+
+      const ball = {
+        x: 0,
+        y: 0,
+        vx: 180,
+        vy: -40,
+        r: BALL_RADIUS
+      };
+
+      const localVerts = [];
+      const worldVerts = [];
+      const trail = [];
+      const TRAIL_MAX = 20;
+
+      function initPolygonVertices() {
+        localVerts.length = 0;
+        for (let i = 0; i < SIDES; i += 1) {
+          const a = -Math.PI / 2 + (i * Math.PI * 2) / SIDES;
+          localVerts.push({
+            x: Math.cos(a) * POLY_RADIUS,
+            y: Math.sin(a) * POLY_RADIUS
+          });
+        }
+      }
+
+      function resize() {
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        w = Math.max(window.innerWidth, 600);
+        h = Math.max(window.innerHeight, 600);
+
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        canvas.style.width = "100vw";
+        canvas.style.height = "100vh";
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        center.x = w * 0.5;
+        center.y = h * 0.5;
+
+        if (ball.x === 0 && ball.y === 0) {
+          ball.x = center.x;
+          ball.y = center.y - 100;
+        }
+      }
+
+      function rotate(vx, vy, a) {
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        return { x: vx * c - vy * s, y: vx * s + vy * c };
+      }
+
+      function updateWorldVertices() {
+        worldVerts.length = 0;
+        for (let i = 0; i < localVerts.length; i += 1) {
+          const rv = rotate(localVerts[i].x, localVerts[i].y, angle);
+          worldVerts.push({ x: center.x + rv.x, y: center.y + rv.y });
+        }
+      }
+
+      function closestPointOnSegment(px, py, ax, ay, bx, by) {
+        const abx = bx - ax;
+        const aby = by - ay;
+        const ab2 = abx * abx + aby * aby;
+        if (ab2 === 0) {
+          return { x: ax, y: ay, t: 0 };
+        }
+        const apx = px - ax;
+        const apy = py - ay;
+        let t = (apx * abx + apy * aby) / ab2;
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        return { x: ax + abx * t, y: ay + aby * t, t };
+      }
+
+      function wallVelocityAtPoint(px, py) {
+        const rx = px - center.x;
+        const ry = py - center.y;
+        return {
+          x: -ANGULAR_SPEED * ry,
+          y: ANGULAR_SPEED * rx
+        };
+      }
+
+      function resolveCollisions() {
+        for (let iter = 0; iter < 3; iter += 1) {
+          let collided = false;
+
+          for (let i = 0; i < SIDES; i += 1) {
+            const a = worldVerts[i];
+            const b = worldVerts[(i + 1) % SIDES];
+
+            const cp = closestPointOnSegment(ball.x, ball.y, a.x, a.y, b.x, b.y);
+            const dx = ball.x - cp.x;
+            const dy = ball.y - cp.y;
+            const distSq = dx * dx + dy * dy;
+            const r = ball.r;
+
+            if (distSq >= r * r) {
+              continue;
+            }
+
+            let nx;
+            let ny;
+            const dist = Math.sqrt(Math.max(distSq, 1e-12));
+
+            if (dist > 1e-6) {
+              nx = dx / dist;
+              ny = dy / dist;
+            } else {
+              const ex = b.x - a.x;
+              const ey = b.y - a.y;
+              const len = Math.hypot(ex, ey) || 1;
+              let tx = ex / len;
+              let ty = ey / len;
+              nx = -ty;
+              ny = tx;
+              const cx = center.x - a.x;
+              const cy = center.y - a.y;
+              if (cx * nx + cy * ny < 0) {
+                nx = -nx;
+                ny = -ny;
+              }
+            }
+
+            const penetration = r - dist + 0.02;
+            ball.x += nx * penetration;
+            ball.y += ny * penetration;
+
+            const wallV = wallVelocityAtPoint(cp.x, cp.y);
+            const rvx = ball.vx - wallV.x;
+            const rvy = ball.vy - wallV.y;
+
+            const vn = rvx * nx + rvy * ny;
+            if (vn < 0) {
+              const tx = -ny;
+              const ty = nx;
+              const vt = rvx * tx + rvy * ty;
+
+              const newVn = -vn * RESTITUTION;
+              const newVt = vt * FRICTION;
+
+              const newRvx = nx * newVn + tx * newVt;
+              const newRvy = ny * newVn + ty * newVt;
+
+              ball.vx = newRvx + wallV.x;
+              ball.vy = newRvy + wallV.y;
+            }
+
+            collided = true;
+          }
+
+          if (!collided) {
+            break;
+          }
+        }
+      }
+
+      function update(dt) {
+        elapsed += dt;
+        angle += ANGULAR_SPEED * dt;
+
+        ball.vy += GRAVITY * dt;
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
+
+        updateWorldVertices();
+        resolveCollisions();
+
+        trail.push({ x: ball.x, y: ball.y });
+        if (trail.length > TRAIL_MAX) {
+          trail.shift();
+        }
+      }
+
+      function drawBackground() {
+        ctx.clearRect(0, 0, w, h);
+
+        const vignette = ctx.createRadialGradient(
+          center.x,
+          center.y,
+          POLY_RADIUS * 0.1,
+          center.x,
+          center.y,
+          Math.max(w, h) * 0.7
+        );
+        vignette.addColorStop(0, "rgba(255,255,255,0.025)");
+        vignette.addColorStop(1, "rgba(0,0,0,0.32)");
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      function drawPolygon() {
+        ctx.beginPath();
+        for (let i = 0; i < worldVerts.length; i += 1) {
+          const v = worldVerts[i];
+          if (i === 0) ctx.moveTo(v.x, v.y);
+          else ctx.lineTo(v.x, v.y);
+        }
+        ctx.closePath();
+
+        ctx.strokeStyle = "rgba(245,245,245,0.92)";
+        ctx.lineWidth = 1.6;
+        ctx.shadowColor = "rgba(255,255,255,0.15)";
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      function drawTrail() {
+        for (let i = 0; i < trail.length; i += 1) {
+          const p = trail[i];
+          const t = (i + 1) / trail.length;
+          const radius = BALL_RADIUS * (0.25 + t * 0.45);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 170, 64, ${0.03 + t * 0.08})`;
+          ctx.fill();
+        }
+      }
+
+      function drawBall() {
+        const grad = ctx.createRadialGradient(
+          ball.x - ball.r * 0.35,
+          ball.y - ball.r * 0.45,
+          ball.r * 0.2,
+          ball.x,
+          ball.y,
+          ball.r * 1.05
+        );
+        grad.addColorStop(0, "#ffd68a");
+        grad.addColorStop(0.45, "#ffcf66");
+        grad.addColorStop(1, "#ff8a00");
+
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.shadowColor = "rgba(255, 160, 40, 0.7)";
+        ctx.shadowBlur = 18;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 15px 'Segoe UI', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("1", ball.x, ball.y + 0.3);
+      }
+
+      function drawTimer() {
+        const s = elapsed.toFixed(1) + "s";
+        const y = h - 28;
+
+        ctx.font = "500 14px 'Segoe UI', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.fillRect(w * 0.5 - 34, y - 12, 68, 24);
+
+        ctx.fillStyle = "#d8d8d8";
+        ctx.fillText(s, w * 0.5, y);
+      }
+
+      let lastT = performance.now() / 1000;
+      let acc = 0;
+
+      function frame(tMs) {
+        const now = tMs / 1000;
+        let dt = now - lastT;
+        lastT = now;
+        if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
+
+        acc += dt;
+        while (acc >= FIXED_DT) {
+          update(FIXED_DT);
+          acc -= FIXED_DT;
+        }
+
+        drawBackground();
+        drawTrail();
+        drawPolygon();
+        drawBall();
+        drawTimer();
+
+        requestAnimationFrame(frame);
+      }
+
+      initPolygonVertices();
+      resize();
+      updateWorldVertices();
+      window.addEventListener("resize", resize);
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

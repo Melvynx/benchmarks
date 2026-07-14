@@ -1,0 +1,42 @@
+import type { City } from '../lib/types'
+
+export const CITY_CATALOG: City[] = [
+  { id: 'san-francisco', name: 'San Francisco', country: 'United States', timeZone: 'America/Los_Angeles', region: 'North America' },
+  { id: 'new-york', name: 'New York', country: 'United States', timeZone: 'America/New_York', region: 'North America' },
+  { id: 'toronto', name: 'Toronto', country: 'Canada', timeZone: 'America/Toronto', region: 'North America' },
+  { id: 'vancouver', name: 'Vancouver', country: 'Canada', timeZone: 'America/Vancouver', region: 'North America' },
+  { id: 'mexico-city', name: 'Mexico City', country: 'Mexico', timeZone: 'America/Mexico_City', region: 'North America' },
+  { id: 'bogota', name: 'Bogota', country: 'Colombia', timeZone: 'America/Bogota', region: 'South America' },
+  { id: 'buenos-aires', name: 'Buenos Aires', country: 'Argentina', timeZone: 'America/Argentina/Buenos_Aires', region: 'South America' },
+  { id: 'sao-paulo', name: 'Sao Paulo', country: 'Brazil', timeZone: 'America/Sao_Paulo', region: 'South America' },
+  { id: 'santiago', name: 'Santiago', country: 'Chile', timeZone: 'America/Santiago', region: 'South America' },
+  { id: 'geneva', name: 'Geneva', country: 'Switzerland', timeZone: 'Europe/Zurich', region: 'Europe' },
+  { id: 'london', name: 'London', country: 'United Kingdom', timeZone: 'Europe/London', region: 'Europe' },
+  { id: 'lisbon', name: 'Lisbon', country: 'Portugal', timeZone: 'Europe/Lisbon', region: 'Europe' },
+  { id: 'berlin', name: 'Berlin', country: 'Germany', timeZone: 'Europe/Berlin', region: 'Europe' },
+  { id: 'stockholm', name: 'Stockholm', country: 'Sweden', timeZone: 'Europe/Stockholm', region: 'Europe' },
+  { id: 'athens', name: 'Athens', country: 'Greece', timeZone: 'Europe/Athens', region: 'Europe' },
+  { id: 'lagos', name: 'Lagos', country: 'Nigeria', timeZone: 'Africa/Lagos', region: 'Africa' },
+  { id: 'nairobi', name: 'Nairobi', country: 'Kenya', timeZone: 'Africa/Nairobi', region: 'Africa' },
+  { id: 'cape-town', name: 'Cape Town', country: 'South Africa', timeZone: 'Africa/Johannesburg', region: 'Africa' },
+  { id: 'casablanca', name: 'Casablanca', country: 'Morocco', timeZone: 'Africa/Casablanca', region: 'Africa' },
+  { id: 'dubai', name: 'Dubai', country: 'United Arab Emirates', timeZone: 'Asia/Dubai', region: 'Middle East' },
+  { id: 'riyadh', name: 'Riyadh', country: 'Saudi Arabia', timeZone: 'Asia/Riyadh', region: 'Middle East' },
+  { id: 'tel-aviv', name: 'Tel Aviv', country: 'Israel', timeZone: 'Asia/Jerusalem', region: 'Middle East' },
+  { id: 'delhi', name: 'Delhi', country: 'India', timeZone: 'Asia/Kolkata', region: 'Asia' },
+  { id: 'kathmandu', name: 'Kathmandu', country: 'Nepal', timeZone: 'Asia/Kathmandu', region: 'Asia' },
+  { id: 'bangkok', name: 'Bangkok', country: 'Thailand', timeZone: 'Asia/Bangkok', region: 'Asia' },
+  { id: 'singapore', name: 'Singapore', country: 'Singapore', timeZone: 'Asia/Singapore', region: 'Asia' },
+  { id: 'hong-kong', name: 'Hong Kong', country: 'Hong Kong', timeZone: 'Asia/Hong_Kong', region: 'Asia' },
+  { id: 'denpasar', name: 'Denpasar', country: 'Indonesia', timeZone: 'Asia/Makassar', region: 'Asia' },
+  { id: 'tokyo', name: 'Tokyo', country: 'Japan', timeZone: 'Asia/Tokyo', region: 'Asia' },
+  { id: 'seoul', name: 'Seoul', country: 'South Korea', timeZone: 'Asia/Seoul', region: 'Asia' },
+  { id: 'manila', name: 'Manila', country: 'Philippines', timeZone: 'Asia/Manila', region: 'Asia' },
+  { id: 'perth', name: 'Perth', country: 'Australia', timeZone: 'Australia/Perth', region: 'Oceania' },
+  { id: 'sydney', name: 'Sydney', country: 'Australia', timeZone: 'Australia/Sydney', region: 'Oceania' },
+  { id: 'auckland', name: 'Auckland', country: 'New Zealand', timeZone: 'Pacific/Auckland', region: 'Oceania' },
+]
+
+export const CITY_LOOKUP = Object.fromEntries(
+  CITY_CATALOG.map((city) => [city.id, city]),
+) as Record<string, City>

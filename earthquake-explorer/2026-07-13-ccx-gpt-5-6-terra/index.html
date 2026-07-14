@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0c1718" />
+    <meta name="description" content="A live, interactive observatory for global earthquake activity, sourced from USGS." />
+    <title>Seismic Observatory — Live earthquakes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#event-stream">Skip to event stream</a>
+    <div class="app-shell" id="app">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Seismic Observatory home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span><strong>Seismic</strong><em>Observatory</em></span>
+        </a>
+        <div class="live-status" id="live-status" aria-live="polite">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <span id="status-text">Connecting to USGS…</span>
+        </div>
+        <div class="header-actions">
+          <button class="icon-button" id="share-button" type="button" aria-label="Copy a link to this view" title="Copy link to this view">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.7 12.8a4 4 0 0 0 5.6.1l2.5-2.5a4 4 0 0 0-5.7-5.6l-1.4 1.4M15.3 11.2a4 4 0 0 0-5.6-.1l-2.5 2.5a4 4 0 0 0 5.7 5.6l1.4-1.4"/></svg>
+            <span>Share</span>
+          </button>
+          <button class="refresh-button" id="refresh-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2.3 5.7M20 4v7h-7"/></svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="control-deck" aria-label="Earthquake explorer controls">
+          <div class="eyebrow-row">
+            <p class="eyebrow">Global seismic activity</p>
+            <p class="data-note">USGS live feed · data may be revised</p>
+          </div>
+          <div class="time-row" role="group" aria-label="Select reporting period">
+            <button class="time-button" data-period="hour" type="button"><span>Past</span> hour</button>
+            <button class="time-button" data-period="day" type="button"><span>Past</span> day</button>
+            <button class="time-button is-active" data-period="week" type="button"><span>Past</span> 7 days</button>
+            <button class="time-button" data-period="month" type="button"><span>Past</span> 30 days</button>
+          </div>
+          <div class="headline-row">
+            <div>
+              <p class="section-kicker">Field view</p>
+              <h1 id="headline">Live earthquakes, read in place and time.</h1>
+            </div>
+            <div class="activity-summary" id="activity-summary" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section class="filter-ribbon" aria-label="Filter earthquakes">
+          <div class="filter-search">
+            <label for="place-search">Place, region, or nearest event</label>
+            <div class="search-combo">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>
+              <input id="place-search" type="search" autocomplete="off" placeholder="Search the loaded events" />
+              <button id="locate-button" class="text-action" type="button" title="Locate a city or region on the map">Locate</button>
+            </div>
+          </div>
+          <div class="filter-item magnitude-filter">
+            <label for="magnitude-range">Minimum magnitude <output id="magnitude-output">All</output></label>
+            <input id="magnitude-range" type="range" min="0" max="7" step="0.5" value="0" />
+          </div>
+          <div class="filter-item">
+            <label for="depth-filter">Depth</label>
+            <select id="depth-filter">
+              <option value="all">Any depth</option>
+              <option value="shallow">Shallow · &lt;70 km</option>
+              <option value="intermediate">Intermediate · 70–300 km</option>
+              <option value="deep">Deep · 300+ km</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label for="area-filter">Map region</label>
+            <select id="area-filter">
+              <option value="all">Everywhere</option>
+              <option value="americas">Americas</option>
+              <option value="pacific">Pacific rim</option>
+              <option value="europe-africa">Europe & Africa</option>
+              <option value="asia-oceania">Asia & Oceania</option>
+            </select>
+          </div>
+          <button class="more-filters-button" id="more-filters-button" type="button" aria-expanded="false" aria-controls="advanced-filters">
+            More filters <span aria-hidden="true">+</span>
+          </button>
+          <div class="filter-actions">
+            <span class="result-count" id="result-count" aria-live="polite">Loading events…</span>
+            <button id="reset-button" class="reset-button" type="button">Reset</button>
+          </div>
+          <div class="advanced-filters" id="advanced-filters" hidden>
+            <fieldset>
+              <legend>Alert level</legend>
+              <label><input type="checkbox" name="alert" value="green" /> Green</label>
+              <label><input type="checkbox" name="alert" value="yellow" /> Yellow</label>
+              <label><input type="checkbox" name="alert" value="orange" /> Orange</label>
+              <label><input type="checkbox" name="alert" value="red" /> Red</label>
+              <label><input type="checkbox" name="alert" value="none" /> No alert</label>
+            </fieldset>
+            <fieldset>
+              <legend>Tsunami</legend>
+              <label><input type="radio" name="tsunami" value="all" checked /> Any</label>
+              <label><input type="radio" name="tsunami" value="yes" /> Flagged</label>
+              <label><input type="radio" name="tsunami" value="no" /> Not flagged</label>
+            </fieldset>
+            <fieldset>
+              <legend>Review status</legend>
+              <label><input type="radio" name="review" value="all" checked /> All</label>
+              <label><input type="radio" name="review" value="reviewed" /> Reviewed</label>
+              <label><input type="radio" name="review" value="automatic" /> Automatic</label>
+            </fieldset>
+          </div>
+        </section>
+
+        <section class="workbench" aria-label="Earthquake map and activity explorer">
+          <div class="map-stage" id="map-stage">
+            <div id="map" role="application" aria-label="Interactive world map of filtered earthquake events. Use the event stream below as a keyboard-accessible map alternative."></div>
+            <div class="map-overlay map-title" aria-hidden="true"><span>Geographic field</span><small>Pan · zoom · select</small></div>
+            <div class="map-overlay map-legend" aria-label="Map symbol legend">
+              <span><i class="legend-dot small"></i>M 2</span>
+              <span><i class="legend-dot medium"></i>M 4</span>
+              <span><i class="legend-dot large"></i>M 6+</span>
+              <span class="legend-rule"></span>
+              <span>Fill = depth</span>
+            </div>
+            <button class="map-overlay locate-me" id="user-location-button" type="button" title="Center map on your approximate location">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></svg>
+              <span>My location</span>
+            </button>
+            <div class="map-empty" id="map-empty" hidden>
+              <strong>No events in this field</strong>
+              <span>Try clearing a filter or selecting a wider period.</span>
+              <button id="map-reset-button" type="button">Clear filters</button>
+            </div>
+          </div>
+
+          <aside class="selected-panel" id="selected-panel" aria-label="Selected earthquake details">
+            <div class="panel-label-row"><span class="section-kicker">Focus event</span><button id="close-detail-button" class="dismiss-button" type="button" aria-label="Close event details">×</button></div>
+            <div id="detail-content" class="detail-content">
+              <div class="detail-empty">
+                <span class="detail-orbit" aria-hidden="true"></span>
+                <strong>Select a signal</strong>
+                <p>Choose a map point, timeline bar, or event in the stream to read the complete record.</p>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section class="timeline-section" aria-labelledby="timeline-title">
+          <div class="timeline-heading">
+            <div>
+              <p class="section-kicker">The seismic trace</p>
+              <h2 id="timeline-title">Activity over the selected period</h2>
+              <p id="timeline-description">Choose a time slice to illuminate its events across the map and stream.</p>
+            </div>
+            <div class="timeline-tools">
+              <button id="clear-time-focus" class="text-action" type="button" hidden>Clear time focus</button>
+              <span class="timeline-metric" id="timeline-metric"></span>
+            </div>
+          </div>
+          <div class="timeline-chart-wrap">
+            <div class="timeline-y-label" aria-hidden="true">Events</div>
+            <div class="timeline-chart" id="timeline-chart" role="group" aria-label="Earthquake activity timeline"></div>
+          </div>
+          <p class="timeline-a11y" id="timeline-a11y"></p>
+        </section>
+
+        <section class="stream-section" id="event-stream" aria-labelledby="stream-title">
+          <div class="stream-heading">
+            <div>
+              <p class="section-kicker">Signal register</p>
+              <h2 id="stream-title">Events in this view</h2>
+            </div>
+            <div class="sort-control">
+              <label for="sort-select">Sort by</label>
+              <select id="sort-select">
+                <option value="time">Most recent</option>
+                <option value="magnitude">Strongest magnitude</option>
+                <option value="significance">Highest significance</option>
+                <option value="depth-asc">Shallowest</option>
+                <option value="depth-desc">Deepest</option>
+              </select>
+            </div>
+          </div>
+          <div class="event-stream" id="event-list" role="list" aria-live="polite" aria-label="Filtered earthquake events"></div>
+          <div id="stream-empty" class="stream-empty" hidden>
+            <strong>No records match this combination.</strong>
+            <p>The live USGS feed remains loaded. Relax a filter or reset the field.</p>
+            <button class="reset-button" id="empty-reset-button" type="button">Reset filters</button>
+          </div>
+          <button class="show-more-button" id="show-more-button" type="button" hidden>Show more events</button>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div><strong>USGS data source</strong><span>Earthquake information can change as events are reviewed.</span></div>
+        <p>This is an exploration tool, not an emergency alert service. For authoritative updates, use the official event page and local authorities.</p>
+      </footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

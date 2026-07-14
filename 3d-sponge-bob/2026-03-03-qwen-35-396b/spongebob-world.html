@@ -1,0 +1,1794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpongeBob's Bikini Bottom - 3D Underwater World</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #0a1628;
+        }
+        canvas {
+            display: block;
+        }
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0a1628 0%, #1a3a5c 50%, #0a1628 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        #loading.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #loading h1 {
+            color: #f4d02d;
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            font-size: 2.5rem;
+            text-shadow: 0 0 20px rgba(244, 208, 45, 0.5);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.05); }
+        }
+        #info {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.7);
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 100;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <h1>🍍 Welcome to Bikini Bottom! 🍍</h1>
+    </div>
+    <div id="info">Drag to rotate • Scroll to zoom • Bikini Bottom 3D</div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+        // =====================================================================
+        // SCENE SETUP
+        // =====================================================================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a2848);
+        scene.fog = new THREE.FogExp2(0x0a2848, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(35, 25, 35);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.8;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 10;
+        controls.maxDistance = 80;
+        controls.maxPolarAngle = Math.PI / 2 + 0.3;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.3;
+
+        // =====================================================================
+        // LIGHTING
+        // =====================================================================
+        const ambientLight = new THREE.AmbientLight(0x204060, 0.5);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffddaa, 2);
+        sunLight.position.set(20, 50, 20);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 10;
+        sunLight.shadow.camera.far = 100;
+        sunLight.shadow.camera.left = -40;
+        sunLight.shadow.camera.right = 40;
+        sunLight.shadow.camera.top = 40;
+        sunLight.shadow.camera.bottom = -40;
+        scene.add(sunLight);
+
+        const fillLight = new THREE.DirectionalLight(0x4080ff, 0.3);
+        fillLight.position.set(-10, 10, -10);
+        scene.add(fillLight);
+
+        // God rays effect (volumetric light shafts)
+        const godRayGeometry = new THREE.CylinderGeometry(0.5, 3, 60, 8, 1, true);
+        const godRayMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                color: { value: new THREE.Color(0xaaccff) }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                void main() {
+                    vUv = uv;
+                    vPosition = position;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform vec3 color;
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                void main() {
+                    float intensity = sin(vUv.y * 3.14159) * 0.3;
+                    intensity += sin(time * 2.0 + vUv.y * 10.0) * 0.1;
+                    float alpha = intensity * (1.0 - vUv.x) * 0.4;
+                    gl_FragColor = vec4(color, alpha);
+                }
+            `,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+
+        for (let i = 0; i < 5; i++) {
+            const godRay = new THREE.Mesh(godRayGeometry, godRayMaterial);
+            godRay.position.set(
+                (Math.random() - 0.5) * 60,
+                30,
+                (Math.random() - 0.5) * 60
+            );
+            godRay.rotation.y = Math.random() * Math.PI * 2;
+            godRay.scale.setScalar(2 + Math.random() * 2);
+            scene.add(godRay);
+        }
+
+        // =====================================================================
+        // OCEAN FLOOR
+        // =====================================================================
+        const floorGeometry = new THREE.PlaneGeometry(200, 200, 128, 128);
+        const floorVertices = floorGeometry.attributes.position.array;
+
+        for (let i = 0; i < floorVertices.length; i += 3) {
+            const x = floorVertices[i];
+            const y = floorVertices[i + 1];
+            const dist = Math.sqrt(x * x + y * y);
+            const noise = Math.sin(x * 0.1) * Math.cos(y * 0.1) * 0.5;
+            const noise2 = Math.sin(x * 0.05 + 1.5) * Math.cos(y * 0.05 + 0.8) * 1;
+            floorVertices[i + 2] = noise + noise2 - dist * 0.02;
+        }
+        floorGeometry.computeVertexNormals();
+
+        const floorMaterial = new THREE.MeshStandardMaterial({
+            color: 0xd4c48b,
+            roughness: 0.9,
+            metalness: 0.1,
+            flatShading: false
+        });
+
+        const oceanFloor = new THREE.Mesh(floorGeometry, floorMaterial);
+        oceanFloor.rotation.x = -Math.PI / 2;
+        oceanFloor.receiveShadow = true;
+        scene.add(oceanFloor);
+
+        // Caustic effect on ocean floor
+        const causticGeometry = new THREE.PlaneGeometry(200, 200, 64, 64);
+        const causticMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                color1: { value: new THREE.Color(0x40a0ff) },
+                color2: { value: new THREE.Color(0x206080) }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform vec3 color1;
+                uniform vec3 color2;
+                varying vec2 vUv;
+
+                float noise(vec2 p) {
+                    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+                }
+
+                float smoothNoise(vec2 p) {
+                    vec2 i = floor(p);
+                    vec2 f = fract(p);
+                    f = f * f * (3.0 - 2.0 * f);
+                    float a = noise(i);
+                    float b = noise(i + vec2(1.0, 0.0));
+                    float c = noise(i + vec2(0.0, 1.0));
+                    float d = noise(i + vec2(1.0, 1.0));
+                    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+                }
+
+                void main() {
+                    vec2 uv = vUv * 3.0;
+                    float n1 = smoothNoise(uv + time * 0.5);
+                    float n2 = smoothNoise(uv * 1.5 - time * 0.3);
+                    float n3 = smoothNoise(uv * 2.0 + time * 0.7);
+                    float intensity = (n1 + n2 * 0.5 + n3 * 0.25) / 1.75;
+                    intensity = smoothstep(0.3, 0.7, intensity);
+                    vec3 causticColor = mix(color2, color1, intensity);
+                    float alpha = intensity * 0.4;
+                    gl_FragColor = vec4(causticColor, alpha);
+                }
+            `,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+
+        const caustics = new THREE.Mesh(causticGeometry, causticMaterial);
+        caustics.rotation.x = -Math.PI / 2;
+        caustics.position.y = 0.05;
+        scene.add(caustics);
+
+        // =====================================================================
+        // SEAWEED / KELP
+        // =====================================================================
+        const seaweedGroup = new THREE.Group();
+        const seaweedMaterial = new THREE.MeshStandardMaterial({
+            color: 0x2d5a27,
+            roughness: 0.8,
+            side: THREE.DoubleSide
+        });
+
+        function createSeaweedBlade(height, segments) {
+            const geometry = new THREE.PlaneGeometry(0.3, height, 3, segments);
+            const positions = geometry.attributes.position.array;
+            const originalPositions = positions.slice();
+            geometry.userData.originalPositions = originalPositions;
+
+            const material = new THREE.MeshStandardMaterial({
+                color: new THREE.Color().setHSL(0.3 + Math.random() * 0.1, 0.7, 0.3 + Math.random() * 0.2),
+                roughness: 0.8,
+                side: THREE.DoubleSide,
+                transparent: true,
+                alphaTest: 0.5
+            });
+
+            const blade = new THREE.Mesh(geometry, material);
+            blade.castShadow = true;
+            return blade;
+        }
+
+        for (let i = 0; i < 80; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 25 + Math.random() * 35;
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+
+            const cluster = new THREE.Group();
+            const numBlades = 3 + Math.floor(Math.random() * 4);
+
+            for (let j = 0; j < numBlades; j++) {
+                const blade = createSeaweedBlade(2 + Math.random() * 3, 8);
+                blade.position.set(
+                    (Math.random() - 0.5) * 0.5,
+                    1 + Math.random(),
+                    (Math.random() - 0.5) * 0.5
+                );
+                blade.rotation.y = Math.random() * Math.PI * 2;
+                cluster.add(blade);
+            }
+
+            cluster.position.set(x, 0, z);
+            seaweedGroup.add(cluster);
+        }
+        scene.add(seaweedGroup);
+
+        // =====================================================================
+        // CORAL REEF
+        // =====================================================================
+        const coralGroup = new THREE.Group();
+        const coralColors = [0xff6b9f, 0xff8c69, 0xffa500, 0xda70d6, 0x40e0d0, 0xff6347];
+
+        function createBranchingCoral(height, color) {
+            const group = new THREE.Group();
+            const material = new THREE.MeshStandardMaterial({
+                color: color,
+                roughness: 0.7,
+                metalness: 0.2
+            });
+
+            // Main stem
+            const stemGeometry = new THREE.CylinderGeometry(0.1, 0.2, height, 6);
+            const stem = new THREE.Mesh(stemGeometry, material);
+            stem.castShadow = true;
+            group.add(stem);
+
+            // Branches
+            const numBranches = 3 + Math.floor(Math.random() * 4);
+            for (let i = 0; i < numBranches; i++) {
+                const branchHeight = height * (0.3 + Math.random() * 0.4);
+                const branchGeometry = new THREE.CylinderGeometry(0.05, 0.1, branchHeight, 6);
+                const branch = new THREE.Mesh(branchGeometry, material);
+                branch.position.y = height * (0.3 + Math.random() * 0.5);
+                branch.rotation.z = (Math.PI / 6) + Math.random() * (Math.PI / 4);
+                branch.rotation.y = Math.random() * Math.PI * 2;
+                branch.castShadow = true;
+                group.add(branch);
+            }
+
+            return group;
+        }
+
+        function createBrainCoral(size, color) {
+            const geometry = new THREE.SphereGeometry(size, 16, 16);
+            const positions = geometry.attributes.position.array;
+
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = positions[i];
+                const y = positions[i + 1];
+                const z = positions[i + 2];
+                const noise = Math.sin(x * 8) * Math.cos(y * 8) * Math.sin(z * 8) * 0.15;
+                positions[i] += x * noise;
+                positions[i + 1] += y * noise;
+                positions[i + 2] += z * noise;
+            }
+            geometry.computeVertexNormals();
+
+            const material = new THREE.MeshStandardMaterial({
+                color: color,
+                roughness: 0.6,
+                metalness: 0.3
+            });
+
+            const coral = new THREE.Mesh(geometry, material);
+            coral.castShadow = true;
+            coral.scale.y = 0.6;
+            return coral;
+        }
+
+        for (let i = 0; i < 40; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 20 + Math.random() * 40;
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+
+            const coral = Math.random() > 0.5
+                ? createBranchingCoral(1.5 + Math.random() * 2, coralColors[Math.floor(Math.random() * coralColors.length)])
+                : createBrainCoral(0.5 + Math.random() * 0.8, coralColors[Math.floor(Math.random() * coralColors.length)]);
+
+            coral.position.set(x, 0, z);
+            coralGroup.add(coral);
+        }
+        scene.add(coralGroup);
+
+        // =====================================================================
+        // ROCKS
+        // =====================================================================
+        const rockGroup = new THREE.Group();
+        const rockMaterial = new THREE.MeshStandardMaterial({
+            color: 0x6b6b6b,
+            roughness: 0.9,
+            metalness: 0.1
+        });
+
+        function createRock(size) {
+            const geometry = new THREE.DodecahedronGeometry(size, 1);
+            const positions = geometry.attributes.position.array;
+
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i] += (Math.random() - 0.5) * size * 0.3;
+                positions[i + 1] += (Math.random() - 0.5) * size * 0.3;
+                positions[i + 2] += (Math.random() - 0.5) * size * 0.3;
+            }
+            geometry.computeVertexNormals();
+
+            const rock = new THREE.Mesh(geometry, rockMaterial);
+            rock.castShadow = true;
+            rock.receiveShadow = true;
+            return rock;
+        }
+
+        for (let i = 0; i < 30; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 15 + Math.random() * 45;
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+
+            const rock = createRock(0.3 + Math.random() * 1);
+            rock.position.set(x, 0, z);
+            rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            rockGroup.add(rock);
+        }
+        scene.add(rockGroup);
+
+        // =====================================================================
+        // BUBBLE PARTICLE SYSTEM
+        // =====================================================================
+        const bubbleCount = 300;
+        const bubbleGeometry = new THREE.BufferGeometry();
+        const bubblePositions = new Float32Array(bubbleCount * 3);
+        const bubbleVelocities = new Float32Array(bubbleCount);
+        const bubbleSizes = new Float32Array(bubbleCount);
+
+        for (let i = 0; i < bubbleCount; i++) {
+            bubblePositions[i * 3] = (Math.random() - 0.5) * 100;
+            bubblePositions[i * 3 + 1] = Math.random() * 30;
+            bubblePositions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+            bubbleVelocities[i] = 0.02 + Math.random() * 0.03;
+            bubbleSizes[i] = 0.05 + Math.random() * 0.15;
+        }
+
+        bubbleGeometry.setAttribute('position', new THREE.BufferAttribute(bubblePositions, 3));
+        bubbleGeometry.setAttribute('size', new THREE.BufferAttribute(bubbleSizes, 1));
+
+        const bubbleMaterial = new THREE.PointsMaterial({
+            color: 0xaaddff,
+            size: 0.1,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        const bubbles = new THREE.Points(bubbleGeometry, bubbleMaterial);
+        scene.add(bubbles);
+
+        // Plankton particles
+        const planktonCount = 500;
+        const planktonGeometry = new THREE.BufferGeometry();
+        const planktonPositions = new Float32Array(planktonCount * 3);
+
+        for (let i = 0; i < planktonCount; i++) {
+            planktonPositions[i * 3] = (Math.random() - 0.5) * 120;
+            planktonPositions[i * 3 + 1] = Math.random() * 40;
+            planktonPositions[i * 3 + 2] = (Math.random() - 0.5) * 120;
+        }
+
+        planktonGeometry.setAttribute('position', new THREE.BufferAttribute(planktonPositions, 3));
+
+        const planktonMaterial = new THREE.PointsMaterial({
+            color: 0x4a8c4a,
+            size: 0.05,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        const plankton = new THREE.Points(planktonGeometry, planktonMaterial);
+        scene.add(plankton);
+
+        // =====================================================================
+        // BUILDINGS
+        // =====================================================================
+        const buildingsGroup = new THREE.Group();
+
+        // --- SpongeBob's Pineapple House ---
+        function createPineappleHouse() {
+            const house = new THREE.Group();
+
+            // Main pineapple body
+            const bodyGeometry = new THREE.CylinderGeometry(3, 3.5, 4, 8);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff8c00,
+                roughness: 0.8
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.castShadow = true;
+            body.receiveShadow = true;
+            house.add(body);
+
+            // Pineapple top (crown)
+            for (let i = 0; i < 8; i++) {
+                const leafGeometry = new THREE.ConeGeometry(0.5, 2, 4);
+                const leafMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x2d5a27,
+                    roughness: 0.7
+                });
+                const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+                leaf.position.y = 2;
+                leaf.rotation.z = Math.PI / 4;
+                leaf.rotation.y = (i / 8) * Math.PI * 2;
+                leaf.position.x = Math.sin(leaf.rotation.y) * 1.5;
+                leaf.position.z = Math.cos(leaf.rotation.y) * 1.5;
+                leaf.castShadow = true;
+                house.add(leaf);
+            }
+
+            // Door
+            const doorGeometry = new THREE.CylinderGeometry(0.8, 0.8, 1.8, 16, 1, false, 0, Math.PI);
+            const doorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a3728,
+                roughness: 0.9
+            });
+            const door = new THREE.Mesh(doorGeometry, doorMaterial);
+            door.position.set(0, 0, 3.4);
+            door.rotation.y = Math.PI;
+            house.add(door);
+
+            // Windows (sphere segments)
+            const windowMaterial = new THREE.MeshStandardMaterial({
+                color: 0x88ccff,
+                emissive: 0x446688,
+                emissiveIntensity: 0.3,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            for (let i = 0; i < 4; i++) {
+                const windowGeo = new THREE.SphereGeometry(0.5, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+                const win = new THREE.Mesh(windowGeo, windowMaterial);
+                win.position.y = 1;
+                win.rotation.y = (i / 4) * Math.PI * 2;
+                win.position.x = Math.sin(win.rotation.y) * 3.3;
+                win.position.z = Math.cos(win.rotation.y) * 3.3;
+                win.lookAt(0, 1, 0);
+                house.add(win);
+            }
+
+            // Chimney
+            const chimneyGeometry = new THREE.CylinderGeometry(0.3, 0.3, 1.5, 8);
+            const chimneyMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8b4513,
+                roughness: 0.9
+            });
+            const chimney = new THREE.Mesh(chimneyGeometry, chimneyMaterial);
+            chimney.position.set(1.5, 3, 0);
+            chimney.castShadow = true;
+            house.add(chimney);
+
+            // Warm light from windows
+            const windowLight = new THREE.PointLight(0xffaa00, 1, 10);
+            windowLight.position.set(0, 1, 0);
+            house.add(windowLight);
+
+            house.position.set(-12, 0, 0);
+            return house;
+        }
+
+        // --- Squidward's Easter Island House ---
+        function createSquidwardHouse() {
+            const house = new THREE.Group();
+
+            // Main moai head shape
+            const headGeometry = new THREE.SphereGeometry(3.5, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            const headMaterial = new THREE.MeshStandardMaterial({
+                color: 0x6b7b8c,
+                roughness: 0.7
+            });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.scale.y = 1.3;
+            head.castShadow = true;
+            head.receiveShadow = true;
+            house.add(head);
+
+            // Rectangular base
+            const baseGeometry = new THREE.BoxGeometry(5, 2, 4);
+            const baseMaterial = new THREE.MeshStandardMaterial({
+                color: 0x5b6b7c,
+                roughness: 0.8
+            });
+            const base = new THREE.Mesh(baseGeometry, baseMaterial);
+            base.position.y = -1;
+            base.castShadow = true;
+            base.receiveShadow = true;
+            house.add(base);
+
+            // Door (rectangular)
+            const doorGeometry = new THREE.BoxGeometry(1.2, 2, 0.1);
+            const doorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x3a4a5c,
+                roughness: 0.9
+            });
+            const door = new THREE.Mesh(doorGeometry, doorMaterial);
+            door.position.set(0, 0, 3.45);
+            house.add(door);
+
+            // Eyes (round windows)
+            const eyeGeometry = new THREE.SphereGeometry(0.6, 12, 12);
+            const eyeMaterial = new THREE.MeshStandardMaterial({
+                color: 0x88aacc,
+                emissive: 0x224466,
+                emissiveIntensity: 0.2
+            });
+
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(-1.2, 1.5, 3);
+            house.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(1.2, 1.5, 3);
+            house.add(rightEye);
+
+            // Nose
+            const noseGeometry = new THREE.ConeGeometry(0.3, 1, 8);
+            const noseMaterial = new THREE.MeshStandardMaterial({
+                color: 0x5b6b7c,
+                roughness: 0.7
+            });
+            const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+            nose.rotation.x = Math.PI / 2;
+            nose.position.set(0, 0.8, 3.5);
+            house.add(nose);
+
+            house.position.set(0, 0, -8);
+            return house;
+        }
+
+        // --- Patrick's Rock ---
+        function createPatrickRock() {
+            const rock = new THREE.Group();
+
+            // Main rock dome
+            const domeGeometry = new THREE.SphereGeometry(4, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            const domeMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8b7355,
+                roughness: 0.95
+            });
+            const dome = new THREE.Mesh(domeGeometry, domeMaterial);
+            dome.scale.set(1.3, 0.7, 1);
+            dome.castShadow = true;
+            dome.receiveShadow = true;
+            rock.add(dome);
+
+            // Rock texture details (bumps)
+            const bumpGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const bumpMaterial = new THREE.MeshStandardMaterial({
+                color: 0x7b6345,
+                roughness: 1
+            });
+
+            for (let i = 0; i < 15; i++) {
+                const bump = new THREE.Mesh(bumpGeometry, bumpMaterial);
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI / 3;
+                bump.position.set(
+                    Math.sin(phi) * Math.cos(theta) * 3.5,
+                    Math.cos(phi) * 2,
+                    Math.sin(phi) * Math.sin(theta) * 3.5
+                );
+                bump.scale.set(1 + Math.random(), 0.5 + Math.random() * 0.5, 1 + Math.random());
+                rock.add(bump);
+            }
+
+            // Door opening (dark rectangle)
+            const doorGeometry = new THREE.PlaneGeometry(1.5, 2);
+            const doorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2a1a0a,
+                roughness: 1
+            });
+            const door = new THREE.Mesh(doorGeometry, doorMaterial);
+            door.position.set(0, 0, 2.8);
+            rock.add(door);
+
+            rock.position.set(15, 0, 5);
+            return rock;
+        }
+
+        // --- The Krusty Krab ---
+        function createKrustyKrab() {
+            const restaurant = new THREE.Group();
+
+            // Main building (treasure chest / lobster trap shape)
+            const mainGeometry = new THREE.BoxGeometry(10, 4, 6);
+            const mainMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8b4513,
+                roughness: 0.7
+            });
+            const main = new THREE.Mesh(mainGeometry, mainMaterial);
+            main.position.y = 2;
+            main.castShadow = true;
+            main.receiveShadow = true;
+            restaurant.add(main);
+
+            // Roof (curved)
+            const roofGeometry = new THREE.CylinderGeometry(6, 6, 10, 8, 1, false, 0, Math.PI, true);
+            const roofMaterial = new THREE.MeshStandardMaterial({
+                color: 0x6b3510,
+                roughness: 0.8,
+                side: THREE.DoubleSide
+            });
+            const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+            roof.rotation.z = Math.PI / 2;
+            roof.rotation.y = Math.PI / 2;
+            roof.position.y = 4.5;
+            roof.castShadow = true;
+            restaurant.add(roof);
+
+            // Roof trim
+            const trimGeometry = new THREE.BoxGeometry(10.5, 0.3, 6.5);
+            const trimMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a2508,
+                roughness: 0.6
+            });
+            const trim = new THREE.Mesh(trimGeometry, trimMaterial);
+            trim.position.y = 3.8;
+            trim.castShadow = true;
+            restaurant.add(trim);
+
+            // Sign post
+            const postGeometry = new THREE.CylinderGeometry(0.2, 0.2, 8, 8);
+            const postMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a3728,
+                roughness: 0.8
+            });
+            const post = new THREE.Mesh(postGeometry, postMaterial);
+            post.position.set(6, 4, 0);
+            post.castShadow = true;
+            restaurant.add(post);
+
+            // Sign board
+            const signGeometry = new THREE.BoxGeometry(4, 2, 0.2);
+            const signMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff6b35,
+                roughness: 0.7
+            });
+            const sign = new THREE.Mesh(signGeometry, signMaterial);
+            sign.position.set(6, 6, 0);
+            sign.castShadow = true;
+            restaurant.add(sign);
+
+            // "Krusty Krab" text placeholder (colored rectangles)
+            const letterGeometry = new THREE.BoxGeometry(0.3, 0.5, 0.1);
+            const letterMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffff00,
+                emissive: 0x444400,
+                emissiveIntensity: 0.5
+            });
+
+            for (let i = 0; i < 10; i++) {
+                const letter = new THREE.Mesh(letterGeometry, letterMaterial);
+                letter.position.set(4 + i * 0.4, 6, 0.15);
+                restaurant.add(letter);
+            }
+
+            // Anchor decoration
+            const anchorGeometry = new THREE.TorusGeometry(0.8, 0.1, 8, 16, Math.PI);
+            const anchorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x888888,
+                metalness: 0.8,
+                roughness: 0.3
+            });
+            const anchor = new THREE.Mesh(anchorGeometry, anchorMaterial);
+            anchor.position.set(0, 3, 3.1);
+            anchor.rotation.z = Math.PI / 2;
+            restaurant.add(anchor);
+
+            // Door
+            const doorGeometry = new THREE.BoxGeometry(1.5, 2.5, 0.1);
+            const doorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a3728,
+                roughness: 0.8
+            });
+            const door = new THREE.Mesh(doorGeometry, doorMaterial);
+            door.position.set(-3, 1.25, 3.05);
+            restaurant.add(door);
+
+            // Windows with warm light
+            const windowGeometry = new THREE.BoxGeometry(1.5, 1, 0.1);
+            const windowMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffeeaa,
+                emissive: 0xffaa00,
+                emissiveIntensity: 0.5,
+                transparent: true,
+                opacity: 0.7
+            });
+
+            const leftWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+            leftWindow.position.set(-1.5, 2.5, 3.05);
+            restaurant.add(leftWindow);
+
+            const rightWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+            rightWindow.position.set(1.5, 2.5, 3.05);
+            restaurant.add(rightWindow);
+
+            // Interior lights
+            const interiorLight = new THREE.PointLight(0xffaa00, 2, 15);
+            interiorLight.position.set(0, 2, 0);
+            restaurant.add(interiorLight);
+
+            restaurant.position.set(8, 0, -15);
+            restaurant.rotation.y = -Math.PI / 6;
+            return restaurant;
+        }
+
+        buildingsGroup.add(createPineappleHouse());
+        buildingsGroup.add(createSquidwardHouse());
+        buildingsGroup.add(createPatrickRock());
+        buildingsGroup.add(createKrustyKrab());
+        scene.add(buildingsGroup);
+
+        // =====================================================================
+        // PATH / STREET
+        // =====================================================================
+        const pathGeometry = new THREE.RingGeometry(8, 14, 32, 1, 0, Math.PI);
+        const pathMaterial = new THREE.MeshStandardMaterial({
+            color: 0xc4b47b,
+            roughness: 0.95,
+            side: THREE.DoubleSide
+        });
+        const path = new THREE.Mesh(pathGeometry, pathMaterial);
+        path.rotation.x = -Math.PI / 2;
+        path.position.y = 0.02;
+        path.receiveShadow = true;
+        scene.add(path);
+
+        // =====================================================================
+        // CHARACTERS
+        // =====================================================================
+        const charactersGroup = new THREE.Group();
+        const clock = new THREE.Clock();
+
+        // --- SpongeBob Character ---
+        function createSpongeBob() {
+            const spongebob = new THREE.Group();
+
+            // Body (yellow rectangular with rounded edges)
+            const bodyGeometry = new THREE.BoxGeometry(1.2, 1.4, 0.8);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: 0xf4d02d,
+                roughness: 0.6
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 2.1;
+            body.castShadow = true;
+            spongebob.add(body);
+
+            // Pores (small darker spheres)
+            const poreGeometry = new THREE.SphereGeometry(0.08, 6, 6);
+            const poreMaterial = new THREE.MeshStandardMaterial({
+                color: 0xd4c020,
+                roughness: 0.7
+            });
+            const porePositions = [
+                [-0.4, 2, 0.4], [0.3, 2.3, 0.4], [-0.2, 1.8, 0.4],
+                [0.5, 2.1, 0.4], [-0.5, 2.2, -0.4], [0.2, 1.9, -0.4]
+            ];
+            porePositions.forEach(pos => {
+                const pore = new THREE.Mesh(poreGeometry, poreMaterial);
+                pore.position.set(...pos);
+                spongebob.add(pore);
+            });
+
+            // Eyes (large white spheres with blue irises)
+            const eyeWhiteGeometry = new THREE.SphereGeometry(0.25, 12, 12);
+            const eyeWhiteMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.3
+            });
+
+            const leftEyeWhite = new THREE.Mesh(eyeWhiteGeometry, eyeWhiteMaterial);
+            leftEyeWhite.position.set(-0.25, 2.5, 0.35);
+            spongebob.add(leftEyeWhite);
+
+            const rightEyeWhite = new THREE.Mesh(eyeWhiteGeometry, eyeWhiteMaterial);
+            rightEyeWhite.position.set(0.25, 2.5, 0.35);
+            spongebob.add(rightEyeWhite);
+
+            // Blue irises
+            const irisGeometry = new THREE.SphereGeometry(0.12, 8, 8);
+            const irisMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1a4d8c,
+                roughness: 0.5
+            });
+
+            const leftIris = new THREE.Mesh(irisGeometry, irisMaterial);
+            leftIris.position.set(-0.2, 2.5, 0.55);
+            spongebob.add(leftIris);
+
+            const rightIris = new THREE.Mesh(irisGeometry, irisMaterial);
+            rightIris.position.set(0.2, 2.5, 0.55);
+            spongebob.add(rightIris);
+
+            // Pupils
+            const pupilGeometry = new THREE.SphereGeometry(0.05, 6, 6);
+            const pupilMaterial = new THREE.MeshStandardMaterial({
+                color: 0x000000,
+                roughness: 0.5
+            });
+
+            const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+            leftPupil.position.set(-0.18, 2.5, 0.62);
+            spongebob.add(leftPupil);
+
+            const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+            rightPupil.position.set(0.22, 2.5, 0.62);
+            spongebob.add(rightPupil);
+
+            // Nose (long)
+            const noseGeometry = new THREE.CylinderGeometry(0.05, 0.08, 0.3, 8);
+            const noseMaterial = new THREE.MeshStandardMaterial({
+                color: 0xf4d02d,
+                roughness: 0.6
+            });
+            const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+            nose.rotation.x = Math.PI / 2;
+            nose.position.set(0, 2.2, 0.5);
+            spongebob.add(nose);
+
+            // Smile (wide with buck teeth)
+            const mouthGeometry = new THREE.TorusGeometry(0.2, 0.04, 8, 16, Math.PI);
+            const mouthMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8b4513,
+                roughness: 0.5
+            });
+            const mouth = new THREE.Mesh(mouthGeometry, mouthMaterial);
+            mouth.rotation.x = Math.PI;
+            mouth.position.set(0, 2, 0.45);
+            spongebob.add(mouth);
+
+            // Buck teeth
+            const toothGeometry = new THREE.BoxGeometry(0.15, 0.2, 0.08);
+            const toothMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.3
+            });
+
+            const leftTooth = new THREE.Mesh(toothGeometry, toothMaterial);
+            leftTooth.position.set(-0.08, 1.95, 0.48);
+            spongebob.add(leftTooth);
+
+            const rightTooth = new THREE.Mesh(toothGeometry, toothMaterial);
+            rightTooth.position.set(0.08, 1.95, 0.48);
+            spongebob.add(rightTooth);
+
+            // Brown pants
+            const pantsGeometry = new THREE.CylinderGeometry(0.6, 0.65, 0.5, 8);
+            const pantsMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a3728,
+                roughness: 0.8
+            });
+            const pants = new THREE.Mesh(pantsGeometry, pantsMaterial);
+            pants.position.y = 1.45;
+            pants.castShadow = true;
+            spongebob.add(pants);
+
+            // Red tie
+            const tieGeometry = new THREE.ConeGeometry(0.1, 0.4, 4);
+            const tieMaterial = new THREE.MeshStandardMaterial({
+                color: 0xc82828,
+                roughness: 0.5
+            });
+            const tie = new THREE.Mesh(tieGeometry, tieMaterial);
+            tie.position.set(0, 1.9, 0.42);
+            tie.rotation.x = -Math.PI / 6;
+            spongebob.add(tie);
+
+            // White shirt collar
+            const collarGeometry = new THREE.TorusGeometry(0.3, 0.05, 8, 16);
+            const collarMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.6
+            });
+            const collar = new THREE.Mesh(collarGeometry, collarMaterial);
+            collar.rotation.x = Math.PI / 2;
+            collar.position.set(0, 1.75, 0.35);
+            collar.scale.x = 1.5;
+            spongebob.add(collar);
+
+            // Arms (thin cylinders)
+            const armGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8);
+            const armMaterial = new THREE.MeshStandardMaterial({
+                color: 0xf4d02d,
+                roughness: 0.6
+            });
+
+            const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+            leftArm.rotation.z = Math.PI / 4;
+            leftArm.position.set(-0.8, 2, 0);
+            leftArm.castShadow = true;
+            spongebob.add(leftArm);
+
+            const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+            rightArm.rotation.z = -Math.PI / 4;
+            rightArm.position.set(0.8, 2, 0);
+            rightArm.castShadow = true;
+            spongebob.add(rightArm);
+
+            // Legs
+            const legGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 8);
+            const legMaterial = new THREE.MeshStandardMaterial({
+                color: 0xf4d02d,
+                roughness: 0.6
+            });
+
+            const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+            leftLeg.position.set(-0.25, 1.15, 0);
+            spongebob.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+            rightLeg.position.set(0.25, 1.15, 0);
+            spongebob.add(rightLeg);
+
+            // Black shoes
+            const shoeGeometry = new THREE.BoxGeometry(0.25, 0.15, 0.35);
+            const shoeMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1a1a1a,
+                roughness: 0.4
+            });
+
+            const leftShoe = new THREE.Mesh(shoeGeometry, shoeMaterial);
+            leftShoe.position.set(-0.25, 1.05, 0.1);
+            leftShoe.castShadow = true;
+            spongebob.add(leftShoe);
+
+            const rightShoe = new THREE.Mesh(shoeGeometry, shoeMaterial);
+            rightShoe.position.set(0.25, 1.05, 0.1);
+            rightShoe.castShadow = true;
+            spongebob.add(rightShoe);
+
+            spongebob.position.set(-8, 0, 3);
+
+            // Animation data
+            spongebob.userData = {
+                type: 'spongebob',
+                originalY: 0,
+                breatheSpeed: 3,
+                breatheAmount: 0.05
+            };
+
+            return spongebob;
+        }
+
+        // --- Patrick Star Character ---
+        function createPatrick() {
+            const patrick = new THREE.Group();
+
+            // Star-shaped body (cone with star cross-section)
+            const starShape = new THREE.Shape();
+            const outerRadius = 0.8;
+            const innerRadius = 0.35;
+            const points = 5;
+
+            for (let i = 0; i < points * 2; i++) {
+                const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                const angle = (i / points) * Math.PI * 2 - Math.PI / 2;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                if (i === 0) starShape.moveTo(x, y);
+                else starShape.lineTo(x, y);
+            }
+            starShape.closePath();
+
+            const bodyGeometry = new THREE.ExtrudeGeometry(starShape, {
+                depth: 1.2,
+                bevelEnabled: true,
+                bevelSegments: 2,
+                bevelSize: 0.1,
+                bevelThickness: 0.1
+            });
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff99b3,
+                roughness: 0.7
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.rotation.x = Math.PI / 2;
+            body.rotation.z = Math.PI;
+            body.position.y = 1.2;
+            body.castShadow = true;
+            patrick.add(body);
+
+            // Eyes (half-closed, dopey look)
+            const eyeWhiteGeometry = new THREE.SphereGeometry(0.15, 10, 10);
+            const eyeWhiteMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.4
+            });
+
+            const leftEye = new THREE.Mesh(eyeWhiteGeometry, eyeWhiteMaterial);
+            leftEye.position.set(-0.25, 1.5, 0.5);
+            leftEye.scale.y = 0.7;
+            patrick.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeWhiteGeometry, eyeWhiteMaterial);
+            rightEye.position.set(0.25, 1.5, 0.5);
+            rightEye.scale.y = 0.7;
+            patrick.add(rightEye);
+
+            // Green pupils (small)
+            const pupilGeometry = new THREE.SphereGeometry(0.05, 6, 6);
+            const pupilMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a8c4a,
+                roughness: 0.5
+            });
+
+            const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+            leftPupil.position.set(-0.2, 1.5, 0.62);
+            patrick.add(leftPupil);
+
+            const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+            rightPupil.position.set(0.2, 1.5, 0.62);
+            patrick.add(rightPupil);
+
+            // Big dopey smile
+            const smileGeometry = new THREE.TorusGeometry(0.25, 0.05, 8, 16, Math.PI * 0.8);
+            const smileMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff6699,
+                roughness: 0.5
+            });
+            const smile = new THREE.Mesh(smileGeometry, smileMaterial);
+            smile.position.set(0, 1.3, 0.55);
+            patrick.add(smile);
+
+            // Green shorts with purple flowers
+            const shortsGeometry = new THREE.CylinderGeometry(0.5, 0.55, 0.4, 8);
+            const shortsMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a8c4a,
+                roughness: 0.8
+            });
+            const shorts = new THREE.Mesh(shortsGeometry, shortsMaterial);
+            shorts.position.y = 0.6;
+            shorts.castShadow = true;
+            patrick.add(shorts);
+
+            // Purple flower pattern on shorts
+            const flowerGeometry = new THREE.SphereGeometry(0.08, 6, 6);
+            const flowerMaterial = new THREE.MeshStandardMaterial({
+                color: 0x9933cc,
+                roughness: 0.6
+            });
+
+            const flowerPositions = [
+                [0.35, 0.6, 0.45], [-0.3, 0.65, 0.4], [0.1, 0.55, 0.48]
+            ];
+            flowerPositions.forEach(pos => {
+                const flower = new THREE.Mesh(flowerGeometry, flowerMaterial);
+                flower.position.set(...pos);
+                patrick.add(flower);
+            });
+
+            // Arms
+            const armGeometry = new THREE.CylinderGeometry(0.1, 0.12, 0.5, 8);
+            const armMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff99b3,
+                roughness: 0.7
+            });
+
+            const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+            leftArm.rotation.z = Math.PI / 3;
+            leftArm.position.set(-0.6, 1.3, 0);
+            leftArm.castShadow = true;
+            patrick.add(leftArm);
+
+            const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+            rightArm.rotation.z = -Math.PI / 3;
+            rightArm.position.set(0.6, 1.3, 0);
+            rightArm.castShadow = true;
+            patrick.add(rightArm);
+
+            // Legs (short)
+            const legGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.3, 8);
+            const legMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff99b3,
+                roughness: 0.7
+            });
+
+            for (let i = 0; i < 5; i++) {
+                const leg = new THREE.Mesh(legGeometry, legMaterial);
+                const angle = (i / 5) * Math.PI - Math.PI / 2;
+                leg.position.set(
+                    Math.cos(angle) * 0.4,
+                    0.15,
+                    Math.sin(angle) * 0.3
+                );
+                leg.castShadow = true;
+                patrick.add(leg);
+            }
+
+            patrick.position.set(12, 0, 8);
+            patrick.rotation.y = -Math.PI / 4;
+
+            patrick.userData = {
+                type: 'patrick',
+                originalY: 0,
+                swaySpeed: 2,
+                swayAmount: 0.03
+            };
+
+            return patrick;
+        }
+
+        // --- Squidward Character ---
+        function createSquidward() {
+            const squidward = new THREE.Group();
+
+            // Body (slim cylinder)
+            const bodyGeometry = new THREE.CylinderGeometry(0.4, 0.5, 1.8, 8);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: 0x5a8c8c,
+                roughness: 0.6
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 2.3;
+            body.castShadow = true;
+            squidward.add(body);
+
+            // Large oval head
+            const headGeometry = new THREE.SphereGeometry(0.7, 16, 16);
+            const headMaterial = new THREE.MeshStandardMaterial({
+                color: 0x5a8c8c,
+                roughness: 0.5
+            });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 3.4;
+            head.scale.y = 1.2;
+            head.castShadow = true;
+            squidward.add(head);
+
+            // Prominent nose (long cone)
+            const noseGeometry = new THREE.ConeGeometry(0.08, 0.5, 8);
+            const noseMaterial = new THREE.MeshStandardMaterial({
+                color: 0x5a8c8c,
+                roughness: 0.5
+            });
+            const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+            nose.rotation.x = -Math.PI / 3;
+            nose.position.set(0, 3.3, 0.5);
+            squidward.add(nose);
+
+            // Large oval eyes (half-open, annoyed look)
+            const eyeWhiteGeometry = new THREE.SphereGeometry(0.18, 12, 12);
+            const eyeWhiteMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.3
+            });
+
+            const leftEye = new THREE.Mesh(eyeWhiteGeometry, eyeWhiteMaterial);
+            leftEye.position.set(-0.35, 3.45, 0.55);
+            leftEye.scale.y = 0.6;
+            squidward.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeWhiteGeometry, eyeWhiteMaterial);
+            rightEye.position.set(0.35, 3.45, 0.55);
+            rightEye.scale.y = 0.6;
+            squidward.add(rightEye);
+
+            // Yellow irises with red veins
+            const irisGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+            const irisMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffcc00,
+                roughness: 0.4
+            });
+
+            const leftIris = new THREE.Mesh(irisGeometry, irisMaterial);
+            leftIris.position.set(-0.32, 3.45, 0.68);
+            squidward.add(leftIris);
+
+            const rightIris = new THREE.Mesh(irisGeometry, irisMaterial);
+            rightIris.position.set(0.32, 3.45, 0.68);
+            squidward.add(rightIris);
+
+            // Frown
+            const mouthGeometry = new THREE.TorusGeometry(0.15, 0.03, 8, 16, Math.PI);
+            const mouthMaterial = new THREE.MeshStandardMaterial({
+                color: 0x3a6c6c,
+                roughness: 0.5
+            });
+            const mouth = new THREE.Mesh(mouthGeometry, mouthMaterial);
+            mouth.rotation.x = 0;
+            mouth.position.set(0, 3.15, 0.58);
+            squidward.add(mouth);
+
+            // Brown shirt
+            const shirtGeometry = new THREE.CylinderGeometry(0.45, 0.55, 0.8, 8);
+            const shirtMaterial = new THREE.MeshStandardMaterial({
+                color: 0x6b4d2d,
+                roughness: 0.8
+            });
+            const shirt = new THREE.Mesh(shirtGeometry, shirtMaterial);
+            shirt.position.y = 1.8;
+            shirt.castShadow = true;
+            squidward.add(shirt);
+
+            // Arms crossed (annoyed pose)
+            const armGeometry = new THREE.CylinderGeometry(0.1, 0.12, 0.7, 8);
+            const armMaterial = new THREE.MeshStandardMaterial({
+                color: 0x5a8c8c,
+                roughness: 0.6
+            });
+
+            const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+            leftArm.rotation.z = Math.PI / 2;
+            leftArm.rotation.y = -Math.PI / 6;
+            leftArm.position.set(-0.3, 2.3, 0.3);
+            leftArm.castShadow = true;
+            squidward.add(leftArm);
+
+            const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+            rightArm.rotation.z = -Math.PI / 2;
+            rightArm.rotation.y = Math.PI / 6;
+            rightArm.position.set(0.3, 2.3, 0.3);
+            rightArm.castShadow = true;
+            squidward.add(rightArm);
+
+            // Legs
+            const legGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 8);
+            const legMaterial = new THREE.MeshStandardMaterial({
+                color: 0x5a8c8c,
+                roughness: 0.6
+            });
+
+            const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+            leftLeg.position.set(-0.2, 1.1, 0);
+            leftLeg.castShadow = true;
+            squidward.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+            rightLeg.position.set(0.2, 1.1, 0);
+            rightLeg.castShadow = true;
+            squidward.add(rightLeg);
+
+            // No shoes (Squidward doesn't wear shoes)
+
+            squidward.position.set(2, 0, -5);
+            squidward.rotation.y = Math.PI / 6;
+
+            squidward.userData = {
+                type: 'squidward',
+                originalY: 0,
+                headShakeSpeed: 1.5,
+                headShakeAmount: 0.1
+            };
+
+            return squidward;
+        }
+
+        // --- Gary the Snail ---
+        function createGary() {
+            const gary = new THREE.Group();
+
+            // Pink spiral shell
+            const shellGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const shellMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff6b9f,
+                roughness: 0.5,
+                metalness: 0.2
+            });
+            const shell = new THREE.Mesh(shellGeometry, shellMaterial);
+            shell.position.set(0, 0.5, -0.2);
+            shell.scale.set(1, 0.8, 1.2);
+            shell.castShadow = true;
+            gary.add(shell);
+
+            // Shell spiral pattern (darker pink torus)
+            const spiralGeometry = new THREE.TorusGeometry(0.25, 0.04, 8, 16);
+            const spiralMaterial = new THREE.MeshStandardMaterial({
+                color: 0xcc4477,
+                roughness: 0.4
+            });
+            const spiral = new THREE.Mesh(spiralGeometry, spiralMaterial);
+            spiral.position.set(0, 0.55, 0.25);
+            spiral.rotation.x = Math.PI / 2;
+            gary.add(spiral);
+
+            // Blue body
+            const bodyGeometry = new THREE.CapsuleGeometry(0.25, 0.5, 8, 8);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a6b8c,
+                roughness: 0.6
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.rotation.x = Math.PI / 2;
+            body.position.set(0, 0.25, 0.4);
+            body.castShadow = true;
+            gary.add(body);
+
+            // Tail
+            const tailGeometry = new THREE.ConeGeometry(0.15, 0.4, 8);
+            const tailMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a6b8c,
+                roughness: 0.6
+            });
+            const tail = new THREE.Mesh(tailGeometry, tailMaterial);
+            tail.rotation.x = -Math.PI / 3;
+            tail.position.set(0, 0.2, 0.9);
+            tail.castShadow = true;
+            gary.add(tail);
+
+            // Eye stalks
+            const stalkGeometry = new THREE.CylinderGeometry(0.04, 0.05, 0.3, 8);
+            const stalkMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a6b8c,
+                roughness: 0.6
+            });
+
+            const leftStalk = new THREE.Mesh(stalkGeometry, stalkMaterial);
+            leftStalk.rotation.x = Math.PI / 6;
+            leftStalk.position.set(-0.15, 0.4, 0.6);
+            gary.add(leftStalk);
+
+            const rightStalk = new THREE.Mesh(stalkGeometry, stalkMaterial);
+            rightStalk.rotation.x = Math.PI / 6;
+            rightStalk.position.set(0.15, 0.4, 0.6);
+            gary.add(rightStalk);
+
+            // Googly eyes
+            const eyeGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const eyeMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.3
+            });
+
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(-0.15, 0.65, 0.75);
+            gary.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(0.15, 0.65, 0.75);
+            gary.add(rightEye);
+
+            // Pupils (looking in different directions for googly effect)
+            const pupilGeometry = new THREE.SphereGeometry(0.04, 6, 6);
+            const pupilMaterial = new THREE.MeshStandardMaterial({
+                color: 0x000000,
+                roughness: 0.5
+            });
+
+            const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+            leftPupil.position.set(-0.12, 0.67, 0.82);
+            gary.add(leftPupil);
+
+            const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+            rightPupil.position.set(0.18, 0.65, 0.83);
+            gary.add(rightPupil);
+
+            gary.position.set(-5, 0, 1);
+            gary.rotation.y = Math.PI / 4;
+            gary.scale.setScalar(0.8);
+
+            gary.userData = {
+                type: 'gary',
+                originalY: 0,
+                crawlSpeed: 0.5,
+                crawlAmount: 0.02
+            };
+
+            return gary;
+        }
+
+        // --- Jellyfish ---
+        function createJellyfish() {
+            const jellyfish = new THREE.Group();
+
+            // Translucent dome (bell)
+            const domeGeometry = new THREE.SphereGeometry(0.8, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            const domeMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0xff6b9f,
+                roughness: 0.2,
+                metalness: 0.1,
+                transmission: 0.9,
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide
+            });
+            const dome = new THREE.Mesh(domeGeometry, domeMaterial);
+            dome.castShadow = true;
+            jellyfish.add(dome);
+
+            // Inner glow
+            const glowGeometry = new THREE.SphereGeometry(0.5, 12, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff88aa,
+                transparent: true,
+                opacity: 0.4
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            jellyfish.add(glow);
+
+            // Tentacles (curved cylinders)
+            const tentacleGeometry = new THREE.CylinderGeometry(0.03, 0.05, 1.5, 8);
+            const tentacleMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0xff88aa,
+                roughness: 0.3,
+                transmission: 0.8,
+                transparent: true,
+                opacity: 0.5
+            });
+
+            const numTentacles = 8;
+            for (let i = 0; i < numTentacles; i++) {
+                const tentacle = new THREE.Mesh(tentacleGeometry, tentacleMaterial);
+                const angle = (i / numTentacles) * Math.PI * 2;
+                tentacle.position.set(
+                    Math.cos(angle) * 0.4,
+                    -0.5,
+                    Math.sin(angle) * 0.4
+                );
+                tentacle.rotation.z = 0.2;
+                tentacle.castShadow = true;
+                jellyfish.add(tentacle);
+            }
+
+            // Center tentacle (longer)
+            const centerTentacle = new THREE.Mesh(tentacleGeometry, tentacleMaterial);
+            centerTentacle.position.y = -1;
+            centerTentacle.scale.y = 1.5;
+            jellyfish.add(centerTentacle);
+
+            jellyfish.userData = {
+                type: 'jellyfish',
+                originalY: 0,
+                bobSpeed: 1 + Math.random(),
+                bobAmount: 0.3 + Math.random() * 0.3
+            };
+
+            return jellyfish;
+        }
+
+        // Add characters to scene
+        const spongebob = createSpongeBob();
+        const patrick = createPatrick();
+        const squidward = createSquidward();
+        const gary = createGary();
+        charactersGroup.add(spongebob);
+        charactersGroup.add(patrick);
+        charactersGroup.add(squidward);
+        charactersGroup.add(gary);
+
+        // Add jellyfish floating above
+        for (let i = 0; i < 4; i++) {
+            const jellyfish = createJellyfish();
+            jellyfish.position.set(
+                (Math.random() - 0.5) * 40,
+                12 + Math.random() * 8,
+                (Math.random() - 0.5) * 40
+            );
+            jellyfish.userData.jellyfishIndex = i;
+            charactersGroup.add(jellyfish);
+        }
+
+        scene.add(charactersGroup);
+
+        // =====================================================================
+        // POST-PROCESSING
+        // =====================================================================
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        // Bloom pass
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            0.5,  // strength
+            0.4,  // radius
+            0.85  // threshold
+        );
+        composer.addPass(bloomPass);
+
+        // Color grading shader
+        const ColorGradingShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'saturation': { value: 1.2 },
+                'contrast': { value: 1.1 },
+                'blueTint': { value: 0.15 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float saturation;
+                uniform float contrast;
+                uniform float blueTint;
+                varying vec2 vUv;
+
+                void main() {
+                    vec4 color = texture2D(tDiffuse, vUv);
+
+                    // Contrast
+                    color.rgb = (color.rgb - 0.5) * contrast + 0.5;
+
+                    // Saturation
+                    float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+                    color.rgb = mix(vec3(gray), color.rgb, saturation);
+
+                    // Blue underwater tint in shadows
+                    color.rgb += vec3(0.0, 0.05, 0.1) * blueTint * (1.0 - color.r);
+
+                    gl_FragColor = color;
+                }
+            `
+        };
+
+        const colorGradingPass = new ShaderPass(ColorGradingShader);
+        composer.addPass(colorGradingPass);
+
+        // =====================================================================
+        // ANIMATION
+        // =====================================================================
+        const characters = [spongebob, patrick, squidward, gary];
+        const jellyfish = charactersGroup.children.filter(c => c.userData.type === 'jellyfish');
+
+        function animateCharacter(character, time) {
+            const data = character.userData;
+
+            if (data.type === 'spongebob') {
+                // Breathing animation
+                character.scale.y = 1 + Math.sin(time * data.breatheSpeed) * data.breatheAmount;
+                character.scale.x = 1 + Math.cos(time * data.breatheSpeed) * data.breatheAmount * 0.5;
+                character.scale.z = 1 + Math.cos(time * data.breatheSpeed) * data.breatheAmount * 0.5;
+                character.position.y = Math.sin(time * data.breatheSpeed * 0.5) * 0.05;
+            }
+
+            if (data.type === 'patrick') {
+                // Slow swaying animation
+                character.rotation.z = Math.sin(time * data.swaySpeed) * data.swayAmount;
+                character.rotation.x = Math.cos(time * data.swaySpeed * 0.8) * data.swayAmount;
+                character.position.y = Math.sin(time * data.swaySpeed * 0.3) * 0.03;
+            }
+
+            if (data.type === 'squidward') {
+                // Annoyed head shake
+                character.rotation.y = Math.sin(time * data.headShakeSpeed) * data.headShakeAmount;
+                character.position.y = Math.abs(Math.sin(time * 2)) * 0.02;
+            }
+
+            if (data.type === 'gary') {
+                // Slow crawling motion
+                character.position.x += Math.sin(time * data.crawlSpeed) * data.crawlAmount * 0.01;
+                character.position.z += Math.cos(time * data.crawlSpeed) * data.crawlAmount * 0.01;
+                character.rotation.z = Math.sin(time * data.crawlSpeed * 0.5) * 0.05;
+            }
+        }
+
+        function animateJellyfish(jellyfish, time, index) {
+            const data = jellyfish.userData;
+            jellyfish.position.y = data.originalY + Math.sin(time * data.bobSpeed + index) * data.bobAmount;
+            jellyfish.position.x += Math.sin(time * 0.3 + index * 2) * 0.01;
+            jellyfish.position.z += Math.cos(time * 0.2 + index * 1.5) * 0.01;
+
+            // Subtle rotation
+            jellyfish.rotation.y = Math.sin(time * 0.2 + index) * 0.2;
+            jellyfish.rotation.x = Math.cos(time * 0.15 + index * 1.5) * 0.1;
+        }
+
+        function animateSeaweed(time) {
+            seaweedGroup.children.forEach((cluster, clusterIndex) => {
+                cluster.children.forEach((blade, bladeIndex) => {
+                    const positions = blade.geometry.attributes.position.array;
+                    const original = blade.geometry.userData.originalPositions;
+
+                    if (original) {
+                        for (let i = 0; i < positions.length; i += 3) {
+                            const y = original[i + 1];
+                            const swayAmount = Math.max(0, y + 1) * 0.3;
+                            positions[i] = original[i] + Math.sin(time * 2 + clusterIndex + y) * swayAmount;
+                            positions[i + 2] = original[i + 2] + Math.cos(time * 1.5 + clusterIndex + y * 0.5) * swayAmount * 0.5;
+                        }
+                        blade.geometry.attributes.position.needsUpdate = true;
+                    }
+                });
+            });
+        }
+
+        function animateBubbles(time) {
+            const positions = bubbles.geometry.attributes.position.array;
+            const velocities = bubbleVelocities;
+            const sizes = bubbleSizes;
+
+            for (let i = 0; i < bubbleCount; i++) {
+                positions[i * 3 + 1] += velocities[i];
+
+                // Reset bubble when it reaches the top
+                if (positions[i * 3 + 1] > 35) {
+                    positions[i * 3] = (Math.random() - 0.5) * 100;
+                    positions[i * 3 + 1] = 0;
+                    positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+                }
+
+                // Gentle horizontal drift
+                positions[i * 3] += Math.sin(time + i) * 0.02;
+            }
+            bubbles.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function animatePlankton(time) {
+            const positions = plankton.geometry.attributes.position.array;
+
+            for (let i = 0; i < planktonCount; i++) {
+                positions[i * 3] += Math.sin(time * 0.5 + i) * 0.01;
+                positions[i * 3 + 2] += Math.cos(time * 0.3 + i) * 0.01;
+
+                // Wrap around
+                if (Math.abs(positions[i * 3]) > 60) positions[i * 3] *= -0.99;
+                if (Math.abs(positions[i * 3 + 2]) > 60) positions[i * 3 + 2] *= -0.99;
+            }
+            plankton.geometry.attributes.position.needsUpdate = true;
+        }
+
+        // =====================================================================
+        // WINDOW RESIZE
+        // =====================================================================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // =====================================================================
+        // ANIMATION LOOP
+        // =====================================================================
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = clock.getElapsedTime();
+            const delta = clock.getDelta();
+
+            // Animate characters
+            characters.forEach(char => animateCharacter(char, time));
+
+            // Animate jellyfish
+            jellyfish.forEach((j, i) => animateJellyfish(j, time, i));
+
+            // Animate environment
+            animateSeaweed(time);
+            animateBubbles(time);
+            animatePlankton(time);
+
+            // Update caustics
+            causticMaterial.uniforms.time.value = time;
+
+            // Update god rays
+            godRayMaterial.uniforms.time.value = time;
+
+            // Update controls
+            controls.update();
+
+            // Render with post-processing
+            composer.render();
+        }
+
+        // Hide loading screen
+        setTimeout(() => {
+            document.getElementById('loading').classList.add('hidden');
+        }, 1500);
+
+        // Start animation
+        animate();
+
+        console.log('🍍 Bikini Bottom 3D loaded successfully!');
+        console.log('Drag to rotate, scroll to zoom, enjoy the underwater world!');
+    </script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Opus 4.7</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; height: 100%; }
+  canvas { display: block; }
+  #label {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    color: #FFFFFF;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+<div id="label">Opus 4.7</div>
+<canvas id="c"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const N = 7;
+  const POLY_R = 250;
+  const BALL_R = 15;
+  const GRAVITY = 500;
+  const RESTITUTION = 0.8;
+  const FRICTION = 0.98;
+  const ROT_SPEED = 0.5;
+
+  let rotation = 0;
+  const ball = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    vx: 0,
+    vy: 0
+  };
+
+  let lastTime = performance.now();
+
+  function getCenter() {
+    return { cx: canvas.width / 2, cy: canvas.height / 2 };
+  }
+
+  function step(dt) {
+    const { cx, cy } = getCenter();
+
+    rotation += ROT_SPEED * dt;
+
+    ball.vy += GRAVITY * dt;
+
+    const subSteps = 4;
+    const sdt = dt / subSteps;
+
+    for (let s = 0; s < subSteps; s++) {
+      ball.x += ball.vx * sdt;
+      ball.y += ball.vy * sdt;
+
+      for (let i = 0; i < N; i++) {
+        const a1 = rotation + (Math.PI * 2 * i) / N;
+        const a2 = rotation + (Math.PI * 2 * (i + 1)) / N;
+        const v1x = cx + POLY_R * Math.cos(a1);
+        const v1y = cy + POLY_R * Math.sin(a1);
+        const v2x = cx + POLY_R * Math.cos(a2);
+        const v2y = cy + POLY_R * Math.sin(a2);
+
+        const mx = (v1x + v2x) / 2;
+        const my = (v1y + v2y) / 2;
+        let nx = mx - cx;
+        let ny = my - cy;
+        const nLen = Math.hypot(nx, ny);
+        nx /= nLen;
+        ny /= nLen;
+
+        const dist = (ball.x - mx) * nx + (ball.y - my) * ny;
+
+        if (dist + BALL_R > 0) {
+          const penetration = dist + BALL_R;
+          ball.x -= nx * penetration;
+          ball.y -= ny * penetration;
+
+          const tx = -ny;
+          const ty = nx;
+          const vn = ball.vx * nx + ball.vy * ny;
+          const vt = ball.vx * tx + ball.vy * ty;
+
+          if (vn > 0) {
+            const newVn = -vn * RESTITUTION;
+            const newVt = vt * FRICTION;
+            ball.vx = newVn * nx + newVt * tx;
+            ball.vy = newVn * ny + newVt * ty;
+          }
+
+          const wallVx = -ROT_SPEED * (my - cy);
+          const wallVy = ROT_SPEED * (mx - cx);
+          const wallVn = wallVx * nx + wallVy * ny;
+          if (wallVn < 0) {
+            ball.vx += wallVn * nx * 0.5;
+            ball.vy += wallVn * ny * 0.5;
+          }
+        }
+      }
+    }
+  }
+
+  function draw() {
+    const { cx, cy } = getCenter();
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const a = rotation + (Math.PI * 2 * i) / N;
+      const x = cx + POLY_R * Math.cos(a);
+      const y = cy + POLY_R * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = '#FF0000';
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function loop(now) {
+    let dt = (now - lastTime) / 1000;
+    lastTime = now;
+    if (dt > 0.05) dt = 0.05;
+    step(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame((t) => { lastTime = t; loop(t); });
+})();
+</script>
+</body>
+</html>

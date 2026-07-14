@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Opus 4.7</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  canvas { display: block; position: absolute; top: 0; left: 0; }
+  #title {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.85);
+    font-size: 14px;
+    letter-spacing: 6px;
+    font-weight: 300;
+    text-transform: uppercase;
+    z-index: 10;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+    pointer-events: none;
+  }
+  #title strong {
+    display: block;
+    font-size: 28px;
+    letter-spacing: 8px;
+    font-weight: 600;
+    margin-top: 4px;
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+<div id="title">Cinematic Launch<strong>Opus 4.7</strong></div>
+<canvas id="c"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- Utilities ----------
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const easeInOut = t => t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+  const easeInCubic = t => t*t*t;
+  const easeOutCubic = t => 1 - Math.pow(1-t, 3);
+
+  // ---------- Stars ----------
+  const stars = [];
+  function initStars() {
+    stars.length = 0;
+    const count = Math.floor(W * H / 6000);
+    for (let i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H * 0.55,
+        r: Math.random() * 1.3 + 0.2,
+        tw: Math.random() * Math.PI * 2,
+        twSpeed: rand(0.6, 2.0),
+        base: rand(0.4, 1.0)
+      });
+    }
+  }
+  initStars();
+  window.addEventListener('resize', initStars);
+
+  // ---------- Clouds ----------
+  const clouds = [];
+  function initClouds() {
+    clouds.length = 0;
+    for (let i = 0; i < 6; i++) {
+      clouds.push({
+        x: Math.random() * W,
+        y: rand(H * 0.15, H * 0.45),
+        s: rand(0.6, 1.4),
+        v: rand(3, 8),
+        puffs: Array.from({length: 6}, () => ({
+          ox: rand(-40, 40),
+          oy: rand(-10, 10),
+          r: rand(18, 34)
+        }))
+      });
+    }
+  }
+  initClouds();
+  window.addEventListener('resize', initClouds);
+
+  // ---------- Particles ----------
+  class Particle {
+    constructor() { this.active = false; }
+    spawn(opts) {
+      this.active = true;
+      this.x = opts.x;
+      this.y = opts.y;
+      this.vx = opts.vx;
+      this.vy = opts.vy;
+      this.life = 0;
+      this.maxLife = opts.maxLife;
+      this.size = opts.size;
+      this.growth = opts.growth || 0.5;
+      this.type = opts.type || 'smoke';
+      this.rot = Math.random() * Math.PI * 2;
+      this.rotSpeed = rand(-0.5, 0.5);
+      this.seed = Math.random() * 1000;
+      this.startDark = opts.startDark || 0;
+      this.opacity = opts.opacity || 1;
+    }
+    update(dt, wind) {
+      this.life += dt;
+      if (this.life >= this.maxLife) { this.active = false; return; }
+      this.x += this.vx * dt + wind * dt;
+      this.y += this.vy * dt;
+      this.vx *= 0.985;
+      this.vy *= 0.985;
+      if (this.type === 'smoke') {
+        this.vy -= 8 * dt; // rise
+      } else if (this.type === 'ember') {
+        this.vy += 40 * dt; // gravity
+      }
+      this.rot += this.rotSpeed * dt;
+    }
+  }
+
+  const MAX_PARTICLES = 600;
+  const pool = Array.from({length: MAX_PARTICLES}, () => new Particle());
+  function getParticle() {
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      if (!pool[i].active) return pool[i];
+    }
+    return null;
+  }
+
+  // ---------- Scene geometry ----------
+  function islandY() { return H * 0.78; }
+  function padX() { return W * 0.5; }
+  function padY() { return islandY() - 10; }
+
+  // ---------- Rocket ----------
+  // Rocket drawn at origin (0,0) as the base of the rocket (bottom center)
+  // height ~ 260px, width ~ 46px
+  function drawRocket(cx, cy, scale, shakeX, shakeY, flamePower) {
+    ctx.save();
+    ctx.translate(cx + shakeX, cy + shakeY);
+    ctx.scale(scale, scale);
+
+    const RW = 46;      // rocket body width
+    const RH = 210;     // rocket body (stages) height
+    const NOSE = 58;    // nose cone height
+    const halfW = RW / 2;
+
+    // --- Exhaust flame (drawn before body so body sits in front of flame top)
+    if (flamePower > 0) {
+      drawFlame(0, 4, flamePower);
+    }
+
+    // --- Engine nozzles cluster (bottom)
+    const nozzleY = 0;
+    const nozzleW = 10;
+    const nozzleH = 12;
+    ctx.fillStyle = '#1a1a1d';
+    for (let i = -2; i <= 2; i++) {
+      const nx = i * 9;
+      // bell shape
+      ctx.beginPath();
+      ctx.moveTo(nx - nozzleW/2, nozzleY);
+      ctx.lineTo(nx - nozzleW/2 - 1.5, nozzleY - nozzleH);
+      ctx.lineTo(nx + nozzleW/2 + 1.5, nozzleY - nozzleH);
+      ctx.lineTo(nx + nozzleW/2, nozzleY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#444';
+      ctx.fillRect(nx - nozzleW/2 - 1.5, nozzleY - nozzleH - 2, nozzleW + 3, 2);
+      ctx.fillStyle = '#1a1a1d';
+    }
+
+    // --- Fins (3-4 stabilizers: left, right, and faint back center)
+    ctx.fillStyle = '#2a2a2e';
+    // left fin
+    ctx.beginPath();
+    ctx.moveTo(-halfW, -2);
+    ctx.lineTo(-halfW - 18, -2);
+    ctx.lineTo(-halfW - 2, -38);
+    ctx.lineTo(-halfW, -38);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // right fin
+    ctx.beginPath();
+    ctx.moveTo(halfW, -2);
+    ctx.lineTo(halfW + 18, -2);
+    ctx.lineTo(halfW + 2, -38);
+    ctx.lineTo(halfW, -38);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // center back fin (thin)
+    ctx.fillStyle = '#202024';
+    ctx.fillRect(-2, -30, 4, 28);
+
+    // --- First stage (bottom, largest)
+    const stage1Top = -RH * 0.58;
+    const stage1Grad = ctx.createLinearGradient(-halfW, 0, halfW, 0);
+    stage1Grad.addColorStop(0, '#c8cbd0');
+    stage1Grad.addColorStop(0.3, '#f7f7f9');
+    stage1Grad.addColorStop(0.7, '#ffffff');
+    stage1Grad.addColorStop(1, '#9a9da3');
+    ctx.fillStyle = stage1Grad;
+    ctx.fillRect(-halfW, stage1Top, RW, -stage1Top);
+
+    // first stage panel lines
+    ctx.strokeStyle = 'rgba(40,40,50,0.28)';
+    ctx.lineWidth = 0.6;
+    for (let y = stage1Top + 18; y < 0; y += 18) {
+      ctx.beginPath();
+      ctx.moveTo(-halfW, y);
+      ctx.lineTo(halfW, y);
+      ctx.stroke();
+    }
+    // vertical seam
+    ctx.beginPath();
+    ctx.moveTo(-halfW + 14, stage1Top);
+    ctx.lineTo(-halfW + 14, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(halfW - 14, stage1Top);
+    ctx.lineTo(halfW - 14, 0);
+    ctx.stroke();
+
+    // black accent band near bottom
+    ctx.fillStyle = '#1b1d22';
+    ctx.fillRect(-halfW, -12, RW, 6);
+    // rivets
+    ctx.fillStyle = 'rgba(30,30,40,0.45)';
+    for (let y = stage1Top + 6; y < -18; y += 10) {
+      ctx.beginPath(); ctx.arc(-halfW + 3, y, 0.7, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(halfW - 3, y, 0.7, 0, Math.PI*2); ctx.fill();
+    }
+
+    // access hatch
+    ctx.fillStyle = '#b8bbc1';
+    ctx.fillRect(-6, stage1Top + 28, 12, 14);
+    ctx.strokeStyle = 'rgba(20,20,30,0.5)';
+    ctx.lineWidth = 0.6;
+    ctx.strokeRect(-6, stage1Top + 28, 12, 14);
+    ctx.beginPath(); ctx.arc(0, stage1Top + 35, 1.1, 0, Math.PI*2);
+    ctx.fillStyle = '#333'; ctx.fill();
+
+    // --- Interstage (dark segment)
+    const interTop = stage1Top - 10;
+    ctx.fillStyle = '#2a2c32';
+    ctx.fillRect(-halfW, stage1Top - 10, RW, 10);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(-halfW, stage1Top - 11, RW, 1.5);
+    ctx.fillRect(-halfW, stage1Top - 1, RW, 1.5);
+
+    // --- Second stage (middle)
+    const stage2H = RH * 0.28;
+    const stage2Top = interTop - stage2H;
+    const stage2Grad = ctx.createLinearGradient(-halfW, 0, halfW, 0);
+    stage2Grad.addColorStop(0, '#c2c5ca');
+    stage2Grad.addColorStop(0.5, '#fafafc');
+    stage2Grad.addColorStop(1, '#9497a0');
+    ctx.fillStyle = stage2Grad;
+    ctx.fillRect(-halfW, stage2Top, RW, stage2H);
+
+    // panel lines on second stage
+    ctx.strokeStyle = 'rgba(40,40,50,0.22)';
+    ctx.lineWidth = 0.5;
+    for (let y = stage2Top + 12; y < interTop; y += 14) {
+      ctx.beginPath();
+      ctx.moveTo(-halfW, y);
+      ctx.lineTo(halfW, y);
+      ctx.stroke();
+    }
+
+    // Colored logo band (red-orange)
+    const bandY = stage2Top + stage2H * 0.4;
+    const bandGrad = ctx.createLinearGradient(0, bandY, 0, bandY + 10);
+    bandGrad.addColorStop(0, '#e84a3a');
+    bandGrad.addColorStop(1, '#b82a1a');
+    ctx.fillStyle = bandGrad;
+    ctx.fillRect(-halfW, bandY, RW, 10);
+
+    // tiny logo text (stars)
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 7px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('★ O4.7', 0, bandY + 7.5);
+
+    // small flag (blue with stars, generic space-agency style)
+    ctx.fillStyle = '#1f4eb8';
+    ctx.fillRect(-halfW + 4, stage2Top + 6, 10, 7);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 5px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('★★', -halfW + 9, stage2Top + 11);
+
+    // --- Nose cone (payload fairing)
+    const noseBase = stage2Top;
+    ctx.beginPath();
+    ctx.moveTo(-halfW, noseBase);
+    ctx.quadraticCurveTo(-halfW * 0.4, noseBase - NOSE * 0.55, 0, noseBase - NOSE);
+    ctx.quadraticCurveTo(halfW * 0.4, noseBase - NOSE * 0.55, halfW, noseBase);
+    ctx.closePath();
+    const noseGrad = ctx.createLinearGradient(-halfW, 0, halfW, 0);
+    noseGrad.addColorStop(0, '#353840');
+    noseGrad.addColorStop(0.5, '#5c6068');
+    noseGrad.addColorStop(1, '#1c1e22');
+    ctx.fillStyle = noseGrad;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+
+    // nose seam line
+    ctx.beginPath();
+    ctx.moveTo(0, noseBase);
+    ctx.lineTo(0, noseBase - NOSE + 6);
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.stroke();
+
+    // tiny highlight on nose
+    ctx.beginPath();
+    ctx.moveTo(-halfW * 0.25, noseBase - 6);
+    ctx.quadraticCurveTo(-halfW * 0.15, noseBase - NOSE * 0.55, -2, noseBase - NOSE + 4);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // subtle body highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(-halfW + 4, stage1Top + 4, 3, (stage2Top - stage1Top) - 8);
+    ctx.fillRect(-halfW + 4, stage2Top + 4, 3, stage2H - 8);
+
+    ctx.restore();
+  }
+
+  function drawFlame(cx, cy, power) {
+    // power 0..1
+    if (power <= 0) return;
+    const flicker = 0.85 + Math.random() * 0.3;
+    const len = 80 * power * flicker;
+    const width = 26 * power;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.globalCompositeOperation = 'lighter';
+
+    // outer red glow
+    let g = ctx.createRadialGradient(0, len*0.3, 2, 0, len*0.3, width*2.2);
+    g.addColorStop(0, 'rgba(255,120,40,0.6)');
+    g.addColorStop(0.5, 'rgba(255,70,20,0.3)');
+    g.addColorStop(1, 'rgba(255,30,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, len*0.3, width*2.2, len*1.0, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // orange body
+    g = ctx.createRadialGradient(0, len*0.4, 2, 0, len*0.4, width*1.3);
+    g.addColorStop(0, 'rgba(255,200,60,0.95)');
+    g.addColorStop(0.45, 'rgba(255,140,40,0.8)');
+    g.addColorStop(1, 'rgba(255,80,20,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(-width, 0);
+    ctx.quadraticCurveTo(-width*0.6, len*0.6, 0, len * flicker);
+    ctx.quadraticCurveTo(width*0.6, len*0.6, width, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // inner bright white-yellow core
+    g = ctx.createRadialGradient(0, len*0.2, 1, 0, len*0.2, width*0.6);
+    g.addColorStop(0, 'rgba(255,255,230,1)');
+    g.addColorStop(0.5, 'rgba(255,230,120,0.9)');
+    g.addColorStop(1, 'rgba(255,180,40,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(-width*0.5, 0);
+    ctx.quadraticCurveTo(-width*0.3, len*0.5, 0, len*0.7 * flicker);
+    ctx.quadraticCurveTo(width*0.3, len*0.5, width*0.5, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // secondary flicker flares
+    for (let i = 0; i < 3; i++) {
+      const fx = rand(-width*0.3, width*0.3);
+      const fy = rand(len*0.4, len*0.9);
+      const fs = rand(3, 8);
+      g = ctx.createRadialGradient(fx, fy, 0, fx, fy, fs*2);
+      g.addColorStop(0, 'rgba(255,220,120,0.9)');
+      g.addColorStop(1, 'rgba(255,100,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(fx, fy, fs*2, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // ---------- Launch pad / tower ----------
+  function drawLaunchPad(rocketLifted) {
+    const cx = padX();
+    const baseY = padY();
+    // platform
+    ctx.fillStyle = '#3a3d44';
+    ctx.fillRect(cx - 52, baseY, 104, 14);
+    ctx.fillStyle = '#22252c';
+    ctx.fillRect(cx - 52, baseY + 12, 104, 3);
+
+    // support legs
+    ctx.strokeStyle = '#2a2d34';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - 45, baseY + 14); ctx.lineTo(cx - 60, baseY + 30);
+    ctx.moveTo(cx + 45, baseY + 14); ctx.lineTo(cx + 60, baseY + 30);
+    ctx.stroke();
+
+    // scaffolding tower to the right of rocket
+    const towerX = cx + 40;
+    const towerTop = baseY - 180;
+    ctx.strokeStyle = '#4a4d55';
+    ctx.lineWidth = 2.2;
+    // verticals
+    ctx.beginPath();
+    ctx.moveTo(towerX, baseY); ctx.lineTo(towerX, towerTop);
+    ctx.moveTo(towerX + 22, baseY); ctx.lineTo(towerX + 22, towerTop);
+    ctx.stroke();
+    // horizontals & cross braces
+    ctx.lineWidth = 1.2;
+    for (let y = baseY - 10; y > towerTop; y -= 22) {
+      ctx.beginPath();
+      ctx.moveTo(towerX, y); ctx.lineTo(towerX + 22, y);
+      ctx.moveTo(towerX, y); ctx.lineTo(towerX + 22, y - 22);
+      ctx.moveTo(towerX + 22, y); ctx.lineTo(towerX, y - 22);
+      ctx.stroke();
+    }
+    // tower top light
+    ctx.fillStyle = '#ff5544';
+    ctx.beginPath();
+    ctx.arc(towerX + 11, towerTop - 2, 2.2, 0, Math.PI*2);
+    ctx.fill();
+
+    // access arm (retracts when lifted)
+    const armExtend = rocketLifted ? 0 : 1;
+    if (armExtend > 0) {
+      ctx.strokeStyle = '#50535b';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(towerX, baseY - 120);
+      ctx.lineTo(cx + 24 * armExtend, baseY - 120);
+      ctx.stroke();
+    }
+
+    // small left support strut
+    ctx.strokeStyle = '#3a3d44';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 40, baseY);
+    ctx.lineTo(cx - 50, baseY - 40);
+    ctx.stroke();
+  }
+
+  // ---------- Island & ocean ----------
+  function drawOcean(t) {
+    const horizon = H * 0.62;
+    const oceanGrad = ctx.createLinearGradient(0, horizon, 0, H);
+    oceanGrad.addColorStop(0, '#2a4a6a');
+    oceanGrad.addColorStop(0.4, '#1a3854');
+    oceanGrad.addColorStop(1, '#0a1a2a');
+    ctx.fillStyle = oceanGrad;
+    ctx.fillRect(0, horizon, W, H - horizon);
+
+    // wave lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 14; i++) {
+      const y = horizon + 6 + i * ((H - horizon) / 14);
+      ctx.beginPath();
+      const amp = 1.5 + i * 0.2;
+      const freq = 0.012 + i * 0.0005;
+      const phase = t * (0.5 + i * 0.08);
+      ctx.moveTo(0, y);
+      for (let x = 0; x <= W; x += 14) {
+        ctx.lineTo(x, y + Math.sin(x * freq + phase) * amp);
+      }
+      ctx.stroke();
+    }
+
+    // shimmer highlights
+    ctx.strokeStyle = 'rgba(255,220,160,0.12)';
+    for (let i = 0; i < 5; i++) {
+      const y = horizon + 10 + i * 8;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 18) {
+        ctx.lineTo(x, y + Math.sin(x * 0.02 + t * 1.5 + i) * 2);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function drawIsland(t) {
+    const cx = padX();
+    const baseY = islandY();
+    // Island sand shape
+    ctx.fillStyle = '#d9b77a';
+    ctx.beginPath();
+    ctx.moveTo(cx - 280, baseY + 32);
+    ctx.quadraticCurveTo(cx - 220, baseY - 8, cx - 100, baseY - 2);
+    ctx.quadraticCurveTo(cx, baseY - 14, cx + 120, baseY - 4);
+    ctx.quadraticCurveTo(cx + 240, baseY - 2, cx + 300, baseY + 34);
+    ctx.lineTo(cx + 320, H);
+    ctx.lineTo(cx - 320, H);
+    ctx.closePath();
+    ctx.fill();
+
+    // darker sand edge
+    ctx.fillStyle = '#b89457';
+    ctx.beginPath();
+    ctx.moveTo(cx - 280, baseY + 32);
+    ctx.quadraticCurveTo(cx - 220, baseY - 8, cx - 100, baseY - 2);
+    ctx.quadraticCurveTo(cx, baseY - 14, cx + 120, baseY - 4);
+    ctx.quadraticCurveTo(cx + 240, baseY - 2, cx + 300, baseY + 34);
+    ctx.lineTo(cx + 300, baseY + 40);
+    ctx.quadraticCurveTo(cx + 230, baseY + 10, cx, baseY + 4);
+    ctx.quadraticCurveTo(cx - 230, baseY + 10, cx - 300, baseY + 40);
+    ctx.closePath();
+    ctx.fill();
+
+    // vegetation mound behind pad
+    ctx.fillStyle = '#264a2a';
+    ctx.beginPath();
+    ctx.ellipse(cx - 160, baseY - 6, 90, 22, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#2f5a32';
+    ctx.beginPath();
+    ctx.ellipse(cx - 160, baseY - 10, 80, 18, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = '#264a2a';
+    ctx.beginPath();
+    ctx.ellipse(cx + 170, baseY - 4, 80, 18, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#2f5a32';
+    ctx.beginPath();
+    ctx.ellipse(cx + 170, baseY - 8, 70, 14, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // grass tufts
+    ctx.strokeStyle = '#3a6b3a';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 20; i++) {
+      const gx = cx - 250 + (i * 25) + Math.sin(i) * 6;
+      if (Math.abs(gx - cx) < 70) continue;
+      const gy = baseY - 2;
+      for (let j = 0; j < 3; j++) {
+        ctx.beginPath();
+        ctx.moveTo(gx + j, gy);
+        ctx.lineTo(gx + j + Math.sin(t + i + j) * 0.6, gy - 4);
+        ctx.stroke();
+      }
+    }
+
+    // Palm trees
+    drawPalm(cx - 210, baseY - 4, 1.0, t * 0.8);
+    drawPalm(cx - 155, baseY - 8, 0.78, t * 0.9 + 1.2);
+    drawPalm(cx + 180, baseY - 6, 0.95, t * 0.85 + 0.4);
+    drawPalm(cx + 240, baseY - 2, 0.7, t * 1.0 + 2.1);
+  }
+
+  function drawPalm(x, y, scale, t) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    const sway = Math.sin(t) * 3;
+
+    // Trunk (curved)
+    ctx.strokeStyle = '#5a3a20';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(4 + sway*0.3, -40, 2 + sway*0.6, -80);
+    ctx.quadraticCurveTo(-2 + sway*0.9, -110, 5 + sway, -138);
+    ctx.stroke();
+
+    // trunk rings
+    ctx.strokeStyle = '#3e2815';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+      const ty = -14 - i * 16;
+      const tx = Math.sin(i * 0.5) * 1.2 + sway * (i / 8);
+      ctx.beginPath();
+      ctx.moveTo(tx - 3, ty);
+      ctx.lineTo(tx + 3, ty);
+      ctx.stroke();
+    }
+
+    // leaves
+    const topX = 5 + sway;
+    const topY = -138;
+    ctx.fillStyle = '#2f6b36';
+    const leafCount = 7;
+    for (let i = 0; i < leafCount; i++) {
+      const angle = (i / leafCount) * Math.PI * 2 + Math.sin(t * 0.6) * 0.1;
+      const len = 42 + Math.sin(i * 1.7) * 6;
+      const spread = 0.55;
+      const ex = topX + Math.cos(angle) * len;
+      const ey = topY + Math.sin(angle) * len * 0.6 - 6;
+      ctx.beginPath();
+      ctx.moveTo(topX, topY);
+      ctx.quadraticCurveTo(
+        topX + Math.cos(angle) * len * 0.5,
+        topY + Math.sin(angle) * len * 0.25,
+        ex, ey
+      );
+      ctx.quadraticCurveTo(
+        topX + Math.cos(angle + spread) * len * 0.55,
+        topY + Math.sin(angle + spread) * len * 0.3 - 3,
+        topX, topY
+      );
+      ctx.fill();
+    }
+    // darker leaf shadow layer
+    ctx.fillStyle = '#1f4a26';
+    for (let i = 0; i < leafCount; i++) {
+      const angle = (i / leafCount) * Math.PI * 2 + Math.sin(t * 0.6) * 0.1;
+      const len = 30;
+      const spread = 0.35;
+      const ex = topX + Math.cos(angle) * len;
+      const ey = topY + Math.sin(angle) * len * 0.6 - 4;
+      ctx.beginPath();
+      ctx.moveTo(topX, topY);
+      ctx.quadraticCurveTo(
+        topX + Math.cos(angle) * len * 0.5,
+        topY + Math.sin(angle) * len * 0.25,
+        ex, ey
+      );
+      ctx.quadraticCurveTo(
+        topX + Math.cos(angle + spread) * len * 0.55,
+        topY + Math.sin(angle + spread) * len * 0.3 - 2,
+        topX, topY
+      );
+      ctx.fill();
+    }
+
+    // coconuts
+    ctx.fillStyle = '#3a2410';
+    ctx.beginPath(); ctx.arc(topX - 3, topY + 4, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(topX + 3, topY + 5, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(topX + 1, topY + 8, 2.5, 0, Math.PI*2); ctx.fill();
+
+    ctx.restore();
+  }
+
+  // ---------- Sky & background ----------
+  function drawSky(t) {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0a0e2a');
+    g.addColorStop(0.35, '#1f2a55');
+    g.addColorStop(0.55, '#4a3a6a');
+    g.addColorStop(0.68, '#c56a4e');
+    g.addColorStop(0.72, '#e89a5a');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H * 0.72);
+
+    // stars
+    for (const s of stars) {
+      s.tw += s.twSpeed * 0.02;
+      const a = s.base * (0.55 + 0.45 * Math.sin(s.tw));
+      const fade = 1 - (s.y / (H * 0.55));
+      ctx.fillStyle = `rgba(255,255,240,${a * fade * 0.9})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // sun/moon-ish glow at horizon
+    const hx = W * 0.72;
+    const hy = H * 0.62;
+    const sg = ctx.createRadialGradient(hx, hy, 5, hx, hy, 260);
+    sg.addColorStop(0, 'rgba(255,200,140,0.55)');
+    sg.addColorStop(0.4, 'rgba(255,140,80,0.15)');
+    sg.addColorStop(1, 'rgba(255,100,60,0)');
+    ctx.fillStyle = sg;
+    ctx.fillRect(0, H*0.4, W, H*0.4);
+
+    // clouds
+    for (const c of clouds) {
+      c.x += c.v * 0.003;
+      if (c.x - 80 > W) c.x = -80;
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      for (const p of c.puffs) {
+        const pg = ctx.createRadialGradient(c.x + p.ox, c.y + p.oy, 0, c.x + p.ox, c.y + p.oy, p.r * c.s);
+        pg.addColorStop(0, 'rgba(255,220,200,0.85)');
+        pg.addColorStop(0.5, 'rgba(230,180,170,0.35)');
+        pg.addColorStop(1, 'rgba(180,140,140,0)');
+        ctx.fillStyle = pg;
+        ctx.beginPath();
+        ctx.arc(c.x + p.ox, c.y + p.oy, p.r * c.s, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  // ---------- Particle render ----------
+  function drawParticles(filter) {
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      const p = pool[i];
+      if (!p.active) continue;
+      if (filter && !filter(p)) continue;
+      const t = p.life / p.maxLife;
+      let size = p.size + p.growth * p.life * 40;
+      let alpha;
+      if (p.type === 'smoke') {
+        alpha = Math.sin(t * Math.PI) * 0.9 * p.opacity;
+        // color shift: white -> gray -> dark gray
+        const shade = 235 - t * (120 + p.startDark);
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
+        g.addColorStop(0, `rgba(${shade+10},${shade+10},${shade+14},${alpha})`);
+        g.addColorStop(0.5, `rgba(${shade-10},${shade-10},${shade-6},${alpha*0.7})`);
+        g.addColorStop(1, `rgba(${shade-40},${shade-40},${shade-36},0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, size, 0, Math.PI*2);
+        ctx.fill();
+      } else if (p.type === 'ember') {
+        alpha = (1 - t) * p.opacity;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2);
+        g.addColorStop(0, `rgba(255,230,140,${alpha})`);
+        g.addColorStop(0.4, `rgba(255,140,40,${alpha*0.6})`);
+        g.addColorStop(1, `rgba(255,80,20,0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 2, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      } else if (p.type === 'glow') {
+        alpha = Math.sin(t * Math.PI) * p.opacity;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
+        g.addColorStop(0, `rgba(255,200,120,${alpha*0.8})`);
+        g.addColorStop(0.5, `rgba(255,120,40,${alpha*0.3})`);
+        g.addColorStop(1, `rgba(255,60,0,0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, size, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  // ---------- Emit smoke ----------
+  function emitBaseSmoke(rocketX, rocketY, intensity) {
+    const count = Math.floor(6 * intensity);
+    for (let i = 0; i < count; i++) {
+      const p = getParticle();
+      if (!p) return;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      p.spawn({
+        x: rocketX + rand(-25, 25),
+        y: rocketY + rand(-5, 10),
+        vx: side * rand(40, 160) * intensity,
+        vy: rand(-30, 10),
+        maxLife: rand(2.5, 4.5),
+        size: rand(18, 36),
+        growth: rand(0.8, 1.6),
+        type: 'smoke',
+        startDark: rand(0, 40),
+        opacity: 0.85
+      });
+    }
+  }
+
+  function emitExhaustSmoke(rocketX, rocketY, vx, vy, intensity) {
+    const count = Math.floor(4 * intensity);
+    for (let i = 0; i < count; i++) {
+      const p = getParticle();
+      if (!p) return;
+      p.spawn({
+        x: rocketX + rand(-8, 8),
+        y: rocketY + rand(0, 8),
+        vx: rand(-30, 30) - vx * 0.3,
+        vy: rand(20, 60) - vy * 0.2,
+        maxLife: rand(1.8, 3.2),
+        size: rand(10, 22),
+        growth: rand(0.6, 1.3),
+        type: 'smoke',
+        startDark: rand(0, 30),
+        opacity: 0.8
+      });
+    }
+  }
+
+  function emitEmbers(rocketX, rocketY, intensity) {
+    if (Math.random() > intensity * 0.7) return;
+    const count = Math.floor(2 + 3 * intensity);
+    for (let i = 0; i < count; i++) {
+      const p = getParticle();
+      if (!p) return;
+      const ang = rand(0, Math.PI * 2);
+      const sp = rand(40, 160);
+      p.spawn({
+        x: rocketX + rand(-6, 6),
+        y: rocketY + rand(-4, 4),
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp * 0.6 + 30,
+        maxLife: rand(0.6, 1.4),
+        size: rand(1.2, 2.8),
+        type: 'ember',
+        opacity: 1
+      });
+    }
+  }
+
+  function emitGlow(rocketX, rocketY, intensity) {
+    const p = getParticle();
+    if (!p) return;
+    p.spawn({
+      x: rocketX + rand(-6, 6),
+      y: rocketY + rand(0, 10),
+      vx: rand(-10, 10),
+      vy: rand(-20, 0),
+      maxLife: rand(0.4, 0.8),
+      size: rand(30, 60),
+      type: 'glow',
+      opacity: intensity
+    });
+  }
+
+  // ---------- Update all particles ----------
+  function updateParticles(dt, wind) {
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      const p = pool[i];
+      if (p.active) p.update(dt, wind);
+    }
+  }
+
+  // ---------- Water ripples near launch ----------
+  const ripples = [];
+  function addRipple(x) {
+    ripples.push({ x, y: H * 0.78, r: 8, life: 0, maxLife: 2.2 });
+    if (ripples.length > 30) ripples.shift();
+  }
+  function drawRipples(dt) {
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i];
+      r.life += dt;
+      r.r += 40 * dt;
+      if (r.life > r.maxLife) { ripples.splice(i, 1); continue; }
+      const a = (1 - r.life / r.maxLife) * 0.4;
+      ctx.strokeStyle = `rgba(220,235,255,${a})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(r.x, r.y + 20, r.r, r.r * 0.3, 0, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+
+  // ---------- Animation cycle ----------
+  const CYCLE = 12.0;
+  let time = 0;
+  let lastT = performance.now();
+
+  function computeRocketState(cycleT) {
+    // Returns { y, scale, flame, shakeX, shakeY, phase, baseSmokeIntensity, exhaustIntensity }
+    const state = {
+      offsetY: 0,
+      scale: 1,
+      flame: 0,
+      shakeX: 0,
+      shakeY: 0,
+      phase: 'pre',
+      baseSmokeIntensity: 0,
+      exhaustIntensity: 0,
+      above: false
+    };
+
+    if (cycleT < 1.5) {
+      // Phase 1: pre-launch (ignition)
+      state.phase = 'pre';
+      const p = cycleT / 1.5;
+      state.flame = p * 0.55;
+      state.baseSmokeIntensity = p * 1.2;
+      state.shakeX = (Math.random() - 0.5) * p * 2.5;
+      state.shakeY = (Math.random() - 0.5) * p * 2.5;
+      state.offsetY = 0;
+    } else if (cycleT < 4.0) {
+      // Phase 2: liftoff (slow accelerate)
+      state.phase = 'lift';
+      const p = (cycleT - 1.5) / 2.5;
+      // distance traveled (pixel) — accelerating
+      const d = easeInCubic(p) * (H * 0.45);
+      state.offsetY = -d;
+      state.flame = 0.9 + Math.random() * 0.15;
+      state.baseSmokeIntensity = 1.6 * (1 - p * 0.5);
+      state.exhaustIntensity = 1.2;
+      state.shakeX = (Math.random() - 0.5) * 3.2;
+      state.shakeY = (Math.random() - 0.5) * 2.5;
+      state.scale = 1 - p * 0.08;
+    } else if (cycleT < 7.0) {
+      // Phase 3: ascent & exit
+      state.phase = 'ascent';
+      const p = (cycleT - 4.0) / 3.0;
+      // already at H*0.45, need to go past top (need H*0.45 + more)
+      const startD = H * 0.45;
+      const extraD = easeInCubic(p) * (H * 1.1);
+      state.offsetY = -(startD + extraD);
+      state.flame = 1.0 * (1 - p * 0.5);
+      state.baseSmokeIntensity = Math.max(0, 0.6 - p * 0.8);
+      state.exhaustIntensity = Math.max(0.2, 1.2 - p * 1.3);
+      state.shakeX = (Math.random() - 0.5) * 2.0 * (1 - p);
+      state.shakeY = (Math.random() - 0.5) * 2.0 * (1 - p);
+      state.scale = 0.92 - p * 0.35;
+      if (state.offsetY < -H) state.above = true;
+    } else if (cycleT < 12.0) {
+      // Phase 4: calm + gentle return
+      state.phase = 'calm';
+      // The rocket descends starting at ~t=10.5 back to pad at t=12
+      if (cycleT < 10.5) {
+        state.above = true;
+        state.offsetY = -(H * 1.2);
+        state.flame = 0;
+      } else {
+        const p = (cycleT - 10.5) / 1.5;
+        const ep = easeInOut(p);
+        state.offsetY = -H * 1.2 * (1 - ep);
+        state.flame = 0;
+        state.scale = 0.57 + ep * 0.43;
+        state.above = state.offsetY < -H;
+        // tiny floating shimmer
+        state.shakeX = Math.sin(cycleT * 4) * 0.8 * (1 - ep);
+      }
+    }
+
+    return state;
+  }
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+    time += dt;
+
+    const cycleT = time % CYCLE;
+    const state = computeRocketState(cycleT);
+    const rocketX = padX();
+    const rocketBaseY = padY() + state.offsetY;
+
+    // --- Screen shake for overall camera (during liftoff)
+    let camShakeX = 0, camShakeY = 0;
+    if (state.phase === 'pre' || state.phase === 'lift') {
+      const intensity = state.phase === 'pre' ? (cycleT / 1.5) * 1.5 : 3.5 - ((cycleT - 1.5) / 2.5) * 1.5;
+      camShakeX = (Math.random() - 0.5) * intensity;
+      camShakeY = (Math.random() - 0.5) * intensity;
+    } else if (state.phase === 'ascent') {
+      const p = (cycleT - 4.0) / 3.0;
+      const intensity = 2.0 * (1 - p);
+      camShakeX = (Math.random() - 0.5) * intensity;
+      camShakeY = (Math.random() - 0.5) * intensity;
+    }
+
+    // --- Emit particles
+    const wind = 12;
+    if (state.phase === 'pre') {
+      if (cycleT > 0.4) emitBaseSmoke(rocketX, padY(), state.baseSmokeIntensity);
+      if (cycleT > 0.8) emitGlow(rocketX, padY() + 4, state.flame);
+    } else if (state.phase === 'lift') {
+      emitBaseSmoke(rocketX, padY(), state.baseSmokeIntensity);
+      emitExhaustSmoke(rocketX, rocketBaseY + 8, 0, -state.offsetY / cycleT, state.exhaustIntensity);
+      emitEmbers(rocketX, rocketBaseY + 6, state.exhaustIntensity);
+      emitGlow(rocketX, rocketBaseY + 6, state.flame);
+      if (Math.random() < 0.3) addRipple(padX() + rand(-120, 120));
+    } else if (state.phase === 'ascent') {
+      if (state.baseSmokeIntensity > 0) emitBaseSmoke(rocketX, padY(), state.baseSmokeIntensity);
+      if (state.exhaustIntensity > 0.2) {
+        emitExhaustSmoke(rocketX, rocketBaseY + 8, 0, 200, state.exhaustIntensity);
+        emitEmbers(rocketX, rocketBaseY + 6, state.exhaustIntensity * 0.4);
+      }
+    }
+
+    updateParticles(dt, wind * (state.phase === 'lift' ? 0.6 : 0.3));
+
+    // ---------- RENDER ----------
+    ctx.save();
+    ctx.translate(camShakeX, camShakeY);
+
+    // sky + stars + clouds
+    drawSky(time);
+
+    // background smoke trail (behind rocket) — smoke particles that are well above ground level
+    // We'll draw all smoke first (behind island), then island, then rocket + flame, then near-ground smoke in front
+    drawParticles(p => p.type === 'smoke' && p.y < islandY() - 40);
+
+    // ocean
+    drawOcean(time);
+    drawRipples(dt);
+
+    // island
+    drawIsland(time);
+
+    // launch pad (behind rocket)
+    drawLaunchPad(state.offsetY < -10);
+
+    // glow halo behind rocket during ignition
+    if (state.flame > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const gx = rocketX;
+      const gy = rocketBaseY + 4;
+      const gr = 80 + state.flame * 80 + Math.random() * 10;
+      const gg = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+      gg.addColorStop(0, `rgba(255,200,100,${0.4 * state.flame})`);
+      gg.addColorStop(0.4, `rgba(255,140,50,${0.2 * state.flame})`);
+      gg.addColorStop(1, 'rgba(255,80,30,0)');
+      ctx.fillStyle = gg;
+      ctx.beginPath();
+      ctx.arc(gx, gy, gr, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // rocket (draw only if partly visible — always draw since scale might matter)
+    if (state.offsetY > -H - 260) {
+      drawRocket(rocketX, rocketBaseY, state.scale, state.shakeX, state.shakeY, state.flame);
+    }
+
+    // near-ground smoke in front
+    drawParticles(p => p.type === 'smoke' && p.y >= islandY() - 40);
+    // embers + glow always on top
+    drawParticles(p => p.type === 'ember' || p.type === 'glow');
+
+    // vignette
+    const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.75);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.restore();
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

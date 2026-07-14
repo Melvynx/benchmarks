@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bouncing Ball in Rotating Heptagon</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a1a; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const SIDES = 7;
+const POLY_RADIUS = 250;
+const BALL_RADIUS = 15;
+const GRAVITY = 500;
+const RESTITUTION = 0.8;
+const FRICTION = 0.98;
+const ROTATION_SPEED = 0.5;
+const TRAIL_LENGTH = 15;
+
+let angle = 0;
+// Ball position in world coords (0,0 = center of polygon)
+let bx = 0, by = -80;
+let vx = 120, vy = 0;
+
+let trail = [];
+let startTime = performance.now();
+
+function getVertices(rotation) {
+  const verts = [];
+  for (let i = 0; i < SIDES; i++) {
+    const a = rotation + (2 * Math.PI * i) / SIDES - Math.PI / 2;
+    verts.push([POLY_RADIUS * Math.cos(a), POLY_RADIUS * Math.sin(a)]);
+  }
+  return verts;
+}
+
+function dot(ax, ay, bx, by) {
+  return ax * bx + ay * by;
+}
+
+function closestPointOnSegment(px, py, ax, ay, bx, by) {
+  const abx = bx - ax, aby = by - ay;
+  const apx = px - ax, apy = py - ay;
+  let t = dot(apx, apy, abx, aby) / dot(abx, aby, abx, aby);
+  t = Math.max(0, Math.min(1, t));
+  return [ax + t * abx, ay + t * aby];
+}
+
+function pointInPolygon(px, py, verts) {
+  let inside = false;
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    const xi = verts[i][0], yi = verts[i][1];
+    const xj = verts[j][0], yj = verts[j][1];
+    if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function update(dt) {
+  angle += ROTATION_SPEED * dt;
+
+  vy += GRAVITY * dt;
+  bx += vx * dt;
+  by += vy * dt;
+
+  const verts = getVertices(angle);
+
+  for (let iter = 0; iter < 8; iter++) {
+    let collided = false;
+
+    for (let i = 0; i < SIDES; i++) {
+      const [ax, ay] = verts[i];
+      const [bxx, byy] = verts[(i + 1) % SIDES];
+
+      const [cpx, cpy] = closestPointOnSegment(bx, by, ax, ay, bxx, byy);
+      const dx = bx - cpx;
+      const dy = by - cpy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < BALL_RADIUS) {
+        // Edge normal (inward-pointing)
+        const ex = bxx - ax, ey = byy - ay;
+        const elen = Math.sqrt(ex * ex + ey * ey);
+        let nx = -ey / elen, ny = ex / elen;
+
+        // Ensure normal points inward (toward center 0,0)
+        const midx = (ax + bxx) / 2, midy = (ay + byy) / 2;
+        if (dot(nx, ny, -midx, -midy) < 0) {
+          nx = -nx; ny = -ny;
+        }
+
+        // Push ball out of wall
+        const overlap = BALL_RADIUS - dist + 0.5;
+        bx += nx * overlap;
+        by += ny * overlap;
+
+        // Wall velocity due to rotation (v = omega x r, where r is contact point relative to center)
+        const wallVx = -ROTATION_SPEED * cpy;
+        const wallVy = ROTATION_SPEED * cpx;
+
+        // Relative velocity
+        const relVx = vx - wallVx;
+        const relVy = vy - wallVy;
+        const velN = dot(relVx, relVy, nx, ny);
+
+        if (velN < 0) {
+          // Reflect relative velocity
+          const refVx = relVx - 2 * velN * nx;
+          const refVy = relVy - 2 * velN * ny;
+
+          // Decompose into normal and tangent for friction
+          const refNcomp = dot(refVx, refVy, nx, ny);
+          const refTx = refVx - refNcomp * nx;
+          const refTy = refVy - refNcomp * ny;
+
+          vx = (refNcomp * RESTITUTION * nx + refTx * FRICTION + refNcomp * RESTITUTION * 0 * nx) + wallVx;
+          vy = (refNcomp * RESTITUTION * ny + refTy * FRICTION) + wallVy;
+
+          // Simpler: apply restitution to normal, friction to tangent
+          vx = refTx * FRICTION + refNcomp * RESTITUTION * nx + wallVx;
+          vy = refTy * FRICTION + refNcomp * RESTITUTION * ny + wallVy;
+
+          collided = true;
+        }
+      }
+    }
+
+    // If ball escaped polygon entirely, force it back
+    if (!pointInPolygon(bx, by, verts)) {
+      let minDist = Infinity, bestNx = 0, bestNy = 0, bestCpx = 0, bestCpy = 0;
+      for (let i = 0; i < SIDES; i++) {
+        const [ax, ay] = verts[i];
+        const [bxx, byy] = verts[(i + 1) % SIDES];
+        const [cpx, cpy] = closestPointOnSegment(bx, by, ax, ay, bxx, byy);
+        const dx = bx - cpx, dy = by - cpy;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < minDist) {
+          minDist = d;
+          bestCpx = cpx; bestCpy = cpy;
+          const ex = bxx - ax, ey = byy - ay;
+          const elen = Math.sqrt(ex * ex + ey * ey);
+          bestNx = -ey / elen; bestNy = ex / elen;
+          const midx = (ax + bxx) / 2, midy = (ay + byy) / 2;
+          if (dot(bestNx, bestNy, -midx, -midy) < 0) {
+            bestNx = -bestNx; bestNy = -bestNy;
+          }
+        }
+      }
+      bx = bestCpx + bestNx * (BALL_RADIUS + 1);
+      by = bestCpy + bestNy * (BALL_RADIUS + 1);
+      collided = true;
+    }
+
+    if (!collided) break;
+  }
+
+  trail.unshift([bx, by]);
+  if (trail.length > TRAIL_LENGTH) trail.pop();
+}
+
+function draw() {
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const verts = getVertices(angle);
+
+  // Draw polygon
+  ctx.beginPath();
+  ctx.moveTo(cx + verts[0][0], cy + verts[0][1]);
+  for (let i = 1; i < SIDES; i++) {
+    ctx.lineTo(cx + verts[i][0], cy + verts[i][1]);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Draw trail
+  for (let i = trail.length - 1; i >= 0; i--) {
+    const alpha = (1 - i / TRAIL_LENGTH) * 0.3;
+    const r = BALL_RADIUS * (1 - i / TRAIL_LENGTH * 0.4);
+    ctx.beginPath();
+    ctx.arc(cx + trail[i][0], cy + trail[i][1], r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(230, 160, 50, ${alpha})`;
+    ctx.fill();
+  }
+
+  const sx = cx + bx, sy = cy + by;
+
+  // Ball glow
+  const glowGrad = ctx.createRadialGradient(sx, sy, BALL_RADIUS * 0.5, sx, sy, BALL_RADIUS * 2.5);
+  glowGrad.addColorStop(0, 'rgba(255, 180, 60, 0.25)');
+  glowGrad.addColorStop(1, 'rgba(255, 180, 60, 0)');
+  ctx.beginPath();
+  ctx.arc(sx, sy, BALL_RADIUS * 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = glowGrad;
+  ctx.fill();
+
+  // Ball
+  const grad = ctx.createRadialGradient(
+    sx - BALL_RADIUS * 0.3, sy - BALL_RADIUS * 0.3, BALL_RADIUS * 0.1,
+    sx, sy, BALL_RADIUS
+  );
+  grad.addColorStop(0, '#ffcc44');
+  grad.addColorStop(0.7, '#e6a030');
+  grad.addColorStop(1, '#cc7720');
+  ctx.beginPath();
+  ctx.arc(sx, sy, BALL_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Number
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${BALL_RADIUS}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('1', sx, sy + 1);
+
+  // Timer
+  const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '14px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`${elapsed}s`, canvas.width / 2, canvas.height - 20);
+}
+
+let lastTime = performance.now();
+function loop(now) {
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  if (dt > 0.05) dt = 0.05;
+
+  const steps = 5;
+  const subDt = dt / steps;
+  for (let i = 0; i < steps; i++) {
+    update(subDt);
+  }
+
+  draw();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

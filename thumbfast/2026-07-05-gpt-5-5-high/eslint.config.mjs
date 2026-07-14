@@ -1,0 +1,181 @@
+import pluginJs from "@eslint/js";
+import pluginReact from "eslint-plugin-react";
+import hooksPlugin from "eslint-plugin-react-hooks";
+// Plugin doesn't support TailwindV4
+// FYI : https://github.com/francoismassart/eslint-plugin-tailwindcss/issues/325
+// import tailwind from "eslint-plugin-tailwindcss";
+import globals from "globals";
+import tseslint from "typescript-eslint";
+
+export default [
+  { files: ["**/*.{js,mjs,cjs,ts,jsx,tsx}"] },
+  { languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } } },
+  { languageOptions: { globals: globals.browser } },
+  pluginJs.configs.recommended,
+  {
+    languageOptions: {
+      parser: "@typescript-eslint/parser",
+      parserOptions: {
+        ecmaVersion: 2021,
+        project: "tsconfig.json",
+        sourceType: "module",
+      },
+    },
+  },
+  // Typescript
+  ...tseslint.configs.strict,
+  ...tseslint.configs.stylistic,
+  pluginReact.configs.flat.recommended, // This is not a plugin object, but a shareable config object
+  pluginReact.configs.flat["jsx-runtime"], // Add this if you are using React 17+
+  {
+    settings: {
+      react: {
+        version: "detect",
+      },
+    },
+  },
+  {
+    plugins: {
+      "react-hooks": hooksPlugin,
+    },
+    rules: hooksPlugin.configs.recommended.rules,
+    settings: {
+      react: {
+        version: "detect",
+      },
+    },
+  },
+  // Rules config
+  {
+    rules: {
+      "react/react-in-jsx-scope": 0,
+      "react/prop-types": 0,
+      "@typescript-eslint/ban-types": 0,
+      "tailwindcss/no-custom-classname": 0,
+      "@typescript-eslint/no-unused-vars": [
+        1,
+        {
+          vars: "all",
+          args: "after-used",
+          ignoreRestSiblings: true,
+          varsIgnorePattern: "^_|^err|^error",
+          argsIgnorePattern: "^_|props|^_error",
+        },
+      ],
+      "linebreak-style": ["error", "unix"],
+      semi: ["error", "always"],
+      "no-extra-semi": "error",
+      "default-case": 0,
+      camelcase: 0,
+      "no-async-promise-executor": "error",
+      "no-await-in-loop": "error",
+      "no-console": "warn",
+      "no-misleading-character-class": "error",
+      "no-multi-assign": "error",
+      "no-multi-str": "error",
+      "no-nested-ternary": 0,
+      "no-new": "error",
+      "no-new-object": "error",
+      "no-new-symbol": "error",
+      "no-new-wrappers": "error",
+      "no-obj-calls": "error",
+      "no-path-concat": "error",
+      "no-return-await": "error",
+      "no-script-url": "error",
+      "no-self-compare": "error",
+      "no-sequences": "error",
+      "no-shadow-restricted-names": "error",
+      "no-sparse-arrays": "error",
+      "no-tabs": "error",
+      "no-template-curly-in-string": "error",
+      "no-this-before-super": "error",
+      "prefer-numeric-literals": "error",
+      "prefer-object-spread": "error",
+      "prefer-rest-params": "error",
+      "prefer-spread": "error",
+      "prefer-template": "error",
+      "symbol-description": "error",
+      "no-unreachable-loop": "error",
+      "@typescript-eslint/member-ordering": "error",
+      "@typescript-eslint/method-signature-style": "error",
+      "@typescript-eslint/no-confusing-non-null-assertion": "error",
+      "@typescript-eslint/no-dynamic-delete": "error",
+      "@typescript-eslint/no-require-imports": "error",
+      "@typescript-eslint/no-unnecessary-condition": "error",
+      "@typescript-eslint/no-unnecessary-qualifier": "error",
+      "@typescript-eslint/no-unnecessary-type-arguments": "error",
+      "@typescript-eslint/no-unnecessary-type-constraint": "error",
+      "@typescript-eslint/prefer-includes": "error",
+      "@typescript-eslint/prefer-optional-chain": "error",
+      "@typescript-eslint/prefer-readonly": "error",
+      "@typescript-eslint/prefer-string-starts-ends-with": "error",
+      "@typescript-eslint/prefer-ts-expect-error": "error",
+      "@typescript-eslint/promise-function-async": "error",
+      "@typescript-eslint/require-array-sort-compare": "error",
+      "@typescript-eslint/unified-signatures": "error",
+      "@typescript-eslint/no-empty-object-type": 0,
+      "@typescript-eslint/array-type": "error",
+      "@typescript-eslint/consistent-type-exports": "error",
+      "@typescript-eslint/dot-notation": "error",
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/consistent-type-imports": "error",
+      "@typescript-eslint/default-param-last": "error",
+      "@typescript-eslint/consistent-type-definitions": 0,
+      "@typescript-eslint/prefer-nullish-coalescing": 0,
+      "react/no-unescaped-entities": 0,
+      "react/no-unknown-property": 0,
+    },
+  },
+  // Vendored AI Elements components (generated via `pnpm exec ai-elements add`)
+  {
+    files: ["src/components/ai-elements/**"],
+    rules: {
+      "@typescript-eslint/no-unnecessary-condition": 0,
+      "@typescript-eslint/no-floating-promises": 0,
+      "@typescript-eslint/no-empty-function": 0,
+      "no-console": 0,
+      "react-hooks/static-components": 0,
+      "react-hooks/refs": 0,
+    },
+  },
+  // Ignore files
+  {
+    ignores: [
+      "**/*.js",
+      "**/*.mjs",
+      "*.js",
+      "*.mjs",
+      "zod",
+      "vitest.config.ts",
+      ".react-email",
+      ".react-email/**",
+      ".vercel",
+      ".vercel/**",
+      ".vscode",
+      ".vscode/**",
+      ".output",
+      ".output/**",
+      ".next",
+      ".next/**",
+      ".pi",
+      ".pi/**",
+      "app",
+      "app/**",
+      "tailwind.config.js",
+      "eslint.config.mjs",
+      "**/worker.js",
+      "src/generated",
+      "src/generated/**",
+      "convex/_generated",
+      "convex/_generated/**",
+      "convex/**/_generated",
+      "convex/**/_generated/**",
+      ".claude",
+      ".claude/**",
+      ".conductor",
+      ".conductor/**",
+      ".agents",
+      ".agents/**",
+    ],
+  },
+];
