@@ -1,7 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router"
 import {
   CalendarDaysIcon,
-  CheckIcon,
   Columns2Icon,
   CopyIcon,
   ExternalLinkIcon,
@@ -597,22 +596,18 @@ function BenchmarkCompare() {
                     <Button
                       key={entry.id}
                       variant="ghost"
-                      className={`h-auto w-full justify-start rounded-none px-3 py-3 text-left transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
+                      className={`h-auto w-full justify-start rounded-none px-3 py-3 text-left transition-[color,background-color,border-color,box-shadow,opacity] active:scale-100! ${
                         selected
-                          ? "border-l-2 border-l-primary bg-primary/15 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-primary)_35%,transparent)] disabled:opacity-100"
+                          ? "border-l-2 border-l-primary/50 bg-primary/[0.07] hover:bg-primary/10"
                           : "border-l-2 border-l-transparent hover:bg-muted/50 disabled:opacity-40"
                       }`}
-                      disabled={selected || unavailable}
+                      disabled={unavailable}
                       aria-pressed={selected}
-                      aria-label={`${selected ? "Selected" : unavailable ? "Selection full:" : "Add"} ${entry.model}, ${harnessLabel(entry.harness)}, ${effortLabel(entry.effort)}`}
+                      aria-label={`${selected ? "Remove" : unavailable ? "Selection full:" : "Add"} ${entry.model}, ${harnessLabel(entry.harness)}, ${effortLabel(entry.effort)}`}
                       onClick={() => toggleResult(entry.id)}
                     >
                       <span className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
-                        <span
-                          className={`text-xs ${
-                            selected ? "text-primary" : "text-muted-foreground"
-                          }`}
-                        >
+                        <span className="text-xs text-muted-foreground">
                           {entry.task}
                         </span>
                         <span className="w-full truncate text-sm font-medium">
@@ -635,15 +630,8 @@ function BenchmarkCompare() {
                           </span>
                         </span>
                       </span>
-                      <span
-                        className={`ml-2 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${
-                          selected
-                            ? "bg-primary text-primary-foreground"
-                            : "text-primary"
-                        }`}
-                      >
-                        {selected && <CheckIcon className="size-3" />}
-                        {selected ? "Selected" : "Add"}
+                      <span className="ml-2 shrink-0 text-xs font-medium text-primary">
+                        {selected ? "Remove" : "Add"}
                       </span>
                     </Button>
                   )
