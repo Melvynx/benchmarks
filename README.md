@@ -19,6 +19,9 @@ workbench.
 
 Historical result directories are evidence. Do not rename or rewrite them.
 
+See [`CONTRIBUTE.md`](CONTRIBUTE.md) to propose prompts or tasks and to run a
+recorded benchmark with the repository's Codex skill.
+
 ## Requirements
 
 - Node.js 22 or newer
