@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import trash from "trash"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { getBenchmarkEntries } from "./benchmarks.server"
@@ -11,8 +11,8 @@ describe("getBenchmarkEntries", () => {
   const previousRoot = process.env.BENCHMARK_ROOT
   let root = ""
 
-  afterEach(() => {
-    if (root && existsSync(root)) execFileSync("/usr/bin/trash", [root])
+  afterEach(async () => {
+    if (root && existsSync(root)) await trash(root)
     root = ""
     if (previousRoot === undefined) delete process.env.BENCHMARK_ROOT
     else process.env.BENCHMARK_ROOT = previousRoot
