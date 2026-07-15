@@ -10,6 +10,7 @@ Canonical names are stable CLI identifiers. Historical directories remain unchan
 | `earthquake-explorer` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/earthquake-explorer` |
 | `elysian-taste-challenge` | standalone HTML | empty | Canonical: `https://benchmark.melvynx.dev/prompts/elysian-taste-challenge` |
 | `figma-clone` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/mini-figma-clone` |
+| `little-red-riding-hood-film` | standalone HTML/illustrated film | empty | Canonical: `https://benchmark.melvynx.dev/prompts/little-red-riding-hood-film` |
 | `rocket-launch` | standalone HTML/3D | empty | Canonical: `https://benchmark.melvynx.dev/prompts/rocket-launch-animation` |
 | `simulation-life` | web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/ecosystem-evolution-simulator` |
 | `thumbfast` | cloned SaaS app | `benchmarks/thumbfast/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/thumbfast-drawing-inspiration-editor` |

@@ -23,7 +23,7 @@ usage() {
 
 task_type() {
   case "$1" in
-    3d-sponge-bob|bouncing-ball|car-crash|elysian-taste-challenge|rocket-launch) echo standalone-html ;;
+    3d-sponge-bob|bouncing-ball|car-crash|elysian-taste-challenge|little-red-riding-hood-film|rocket-launch) echo standalone-html ;;
     earthquake-explorer|figma-clone|simulation-life|timezone-checker|youtube-thumbnail) echo web-app ;;
     thumbfast) echo cloned-web-app ;;
     openclaw-benchmark) echo cli ;;
@@ -39,6 +39,7 @@ task_wording() {
     earthquake-explorer) echo "Build a live-data earthquake exploration product using the canonical USGS-backed product brief." ;;
     elysian-taste-challenge) echo "Create an unforgettable landing page for the fictional premium brand Elysian." ;;
     figma-clone) echo "Build a polished Figma-inspired collaborative design editor with practical editing interactions." ;;
+    little-red-riding-hood-film) echo "Create a complete illustrated browser film of Little Red Riding Hood with deterministic autoplay and cinematic continuity." ;;
     rocket-launch) echo "Build a cinematic interactive rocket-launch simulation as a standalone HTML experience." ;;
     simulation-life) echo "Build an interactive artificial-life simulation with observable agents, controls, and emergent behavior." ;;
     thumbfast) echo "Implement the supplied feature request in the seeded Thumbfast repository and integrate it with existing product flows. Read the repository instructions before editing." ;;
@@ -57,6 +58,7 @@ prompt_slug() {
     earthquake-explorer) echo earthquake-explorer ;;
     elysian-taste-challenge) echo elysian-taste-challenge ;;
     figma-clone) echo mini-figma-clone ;;
+    little-red-riding-hood-film) echo little-red-riding-hood-film ;;
     rocket-launch) echo rocket-launch-animation ;;
     simulation-life) echo ecosystem-evolution-simulator ;;
     thumbfast) echo thumbfast-drawing-inspiration-editor ;;
@@ -104,7 +106,7 @@ PY
 }
 
 list_tasks() {
-  for task in 3d-sponge-bob bouncing-ball car-crash earthquake-explorer elysian-taste-challenge figma-clone rocket-launch simulation-life thumbfast timezone-checker youtube-thumbnail openclaw-benchmark; do
+  for task in 3d-sponge-bob bouncing-ball car-crash earthquake-explorer elysian-taste-challenge figma-clone little-red-riding-hood-film rocket-launch simulation-life thumbfast timezone-checker youtube-thumbnail openclaw-benchmark; do
     printf '%-20s %s\n' "$task" "$(task_type "$task")"
   done
 }
