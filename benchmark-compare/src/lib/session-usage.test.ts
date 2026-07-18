@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { parseSessionUsageTranscript } from "./session-usage"
+import {
+  parsePersistedSessionUsage,
+  parseSessionUsageTranscript,
+} from "./session-usage"
 
 describe("parseSessionUsageTranscript", () => {
   it("normalizes Codex usage without double-counting cached input", () => {
@@ -59,5 +62,32 @@ describe("parseSessionUsageTranscript", () => {
       num_turns: 3,
       service_tier: "standard",
     })
+  })
+
+  it("accepts usage recovered from completed messages after an interrupted run", () => {
+    expect(
+      parsePersistedSessionUsage({
+        status: "partial",
+        schema_version: 1,
+        source: "claude-session.assistant.message.usage",
+        input_tokens: 10,
+        processed_input_tokens: 40,
+        cached_input_tokens: 30,
+        cache_creation_input_tokens: 0,
+        output_tokens: 5,
+        reasoning_output_tokens: null,
+        total_tokens: 45,
+        total_cost_usd: null,
+        duration_ms: null,
+        duration_api_ms: null,
+        num_turns: 2,
+        service_tier: "standard",
+        speed: "standard",
+        inference_geo: null,
+        server_tool_use: null,
+        model_usage: null,
+        raw_usage: null,
+      })
+    ).toMatchObject({ status: "partial", total_tokens: 45 })
   })
 })

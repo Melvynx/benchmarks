@@ -1,5 +1,5 @@
 export type SessionUsage = {
-  status: "complete" | "unavailable"
+  status: "complete" | "partial" | "unavailable"
   schema_version: number
   source?: string
   reason?: string
@@ -107,7 +107,10 @@ export function parseSessionUsageTranscript(transcript: string) {
 export function parsePersistedSessionUsage(value: unknown) {
   if (!value || typeof value !== "object") return null
   const candidate = value as Partial<SessionUsage>
-  if (candidate.status !== "complete" || candidate.schema_version !== 1)
+  if (
+    (candidate.status !== "complete" && candidate.status !== "partial") ||
+    candidate.schema_version !== 1
+  )
     return null
   return candidate as SessionUsage
 }

@@ -1,9 +1,11 @@
 import { ExternalLinkIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { IntegrityReview } from "@/components/integrity-review"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { TranscriptAnalysis } from "@/components/transcript-phase-chart"
-import { estimateModelCost } from "@/lib/model-pricing"
+import type { IntegrityAnalysis } from "@/lib/integrity-analysis"
+import { estimateModelCost, getModelPricing } from "@/lib/model-pricing"
 import type { SessionUsage } from "@/lib/session-usage"
 import { cn } from "@/lib/utils"
 
@@ -54,6 +56,14 @@ function percentLabel(value: number | null) {
   return `${percentFormatter.format(value)}%`
 }
 
+function elapsedLabel(value: number | null | undefined) {
+  if (value === null || value === undefined) return null
+  const totalSeconds = Math.max(0, Math.round(value / 1_000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`
+}
+
 export function EvidenceOverview({
   id,
   model,
@@ -62,6 +72,7 @@ export function EvidenceOverview({
   duration,
   usage,
   analysis,
+  integrity,
 }: {
   id: string
   model: string
@@ -70,8 +81,10 @@ export function EvidenceOverview({
   duration: string
   usage: SessionUsage | null
   analysis: TranscriptAnalysis | null
+  integrity: IntegrityAnalysis | null
 }) {
   const sectionId = id.replaceAll("/", "-")
+  const pricing = getModelPricing(model, date)
   const estimate = usage ? estimateModelCost(model, date, usage) : null
   const inputShare = percent(
     usage?.processed_input_tokens ?? null,
@@ -86,16 +99,34 @@ export function EvidenceOverview({
     usage?.processed_input_tokens ?? null
   )
   const pricedLines = estimate?.lines.filter((line) => line.tokens > 0) ?? []
+  const runTime = duration.replace(/^Time:\s*/, "")
+  const apiTime = elapsedLabel(usage?.duration_api_ms)
 
   return (
     <ScrollArea className="h-full">
       <div className="@container space-y-5 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge className="bg-primary/15 text-primary ring-1 ring-primary/25">
-            {effort}
-          </Badge>
-          <Badge variant="outline">{duration}</Badge>
-          <Badge variant="outline">{model}</Badge>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="bg-primary/15 text-primary ring-1 ring-primary/25">
+              {effort}
+            </Badge>
+            <Badge variant="outline">{model}</Badge>
+            {usage?.status === "partial" && (
+              <Badge variant="outline">Recovered usage · lower bound</Badge>
+            )}
+          </div>
+          <dl className="ml-auto flex items-baseline gap-4 font-mono tabular-nums">
+            <div className="flex items-baseline gap-2">
+              <dt className="text-[11px] text-muted-foreground">Run time</dt>
+              <dd className="text-lg font-semibold">{runTime}</dd>
+            </div>
+            {apiTime && (
+              <div className="flex items-baseline gap-2 border-l pl-4">
+                <dt className="text-[11px] text-muted-foreground">API time</dt>
+                <dd className="text-sm font-medium">{apiTime}</dd>
+              </div>
+            )}
+          </dl>
         </div>
 
         <div className="overview-primary-grid grid overflow-hidden rounded-xl border bg-card">
@@ -122,6 +153,12 @@ export function EvidenceOverview({
 
             {estimate ? (
               <>
+                {usage?.status === "partial" && (
+                  <p className="mt-4 text-xs text-amber-500">
+                    Recovered from completed API calls. A response that was still
+                    in flight when the run stopped may not be included.
+                  </p>
+                )}
                 <dl className="mt-4 divide-y border-y text-xs">
                   {pricedLines.map((line) => (
                     <div
@@ -141,9 +178,14 @@ export function EvidenceOverview({
                   ))}
                 </dl>
                 <div className="mt-3 flex flex-wrap items-start justify-between gap-2 text-[11px] text-muted-foreground">
-                  <p className="max-w-[46ch] text-pretty">
-                    {estimate.pricing.note}
-                  </p>
+                  <div className="max-w-[52ch] space-y-1 text-pretty">
+                    <p>
+                      Rates per MTok: input {costLabel(pricing?.rates.input ?? null)},
+                      cache {costLabel(pricing?.rates.cacheRead ?? null)}, output{" "}
+                      {costLabel(pricing?.rates.output ?? null)}.
+                    </p>
+                    <p>{estimate.pricing.note}</p>
+                  </div>
                   <a
                     className="inline-flex shrink-0 items-center gap-1 text-foreground underline underline-offset-4"
                     href={estimate.pricing.sourceUrl}
@@ -155,6 +197,29 @@ export function EvidenceOverview({
                   </a>
                 </div>
               </>
+            ) : pricing ? (
+              <div className="mt-4 space-y-3 text-sm text-muted-foreground">
+                <p>
+                  Usage was not recorded, so a per-run estimate is unavailable.
+                </p>
+                <p className="text-xs">
+                  Official rates per MTok: input {costLabel(pricing.rates.input)},
+                  cache {costLabel(pricing.rates.cacheRead)}, output{" "}
+                  {costLabel(pricing.rates.output)}.
+                </p>
+                <div className="flex flex-wrap items-start justify-between gap-2 text-[11px]">
+                  <p className="max-w-[46ch] text-pretty">{pricing.note}</p>
+                  <a
+                    className="inline-flex shrink-0 items-center gap-1 text-foreground underline underline-offset-4"
+                    href={pricing.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Official rates
+                    <ExternalLinkIcon className="size-3" aria-hidden="true" />
+                  </a>
+                </div>
+              </div>
             ) : (
               <p className="mt-4 text-sm text-muted-foreground">
                 No official pricing mapping is available for this model.
@@ -313,6 +378,8 @@ export function EvidenceOverview({
             </p>
           )}
         </section>
+
+        <IntegrityReview id={id} analysis={integrity} />
       </div>
     </ScrollArea>
   )

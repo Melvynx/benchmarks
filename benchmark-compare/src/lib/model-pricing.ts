@@ -3,6 +3,7 @@ import type { SessionUsage } from "./session-usage"
 const OPENAI_PRICING_URL = "https://openai.com/index/gpt-5-6/"
 const ANTHROPIC_PRICING_URL =
   "https://platform.claude.com/docs/en/about-claude/pricing"
+const KIMI_K3_PRICING_URL = "https://platform.kimi.ai/docs/pricing/chat-k3"
 
 type TokenRates = {
   input: number
@@ -63,6 +64,21 @@ function anthropicPricing(label: string, input: number, output: number) {
   } satisfies ModelPricing
 }
 
+function kimiK3Pricing() {
+  return {
+    label: "Kimi K3",
+    sourceLabel: "Kimi official pricing",
+    sourceUrl: KIMI_K3_PRICING_URL,
+    rates: {
+      input: 3,
+      cacheRead: 0.3,
+      cacheWrite: 3,
+      output: 15,
+    },
+    note: "Official API-equivalent rates. Kimi Code subscription usage is included in the membership quota, so this is not an additional charge.",
+  } satisfies ModelPricing
+}
+
 export function getModelPricing(model: string, usageDate: string) {
   const normalized = model.toLowerCase()
 
@@ -84,6 +100,12 @@ export function getModelPricing(model: string, usageDate: string) {
   }
   if (normalized === "opus" || normalized === "claude-opus-4.8")
     return anthropicPricing("Claude Opus 4.8", 5, 25)
+  if (
+    normalized === "k3" ||
+    normalized === "k3[1m]" ||
+    normalized === "kimi-k3"
+  )
+    return kimiK3Pricing()
 
   return null
 }

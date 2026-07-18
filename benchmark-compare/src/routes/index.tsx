@@ -62,12 +62,13 @@ import {
 } from "@/components/ui/sidebar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TranscriptPhaseChart } from "@/components/transcript-phase-chart"
 import type { TranscriptAnalysis } from "@/components/transcript-phase-chart"
 import { TranscriptViewer } from "@/components/transcript-viewer"
 import { EvidenceOverview } from "@/components/evidence-overview"
 import { getBenchmarkCatalog } from "@/lib/catalog"
+import { effortLabel } from "@/lib/effort-label"
 import type { SessionUsage } from "@/lib/session-usage"
+import type { IntegrityAnalysis } from "@/lib/integrity-analysis"
 
 const integerFormatter = new Intl.NumberFormat("en")
 const currencyFormatter = new Intl.NumberFormat("en", {
@@ -100,6 +101,8 @@ function harnessLabel(harness: string) {
     case "cc":
     case "ccx":
       return "Claude Code"
+    case "cckimi":
+      return "Claude Code · Kimi"
     case "codex":
       return "Codex"
     case "cursor-agent":
@@ -109,14 +112,27 @@ function harnessLabel(harness: string) {
   }
 }
 
-function effortLabel(effort: string) {
-  const labels: Record<string, string> = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "X-High",
+function statusLabel(status: string) {
+  switch (status) {
+    case "harness-verified":
+      return "Completed"
+    case "failed":
+      return "Failed"
+    case "interrupted":
+      return "Interrupted"
+    default:
+      return status === "unknown" ? "Unverified" : status
   }
-  return `Thinking: ${labels[effort.toLowerCase()] || "-"}`
+}
+
+function statusClassName(status: string) {
+  if (status === "harness-verified")
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+  if (status === "failed")
+    return "border-destructive/30 bg-destructive/10 text-destructive"
+  if (status === "interrupted")
+    return "border-amber-500/30 bg-amber-500/10 text-amber-300"
+  return ""
 }
 
 function durationLabel(durationMs: number | null) {
@@ -620,6 +636,12 @@ function BenchmarkCompare() {
                           <Badge className="bg-primary/15 text-primary ring-1 ring-primary/25">
                             {effortLabel(entry.effort)}
                           </Badge>
+                          <Badge
+                            variant="outline"
+                            className={statusClassName(entry.status)}
+                          >
+                            {statusLabel(entry.status)}
+                          </Badge>
                           <span className="text-[11px] text-muted-foreground">
                             {durationLabel(entry.durationMs).replace(
                               "Time: ",
@@ -844,6 +866,12 @@ function BenchmarkCompare() {
                     </Badge>
                     <Badge
                       variant="outline"
+                      className={`shrink-0 ${statusClassName(entry.status)}`}
+                    >
+                      {statusLabel(entry.status)}
+                    </Badge>
+                    <Badge
+                      variant="outline"
                       className="panel-duration shrink-0"
                     >
                       {durationLabel(entry.durationMs)}
@@ -960,6 +988,7 @@ type Evidence = {
   transcript: string
   transcriptPaths: string[]
   transcriptAnalysis: TranscriptAnalysis | null
+  integrityAnalysis: IntegrityAnalysis | null
   transcriptOriginalBytes: number
   sessionUsage: SessionUsage | null
 }
@@ -1046,39 +1075,29 @@ function EvidencePanel({
               duration={durationLabel(evidence.durationMs ?? entry.durationMs)}
               usage={evidence.sessionUsage}
               analysis={evidence.transcriptAnalysis}
+              integrity={evidence.integrityAnalysis}
             />
           </TabsContent>
           <TabsContent value="transcript" className="min-h-0 flex-1">
-            <div className="flex h-full min-h-0 flex-col">
-              {evidence.transcriptAnalysis && (
-                <TranscriptPhaseChart
-                  id={entry.id}
-                  analysis={evidence.transcriptAnalysis}
-                  durationMs={evidence.durationMs}
-                />
-              )}
-              <div className="min-h-0 flex-1">
-                {evidence.transcript ? (
-                  <TranscriptViewer
-                    transcript={evidence.transcript}
-                    prompt={evidence.prompt}
-                    durationMs={evidence.durationMs}
-                  />
-                ) : (
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <FileTextIcon />
-                      </EmptyMedia>
-                      <EmptyTitle>No transcript</EmptyTitle>
-                      <EmptyDescription>
-                        No transcript was recorded for this historical result.
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                )}
-              </div>
-            </div>
+            {evidence.transcript ? (
+              <TranscriptViewer
+                transcript={evidence.transcript}
+                prompt={evidence.prompt}
+                durationMs={evidence.durationMs}
+              />
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <FileTextIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>No transcript</EmptyTitle>
+                  <EmptyDescription>
+                    No transcript was recorded for this historical result.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
           </TabsContent>
           <EvidenceTab
             value="prompt"

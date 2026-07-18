@@ -14,6 +14,7 @@ import type {
   TranscriptAnalysis,
   TranscriptPhaseKey,
 } from "@/components/transcript-phase-chart"
+import { analyzeIntegrityTranscript } from "@/lib/integrity-analysis"
 import {
   parsePersistedSessionUsage,
   parseSessionUsageTranscript,
@@ -27,6 +28,7 @@ export type BenchmarkEntry = {
   model: string
   harness: string
   effort: string
+  status: string
   durationMs: number | null
   benchmarkId: string
   runId: string
@@ -117,6 +119,7 @@ type RunEvidence = {
   promptSlug: string | null
   promptVersion: string | null
   status: string
+  repairStatus: string
 }
 
 function promptIdentity(...values: unknown[]) {
@@ -243,6 +246,7 @@ function recordedMetadata(directory: string) {
       effort?: unknown
       benchmark_id?: unknown
       status?: unknown
+      repair_note?: { status?: unknown } | null
       model_timing?: { duration_ms?: unknown } | null
       prompt_public_url?: unknown
       prompt_source?: unknown
@@ -267,6 +271,10 @@ function recordedMetadata(directory: string) {
           ? metadata.benchmark_id
           : "",
       status: typeof metadata.status === "string" ? metadata.status : "unknown",
+      repairStatus:
+        typeof metadata.repair_note?.status === "string"
+          ? metadata.repair_note.status
+          : "unknown",
       ...prompt,
     }
   } catch {
@@ -275,6 +283,7 @@ function recordedMetadata(directory: string) {
       durationMs: null,
       benchmarkId: "",
       status: "unknown",
+      repairStatus: "unknown",
       promptSlug: null,
       promptVersion: null,
     }
@@ -314,6 +323,7 @@ function historicalEvidence(
           run.name,
         runId: run.name,
         status: metadata.status,
+        repairStatus: metadata.repairStatus,
         promptSlug: metadata.promptSlug,
         promptVersion: metadata.promptVersion,
       }
@@ -358,6 +368,7 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
           harness?: string
           model?: string
           status?: string
+          repair_note?: { status?: unknown } | null
           model_timing?: { duration_ms?: unknown } | null
           prompt_public_url?: unknown
           prompt_source?: unknown
@@ -384,6 +395,10 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
             model: value.model,
             runId: run.name,
             status: typeof value.status === "string" ? value.status : "unknown",
+            repairStatus:
+              typeof value.repair_note?.status === "string"
+                ? value.repair_note.status
+                : "unknown",
             ...prompt,
           }
           const previous = metadata.get(appPath)
@@ -472,7 +487,12 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
           benchmarkIds
         )
       const identity = runEvidence || inferredIdentity
-      if (runEvidence?.status === "failed") continue
+      if (
+        runEvidence?.status === "failed" &&
+        runEvidence.repairStatus !== "verified" &&
+        !existsSync(join(runEvidence.directory, "screenshot.png"))
+      )
+        continue
       const id = `${task.name}/${result.name}`
       entries.push({
         id,
@@ -482,6 +502,7 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
         model: identity.model,
         harness: identity.harness,
         effort: runEvidence?.effort || "unknown",
+        status: runEvidence?.status || "unknown",
         durationMs: runEvidence?.durationMs ?? null,
         benchmarkId:
           runEvidence?.benchmarkId ||
@@ -626,6 +647,7 @@ export function getBenchmarkEvidence(splat: string) {
       sessionId: "",
       transcript: "",
       transcriptAnalysis: null,
+      integrityAnalysis: null,
       transcriptPaths: [],
       transcriptOriginalBytes: 0,
       sessionUsage: null,
@@ -636,6 +658,7 @@ export function getBenchmarkEvidence(splat: string) {
   const transcript = readTranscriptForUi(
     join(evidence.directory, "transcript.jsonl")
   )
+  const rawTranscript = readOptional(join(evidence.directory, "transcript.jsonl"))
   return {
     appPath: entry.appPath,
     command: readOptional(join(evidence.directory, "command.sh")),
@@ -649,6 +672,10 @@ export function getBenchmarkEvidence(splat: string) {
     runId: evidence.runId,
     sessionId: readOptional(join(evidence.directory, "session-id.txt")).trim(),
     transcriptAnalysis: readTranscriptAnalysis(evidence.directory),
+    integrityAnalysis: analyzeIntegrityTranscript(
+      rawTranscript,
+      resolve(root, entry.appPath)
+    ),
     transcriptPaths: recordedTranscripts.map((file) =>
       repositoryPath(root, join(evidence.directory, file))
     ),

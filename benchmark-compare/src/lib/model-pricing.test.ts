@@ -70,6 +70,20 @@ describe("model pricing", () => {
     ).toMatchObject({ input: 3, output: 15 })
   })
 
+  it("uses official Kimi K3 rates for the 1M Claude Code model alias", () => {
+    const pricing = getModelPricing("k3[1m]", "2026-07-17")
+
+    expect(pricing?.rates).toEqual({
+      input: 3,
+      cacheRead: 0.3,
+      cacheWrite: 3,
+      output: 15,
+    })
+    expect(pricing?.sourceUrl).toBe(
+      "https://platform.kimi.ai/docs/pricing/chat-k3"
+    )
+  })
+
   it("does not invent pricing for an unknown model", () => {
     expect(getModelPricing("unknown-model", "2026-07-13")).toBeNull()
   })
