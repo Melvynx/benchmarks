@@ -46,9 +46,9 @@ for run_dir in "$@"; do
       build_ok=true
     elif [[ "$type" == web-app || "$type" == cloned-web-app ]]; then
       [[ -f "$app_path/package.json" ]] || { echo "Missing package.json: $app_path" >&2; exit 1; }
-      (cd "$app_path" && pnpm run build) > "$data_dir/build.log" 2>&1 && build_ok=true
+      (cd "$app_path" && PORT="$port" pnpm run build) > "$data_dir/build.log" 2>&1 && build_ok=true
       [[ "$build_ok" == true ]] || { echo "Build failed: $app_path (see $data_dir/build.log)" >&2; exit 1; }
-      (cd "$app_path" && pnpm run dev --host 127.0.0.1 --port "$port") > "$data_dir/runtime.log" 2>&1 &
+      (cd "$app_path" && PORT="$port" pnpm run dev) > "$data_dir/runtime.log" 2>&1 &
       server_pid=$!
       trap 'kill "$server_pid" 2>/dev/null || true' EXIT
       for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do

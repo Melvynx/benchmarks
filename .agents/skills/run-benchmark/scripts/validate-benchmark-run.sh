@@ -56,7 +56,8 @@ for run_dir in "$@"; do
         elif .transcript_analysis.status == "complete" then
           (.transcript_analysis.progress_bar | type) == "string" and
           (.transcript_analysis.categories | keys | sort) == ["context_gathering","implementation","planning","verification"] and
-          ([.transcript_analysis.categories[].percentage] | add) == 100
+          ([.transcript_analysis.categories[].percentage] | add) as $total |
+          ($total >= 99.99 and $total <= 100.01)
         else
           .transcript_analysis.status == "empty" or .transcript_analysis.status == "unavailable"
         end
@@ -97,7 +98,8 @@ for run_dir in "$@"; do
     while IFS= read -r transcript_file; do
       "$JQ_BIN" -e . "$transcript_file" >/dev/null 2>&1 || fail "invalid transcript JSONL: $transcript_file"
     done < <(find "$data_dir" -maxdepth 1 -type f -name 'transcript*.jsonl' | sort)
-    grep -Fq -- "--model $model" "$data_dir/command.sh" || fail "command model mismatch: $data_dir"
+    model_argument="$(printf '%q' "$model")"
+    grep -Fq -- "--model $model_argument" "$data_dir/command.sh" || fail "command model mismatch: $data_dir"
     if "$JQ_BIN" -e 'has("completion_evidence_found")' "$data_dir/verification.json" >/dev/null; then
       "$JQ_BIN" -e '.status=="harness-verified" and .transcript_jsonl_valid and .completion_evidence_found and .session_id_captured and .app_build_verified and .app_runtime_verified' "$data_dir/verification.json" >/dev/null || fail "verification incomplete: $data_dir"
     else
@@ -146,7 +148,7 @@ PY
         fi
       fi
     fi
-    if [[ "$harness" == ccx || "$harness" == cc || "$harness" == cursor-agent ]]; then
+    if [[ "$harness" == ccx || "$harness" == cc || "$harness" == cckimi || "$harness" == cursor-agent ]]; then
       "$JQ_BIN" -e --arg model "$model" 'select(.type=="system" and .subtype=="init" and .model==$model)' "$data_dir/transcript.jsonl" >/dev/null || fail "transcript model mismatch: $data_dir"
     fi
     port="$($JQ_BIN -r '.port // empty' "$data_dir/metadata.json")"

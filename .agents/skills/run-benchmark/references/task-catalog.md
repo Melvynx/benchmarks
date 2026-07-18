@@ -5,15 +5,23 @@ Canonical names are stable CLI identifiers. Historical directories remain unchan
 | Task | Type | Seed | Benchmark wording |
 |---|---|---|---|
 | `3d-sponge-bob` | standalone HTML/WebGL | empty | Canonical: `https://benchmark.melvynx.dev/prompts/spongebob-3d-world-threejs` |
+| `air-conditioning-understanding` | standalone HTML/Three.js | empty | Canonical: `https://benchmark.melvynx.dev/prompts/threejs-air-conditioning-understanding` |
 | `bouncing-ball` | standalone HTML/canvas | empty | Canonical: `https://benchmark.melvynx.dev/prompts/bouncing-ball-polygon` |
 | `car-crash` | standalone HTML/canvas | empty | Canonical: `https://benchmark.melvynx.dev/prompts/car-brick-wall-crash` |
+| `distributed-systems-playground` | standalone HTML/canvas | empty | Canonical: `https://benchmark.melvynx.dev/prompts/distributed-systems-playground` |
 | `earthquake-explorer` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/earthquake-explorer` |
 | `elysian-taste-challenge` | standalone HTML | empty | Canonical: `https://benchmark.melvynx.dev/prompts/elysian-taste-challenge` |
 | `figma-clone` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/mini-figma-clone` |
+| `gmail-clone` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/gmail-clone` |
 | `little-red-riding-hood-film` | standalone HTML/illustrated film | empty | Canonical: `https://benchmark.melvynx.dev/prompts/little-red-riding-hood-film` |
+| `living-identity-system` | standalone HTML/creative coding | empty | Canonical: `https://benchmark.melvynx.dev/prompts/living-identity-system` |
+| `one-button-boss-fight` | standalone HTML/game | empty | Canonical: `https://benchmark.melvynx.dev/prompts/one-button-boss-fight` |
+| `orbital-rescue-digital-twin` | standalone HTML/Three.js | empty | Canonical: `https://benchmark.melvynx.dev/prompts/orbital-rescue-digital-twin` |
+| `pentest` | standalone HTML/security report | empty | Canonical: `https://benchmark.melvynx.dev/prompts/pentest` |
 | `rocket-launch` | standalone HTML/3D | empty | Canonical: `https://benchmark.melvynx.dev/prompts/rocket-launch-animation` |
 | `simulation-life` | web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/ecosystem-evolution-simulator` |
 | `thumbfast` | cloned SaaS app | `benchmarks/thumbfast/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/thumbfast-drawing-inspiration-editor` |
+| `the-last-signal` | standalone HTML/interactive story | empty | Canonical: `https://benchmark.melvynx.dev/prompts/the-last-signal` |
 | `timezone-checker` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/timezone-checker` |
 | `youtube-thumbnail` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/youtube-thumbnail-generator` |
 | `openclaw-benchmark` | CLI evaluation suite | `benchmarks/openclaw-benchmark` | Run or extend the existing OpenClaw CLI benchmark suite; this is not a generated web app and has no port. |

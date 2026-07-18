@@ -19,6 +19,17 @@ workbench.
 
 Historical result directories are evidence. Do not rename or rewrite them.
 
+Two task directories intentionally contain source material in addition to dated
+results:
+
+- `benchmarks/thumbfast/base-repo/` is the seed copied into each Thumbfast run.
+- `benchmarks/openclaw-benchmark/` is the OpenClaw CLI evaluation suite itself;
+  its dated children are recorded runs of that suite.
+
+All other task directories contain only dated result directories. Older
+YouTube Thumbnail results that predate the current naming convention retain
+their original names because they are historical evidence.
+
 See [`CONTRIBUTE.md`](CONTRIBUTE.md) to propose prompts or tasks and to run a
 recorded benchmark with the repository's Codex skill.
 
@@ -84,6 +95,7 @@ is not a successful benchmark.
 ## Validation
 
 ```bash
+pnpm audit:layout
 pnpm test
 pnpm typecheck
 pnpm lint
@@ -100,6 +112,10 @@ dependencies or reproducible framework output. Generated applications retain
 their own `package.json` and pnpm lockfile where available, while `node_modules`,
 build caches, local environment files, and nested Git histories stay outside the
 published repository.
+
+Run `pnpm audit:layout` after moving or importing benchmark applications. It
+fails when source files or an unexpected directory are left directly inside a
+task directory, while preserving the documented seeds and legacy result names.
 
 ## Deployment
 

@@ -17,7 +17,7 @@ Create one independently resumable session per task. Put the app in `benchmarks/
    ```bash
    .agents/skills/run-benchmark/scripts/run-benchmark.sh \
      --model '<model-name>' \
-     --harness '<codex|ccx|cc|cursor-agent>' \
+    --harness '<codex|ccx|cc|cckimi|cursor-agent>' \
      --tasks '<task-a,task-b>' \
      --effort '<level>'
    ```
@@ -45,6 +45,9 @@ Create one independently resumable session per task. Put the app in `benchmarks/
 - Copy [../../../benchmark-plans/TEMPLATE.md](../../../benchmark-plans/TEMPLATE.md) to create a reusable plan.
 - Set `enabled` to `yes` or `no` for each row.
 - Set `tasks` to one canonical task, comma-separated tasks, or `all`.
+- Before launching a row with `tasks: all`, expand it and compare the count and
+  names against [references/task-catalog.md](references/task-catalog.md). Treat
+  a missing newly-added task as a runner bug to fix before the run starts.
 - Add as many rows as needed to compare models and harnesses. Each row remains an independent recorded run.
 - The plan runner expands rows by task and launches every model/task pair concurrently. Expect interleaved progress and one run directory per pair.
 
@@ -52,10 +55,16 @@ Create one independently resumable session per task. Put the app in `benchmarks/
 
 - Follow [.agents/rules/benchmark-runs.md](../../rules/benchmark-runs.md).
 - For `ccx`, select exactly `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna`; forward effort through `--effort`.
+- Use `cckimi` when the local Claude Code-compatible Kimi alias is explicitly requested; keep the exact Kimi model identifier and effort.
 - When a GPT model uses the Claude Code harness family, route it through `ccx`; never run a GPT model with `cc`.
 - Do not combine tasks into one model session.
 - Never store an app below `runs/`; `app-path.txt` and `metadata.json` must point to the task-local output directory.
 - Do not mark a generated application verified until its build and real serving port have been checked.
+- For visual, animated, or interactive tasks, do not rely on the app's own
+  self-test or a single first-frame screenshot as visual proof. Exercise the
+  real browser state across representative interactions, timeline positions,
+  scenes, or viewport sizes; if the browser render fails after a self-test
+  passes, preserve that as the model result.
 - Every generated-task prompt requires `pnpm` exclusively when dependency installation or package scripts are needed; do not introduce npm commands or npm lockfiles.
 - Keep model-facing prompts neutral: never disclose that the task is a benchmark or evaluation, never mention run evidence, and never expose a completion sentinel.
 - For every non-CLI task, instruct the model to set the browser title and primary visible title to its model name using only identity information already available to it, with no additional title text.

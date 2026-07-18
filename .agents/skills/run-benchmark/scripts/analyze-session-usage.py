@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +16,90 @@ def number(value: Any) -> int | float | None:
     return None
 
 
+def local_claude_session(session_id: str | None) -> Path | None:
+    if not session_id:
+        return None
+    matches = list(
+        (Path.home() / ".claude" / "projects").glob(f"*/{session_id}.jsonl")
+    )
+    return matches[0] if len(matches) == 1 else None
+
+
+def recovered_assistant_usage(path: Path) -> dict[str, Any] | None:
+    messages: OrderedDict[str, dict[str, Any]] = OrderedDict()
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict) or record.get("type") != "assistant":
+                continue
+            message = record.get("message")
+            if not isinstance(message, dict) or not isinstance(message.get("usage"), dict):
+                continue
+            message_id = message.get("id")
+            if not isinstance(message_id, str) or not message_id:
+                continue
+            usage = message["usage"]
+            previous = messages.get(message_id)
+            if previous is None or (number(usage.get("output_tokens")) or 0) >= (
+                number(previous.get("output_tokens")) or 0
+            ):
+                messages[message_id] = usage
+    except OSError:
+        return None
+
+    if not messages:
+        return None
+
+    def total(key: str) -> int | float:
+        return sum(number(usage.get(key)) or 0 for usage in messages.values())
+
+    input_tokens = total("input_tokens")
+    cached = total("cache_read_input_tokens")
+    cache_creation = total("cache_creation_input_tokens")
+    output_tokens = total("output_tokens")
+    last_usage = next(reversed(messages.values()))
+    processed_input = input_tokens + cached + cache_creation
+
+    return {
+        "status": "partial",
+        "schema_version": 1,
+        "source": "claude-session.assistant.message.usage",
+        "reason": (
+            "Recovered from completed assistant messages because no terminal usage "
+            "record was emitted; an in-flight response at interruption may be excluded."
+        ),
+        "input_tokens": input_tokens,
+        "processed_input_tokens": processed_input,
+        "cached_input_tokens": cached,
+        "cache_creation_input_tokens": cache_creation,
+        "output_tokens": output_tokens,
+        "reasoning_output_tokens": None,
+        "total_tokens": processed_input + output_tokens,
+        "total_cost_usd": None,
+        "duration_ms": None,
+        "duration_api_ms": None,
+        "num_turns": len(messages),
+        "service_tier": last_usage.get("service_tier"),
+        "speed": last_usage.get("speed"),
+        "inference_geo": last_usage.get("inference_geo"),
+        "server_tool_use": last_usage.get("server_tool_use"),
+        "model_usage": None,
+        "raw_usage": {
+            "input_tokens": input_tokens,
+            "cache_creation_input_tokens": cache_creation,
+            "cache_read_input_tokens": cached,
+            "output_tokens": output_tokens,
+        },
+    }
+
+
 def analyze(path: Path) -> dict[str, Any]:
     last_result: dict[str, Any] | None = None
     last_completed: dict[str, Any] | None = None
+    session_id: str | None = None
 
     try:
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -26,7 +108,13 @@ def analyze(path: Path) -> dict[str, Any]:
             except json.JSONDecodeError:
                 continue
             if not isinstance(record, dict) or not isinstance(record.get("usage"), dict):
+                candidate_session_id = record.get("session_id") if isinstance(record, dict) else None
+                if isinstance(candidate_session_id, str) and candidate_session_id:
+                    session_id = candidate_session_id
                 continue
+            candidate_session_id = record.get("session_id")
+            if isinstance(candidate_session_id, str) and candidate_session_id:
+                session_id = candidate_session_id
             if record.get("type") == "result":
                 last_result = record
             elif record.get("type") == "turn.completed":
@@ -36,6 +124,10 @@ def analyze(path: Path) -> dict[str, Any]:
 
     record = last_result or last_completed
     if not record:
+        session_path = local_claude_session(session_id)
+        recovered = recovered_assistant_usage(session_path) if session_path else None
+        if recovered:
+            return recovered
         return {
             "status": "unavailable",
             "schema_version": 1,

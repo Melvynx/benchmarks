@@ -4,7 +4,7 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 
 ## Inputs and routing
 
-- Require a model name, harness (`codex`, `ccx`, `cc`, or `cursor-agent`), and comma-separated task list.
+- Require a model name, harness (`codex`, `ccx`, `cc`, `cckimi`, or `cursor-agent`), and comma-separated task list.
 - Default routing: GPT/OpenAI -> `codex` or `ccx`; Claude -> `cc`; all other models -> `cursor-agent`.
 - When a GPT model is run through the Claude Code harness family, use `ccx`; reject `cc` for every `gpt*` model.
 - With `ccx`, accept only `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna`, and pass `--effort` explicitly.
@@ -57,6 +57,7 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 - Codex: `codex exec --model <model> --json --sandbox workspace-write --skip-git-repo-check --output-last-message <final> <prompt>`; resume with `codex exec resume <session-id>`.
 - Claudex: `ccx -p --model <gpt-5.6-sol|gpt-5.6-terra|gpt-5.6-luna> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `ccx --resume <session-id>`.
 - Claude: `cc -p --model <claude-model> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `cc --resume <session-id>`. Never use `cc` for GPT models.
+- Kimi through Claude Code: `cckimi -p --model <kimi-model> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `cckimi --resume <session-id>`.
 - Cursor: create a chat with `cursor-agent create-chat`, then use `cursor-agent --resume <chat-id> --model <model> --print --force --trust --output-format stream-json <prompt>`; resume with `cursor-agent --resume <chat-id>`.
 
 ## Proof

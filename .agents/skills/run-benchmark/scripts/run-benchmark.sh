@@ -18,13 +18,13 @@ SMOKE=0
 BENCHMARK_ID=""
 
 usage() {
-  echo "Usage: $0 --model MODEL --harness codex|ccx|cc|cursor-agent --tasks TASK[,TASK...] [--effort LEVEL] [--benchmark-id ID] [--dry-run|--smoke]"
+  echo "Usage: $0 --model MODEL --harness codex|ccx|cc|cckimi|cursor-agent --tasks TASK[,TASK...] [--effort LEVEL] [--benchmark-id ID] [--dry-run|--smoke]"
 }
 
 task_type() {
   case "$1" in
-    3d-sponge-bob|bouncing-ball|car-crash|elysian-taste-challenge|little-red-riding-hood-film|rocket-launch) echo standalone-html ;;
-    earthquake-explorer|figma-clone|simulation-life|timezone-checker|youtube-thumbnail) echo web-app ;;
+    3d-sponge-bob|air-conditioning-understanding|bouncing-ball|car-crash|distributed-systems-playground|elysian-taste-challenge|little-red-riding-hood-film|living-identity-system|one-button-boss-fight|orbital-rescue-digital-twin|pentest|rocket-launch|the-last-signal) echo standalone-html ;;
+    earthquake-explorer|figma-clone|gmail-clone|simulation-life|timezone-checker|youtube-thumbnail) echo web-app ;;
     thumbfast) echo cloned-web-app ;;
     openclaw-benchmark) echo cli ;;
     *) return 1 ;;
@@ -34,15 +34,23 @@ task_type() {
 task_wording() {
   case "$1" in
     3d-sponge-bob) echo "Build an interactive 3D Bikini Bottom / SpongeBob-inspired scene as a standalone HTML experience." ;;
+    air-conditioning-understanding) echo "Build an interactive Three.js explainer for split-system and monoblock reversible air conditioning." ;;
     bouncing-ball) echo "Build a polished physics-based bouncing-ball simulation as a standalone HTML experience." ;;
     car-crash) echo "Build a cinematic interactive car-crash simulation as a standalone HTML experience." ;;
+    distributed-systems-playground) echo "Build a deterministic visual distributed-systems playground as a standalone HTML experience." ;;
     earthquake-explorer) echo "Build a live-data earthquake exploration product using the canonical USGS-backed product brief." ;;
     elysian-taste-challenge) echo "Create an unforgettable landing page for the fictional premium brand Elysian." ;;
     figma-clone) echo "Build a polished Figma-inspired collaborative design editor with practical editing interactions." ;;
+    gmail-clone) echo "Build the strongest Gmail-inspired email application you can, with polished, functional inbox and message workflows." ;;
     little-red-riding-hood-film) echo "Create a complete illustrated browser film of Little Red Riding Hood with deterministic autoplay and cinematic continuity." ;;
+    living-identity-system) echo "Create a living visual identity expressed as a poster, kinetic title sequence, and interactive generative instrument." ;;
+    one-button-boss-fight) echo "Create a polished one-screen boss fight controlled by exactly one gameplay action." ;;
+    orbital-rescue-digital-twin) echo "Build a cinematic, deterministic autonomous orbital-rescue and docking digital twin as a standalone Three.js experience." ;;
+    pentest) echo "Perform the authorized black-box web security assessment described by the canonical prompt and present the verified results in a standalone HTML report." ;;
     rocket-launch) echo "Build a cinematic interactive rocket-launch simulation as a standalone HTML experience." ;;
     simulation-life) echo "Build an interactive artificial-life simulation with observable agents, controls, and emergent behavior." ;;
     thumbfast) echo "Implement the supplied feature request in the seeded Thumbfast repository and integrate it with existing product flows. Read the repository instructions before editing." ;;
+    the-last-signal) echo "Create The Last Signal as a short interactive visual story in three acts with two distinct endings." ;;
     timezone-checker) echo "Build a responsive timezone overlap planner for comparing cities, working hours, and shared availability." ;;
     youtube-thumbnail) echo "Build a polished YouTube thumbnail editor with image, text, layout, and export workflows." ;;
     openclaw-benchmark) echo "Run the existing OpenClaw CLI benchmark suite, preserve its result artifacts, and report failures literally." ;;
@@ -53,15 +61,23 @@ task_wording() {
 prompt_slug() {
   case "$1" in
     3d-sponge-bob) echo spongebob-3d-world-threejs ;;
+    air-conditioning-understanding) echo threejs-air-conditioning-understanding ;;
     bouncing-ball) echo bouncing-ball-polygon ;;
     car-crash) echo car-brick-wall-crash ;;
+    distributed-systems-playground) echo distributed-systems-playground ;;
     earthquake-explorer) echo earthquake-explorer ;;
     elysian-taste-challenge) echo elysian-taste-challenge ;;
     figma-clone) echo mini-figma-clone ;;
+    gmail-clone) echo gmail-clone ;;
     little-red-riding-hood-film) echo little-red-riding-hood-film ;;
+    living-identity-system) echo living-identity-system ;;
+    one-button-boss-fight) echo one-button-boss-fight ;;
+    orbital-rescue-digital-twin) echo orbital-rescue-digital-twin ;;
+    pentest) echo pentest ;;
     rocket-launch) echo rocket-launch-animation ;;
     simulation-life) echo ecosystem-evolution-simulator ;;
     thumbfast) echo thumbfast-drawing-inspiration-editor ;;
+    the-last-signal) echo the-last-signal ;;
     timezone-checker) echo timezone-checker ;;
     youtube-thumbnail) echo youtube-thumbnail-generator ;;
     openclaw-benchmark) return 1 ;;
@@ -106,7 +122,7 @@ PY
 }
 
 list_tasks() {
-  for task in 3d-sponge-bob bouncing-ball car-crash earthquake-explorer elysian-taste-challenge figma-clone little-red-riding-hood-film rocket-launch simulation-life thumbfast timezone-checker youtube-thumbnail openclaw-benchmark; do
+  for task in 3d-sponge-bob air-conditioning-understanding bouncing-ball car-crash distributed-systems-playground earthquake-explorer elysian-taste-challenge figma-clone gmail-clone little-red-riding-hood-film living-identity-system one-button-boss-fight orbital-rescue-digital-twin pentest rocket-launch simulation-life thumbfast the-last-signal timezone-checker youtube-thumbnail openclaw-benchmark; do
     printf '%-20s %s\n' "$task" "$(task_type "$task")"
   done
 }
@@ -135,7 +151,7 @@ valid_benchmark_id "$BENCHMARK_ID" || {
 }
 
 [[ -n "$MODEL" && -n "$HARNESS" ]] || { usage >&2; exit 2; }
-[[ "$HARNESS" == codex || "$HARNESS" == ccx || "$HARNESS" == cc || "$HARNESS" == cursor-agent ]] || { echo "Unsupported harness: $HARNESS" >&2; exit 2; }
+[[ "$HARNESS" == codex || "$HARNESS" == ccx || "$HARNESS" == cc || "$HARNESS" == cckimi || "$HARNESS" == cursor-agent ]] || { echo "Unsupported harness: $HARNESS" >&2; exit 2; }
 [[ -n "$TASKS" || "$SMOKE" == 1 ]] || { echo "--tasks is required unless --smoke is used" >&2; exit 2; }
 model_lower="$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')"
 if [[ "$HARNESS" == cc && "$model_lower" == gpt* ]]; then
@@ -146,7 +162,9 @@ if [[ "$HARNESS" == ccx ]]; then
   [[ "$MODEL" == gpt-5.6-sol || "$MODEL" == gpt-5.6-terra || "$MODEL" == gpt-5.6-luna ]] || { echo "ccx model must be gpt-5.6-sol, gpt-5.6-terra, or gpt-5.6-luna" >&2; exit 2; }
   zsh -lic 'command -v ccx >/dev/null' || { echo "ccx alias is not available in the zsh login environment" >&2; exit 127; }
 elif [[ "$HARNESS" == cc ]]; then
-  command -v claude >/dev/null || { echo "Claude Code is not installed (expected cc alias backed by claude)" >&2; exit 127; }
+  zsh -lic 'command -v claude >/dev/null' || { echo "Claude Code is not installed (expected cc alias backed by claude)" >&2; exit 127; }
+elif [[ "$HARNESS" == cckimi ]]; then
+  zsh -lic 'alias cckimi >/dev/null 2>&1' || { echo "cckimi alias is not available in the zsh login environment" >&2; exit 127; }
 else
   command -v "$HARNESS" >/dev/null || { echo "Harness not installed: $HARNESS" >&2; exit 127; }
 fi
@@ -174,7 +192,7 @@ mkdir -p "$ROOT/.benchmark-output-locks"
 
 case "$HARNESS" in
   codex|ccx) port_base=9100 ;;
-  cc) port_base=9200 ;;
+  cc|cckimi) port_base=9200 ;;
   cursor-agent) port_base=9300 ;;
 esac
 
@@ -266,7 +284,11 @@ for index in "${!task_list[@]}"; do
   [[ "$DRY_RUN" == 1 ]] || mkdir -p "$app_dir"
   printf '%s\n' "$app_dir" > "$data_dir/app-path.txt"
   if [[ "$DRY_RUN" == 0 && "$task" == thumbfast ]]; then cp -R "$BENCHMARKS_DIR/thumbfast/base-repo/." "$app_dir/"; fi
-  if [[ "$DRY_RUN" == 0 && "$task" == openclaw-benchmark ]]; then cp -R "$BENCHMARKS_DIR/openclaw-benchmark/." "$app_dir/"; fi
+  if [[ "$DRY_RUN" == 0 && "$task" == openclaw-benchmark ]]; then
+    for seed_item in package.json tsconfig.json src benchmarks; do
+      cp -R "$BENCHMARKS_DIR/openclaw-benchmark/$seed_item" "$app_dir/"
+    done
+  fi
 
   port_json=null
   port_line=""
@@ -294,13 +316,20 @@ for index in "${!task_list[@]}"; do
     if [[ "$type" != cli ]]; then
       title_line="Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title."
     fi
+    if [[ "$task" == pentest ]]; then
+      workspace_line="Keep the standalone HTML deliverable in the current working directory. The web-pentest skill is authorized to create and update only its required engagement directory outside the current working directory; do not edit other external files."
+      checks_line="Run the relevant checks yourself."
+    else
+      workspace_line="Work only inside the current working directory. Do not edit files outside the current working directory."
+      checks_line="Run the relevant checks yourself. Do not edit files outside the current working directory."
+    fi
     prompt="$wording
 
-Work only inside the current working directory.
+$workspace_line
 $port_line
 Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.
 $title_line
-Run the relevant checks yourself. Do not edit files outside the current working directory."
+$checks_line"
   fi
   printf '%s\n' "$prompt" > "$data_dir/prompt.md"
 
@@ -329,7 +358,7 @@ Run the relevant checks yourself. Do not edit files outside the current working 
     ccx)
       session_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
       printf '%s\n' "$session_id" > "$session_file"
-      printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc"' > "$command_file"
+      printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$command_file"
       printf '%q ' ccx -p --model "$MODEL" --effort "$EFFORT" --permission-mode bypassPermissions --output-format stream-json --verbose --session-id "$session_id" "$prompt" >> "$command_file"
       printf '\n' >> "$command_file"
       if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
@@ -338,8 +367,17 @@ Run the relevant checks yourself. Do not edit files outside the current working 
     cc)
       session_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
       printf '%s\n' "$session_id" > "$session_file"
-      printf '%s\n' '#!/usr/bin/env zsh' 'unalias cc 2>/dev/null || true' 'cc() { claude --dangerously-skip-permissions "$@"; }' > "$command_file"
+      printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' 'unalias cc 2>/dev/null || true' 'cc() { claude --dangerously-skip-permissions "$@"; }' > "$command_file"
       printf '%q ' cc -p --model "$MODEL" --effort "$EFFORT" --permission-mode bypassPermissions --output-format stream-json --verbose --session-id "$session_id" "$prompt" >> "$command_file"
+      printf '\n' >> "$command_file"
+      if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
+      if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.type == "result") | .result // empty' "$transcript" | tail -1 > "$final" || true; fi
+      ;;
+    cckimi)
+      session_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+      printf '%s\n' "$session_id" > "$session_file"
+      printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$command_file"
+      printf '%q ' cckimi -p --model "$MODEL" --effort "$EFFORT" --permission-mode bypassPermissions --output-format stream-json --verbose --session-id "$session_id" "$prompt" >> "$command_file"
       printf '\n' >> "$command_file"
       if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
       if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.type == "result") | .result // empty' "$transcript" | tail -1 > "$final" || true; fi
@@ -368,8 +406,9 @@ Run the relevant checks yourself. Do not edit files outside the current working 
   session_id="$(tr -d '[:space:]' < "$session_file" 2>/dev/null || true)"
   case "$HARNESS" in
     codex) printf '%q ' codex exec resume "$session_id" > "$resume_file" ;;
-    ccx) printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc"' > "$resume_file"; printf '%q ' ccx --resume "$session_id" >> "$resume_file" ;;
+    ccx) printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$resume_file"; printf '%q ' ccx --resume "$session_id" >> "$resume_file" ;;
     cc) printf '%q ' cc --resume "$session_id" > "$resume_file" ;;
+    cckimi) printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$resume_file"; printf '%q ' cckimi --resume "$session_id" >> "$resume_file" ;;
     cursor-agent) printf '%q ' cursor-agent --resume "$session_id" > "$resume_file" ;;
   esac
   printf '\n' >> "$resume_file"
