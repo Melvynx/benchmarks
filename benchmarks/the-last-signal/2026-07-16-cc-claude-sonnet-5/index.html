@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Claude Sonnet 5</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<style>
+  :root{
+    --bg:#05070c;
+    --ink:#eef2f8;
+    --amber:#e8a33d;
+    --amber-soft:#f0c17a;
+    --cyan:#5fd0e0;
+    --rose:#e6647f;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --serif: Georgia, "Times New Roman", serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg); overflow:hidden;
+    font-family:var(--serif); color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  #scene{ position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; background:#03040a; }
+
+  #overlay{ position:fixed; inset:0; pointer-events:none; }
+
+  .progress{ position:absolute; top:0; left:0; right:0; height:2px; background:rgba(255,255,255,0.06); }
+  .progress-fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--cyan),var(--amber)); }
+
+  .title-card{
+    position:absolute; top:36%; left:50%; transform:translate(-50%,-50%);
+    font-family:var(--serif); font-size:clamp(24px,5vw,52px); letter-spacing:0.14em;
+    color:#f7efe0; text-align:center; width:92%;
+    text-shadow:0 0 46px rgba(232,163,61,0.30);
+    opacity:0; pointer-events:none;
+  }
+
+  .chapter-label{
+    position:absolute; top:5.5%; left:6%;
+    font-family:var(--mono); font-size:11px; letter-spacing:0.22em;
+    color:rgba(238,242,248,0.55); text-transform:uppercase;
+    opacity:0; pointer-events:none;
+  }
+
+  .caption{
+    position:absolute; left:50%; bottom:15%; transform:translateX(-50%);
+    font-family:var(--serif); font-style:italic; font-size:clamp(14px,2.1vw,19px);
+    letter-spacing:0.01em; color:rgba(244,238,224,0.92); text-align:center;
+    max-width:82%; opacity:0; pointer-events:none; text-shadow:0 2px 18px rgba(0,0,0,0.6);
+  }
+
+  .message-text{
+    position:absolute; left:50%; top:41%; transform:translate(-50%,-50%);
+    font-family:var(--mono); font-size:clamp(15px,2.6vw,24px); letter-spacing:0.28em;
+    color:#fff3d6; text-align:center; width:88%;
+    text-shadow:0 0 30px rgba(255,224,170,0.55);
+    opacity:0; pointer-events:none;
+  }
+
+  .fragment-controls{
+    position:absolute; left:50%; bottom:7%; transform:translateX(-50%);
+    display:none; gap:9vw; align-items:flex-end; opacity:0;
+  }
+  .frag-slider-wrap{ display:flex; flex-direction:column; align-items:center; gap:10px; pointer-events:auto; }
+  .frag-num{ font-family:var(--mono); font-size:11px; letter-spacing:0.2em; color:rgba(238,242,248,0.5); }
+  input[type=range].frag-slider{
+    -webkit-appearance:none; appearance:none;
+    writing-mode:vertical-lr; direction:rtl;
+    width:30px; height:118px; background:transparent; cursor:ns-resize;
+    outline-offset:6px;
+  }
+  input[type=range].frag-slider::-webkit-slider-runnable-track{
+    width:3px; height:100%; background:rgba(238,242,248,0.18); border-radius:2px;
+  }
+  input[type=range].frag-slider::-webkit-slider-thumb{
+    -webkit-appearance:none; width:17px; height:17px; border-radius:50%;
+    background:currentColor; box-shadow:0 0 12px currentColor; margin-left:-7px; cursor:grab;
+  }
+  input[type=range].frag-slider::-moz-range-track{ width:3px; background:rgba(238,242,248,0.18); border-radius:2px; }
+  input[type=range].frag-slider::-moz-range-thumb{
+    width:17px; height:17px; border-radius:50%; border:none;
+    background:currentColor; box-shadow:0 0 12px currentColor; cursor:grab;
+  }
+  input[type=range].frag-slider:focus-visible{ outline:1px solid rgba(238,242,248,0.7); }
+  .frag-slider.f0{ color:var(--amber); }
+  .frag-slider.f1{ color:var(--cyan); }
+  .frag-slider.f2{ color:var(--rose); }
+  input[type=range].frag-slider:disabled{ opacity:0.55; cursor:default; }
+
+  .choice-controls{
+    position:absolute; left:50%; bottom:11%; transform:translateX(-50%);
+    display:none; gap:20px; opacity:0; flex-wrap:wrap; justify-content:center; pointer-events:auto;
+  }
+  button.choice-btn{
+    font-family:var(--mono); letter-spacing:0.2em; text-transform:uppercase;
+    background:rgba(5,7,12,0.35); border:1px solid rgba(238,242,248,0.4); color:var(--ink);
+    padding:14px 28px; font-size:12.5px; cursor:pointer; transition:border-color .3s ease, color .3s ease, box-shadow .3s ease;
+    backdrop-filter: blur(2px);
+  }
+  button.choice-btn:hover:not(:disabled), button.choice-btn:focus-visible{
+    border-color:var(--amber); color:var(--amber-soft); box-shadow:0 0 22px rgba(232,163,61,0.28); outline:none;
+  }
+  button.choice-btn:disabled{ opacity:0.4; cursor:default; }
+
+  .end-screen{
+    position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:26px;
+    background:radial-gradient(ellipse at 50% 45%, rgba(5,7,12,0.15), rgba(3,4,9,0.82));
+    opacity:0; pointer-events:auto;
+  }
+  .end-caption{
+    font-family:var(--serif); font-size:clamp(19px,3.2vw,30px); letter-spacing:0.05em;
+    text-align:center; max-width:80%; color:#f4ede0;
+  }
+  .end-actions{ display:flex; gap:18px; flex-wrap:wrap; justify-content:center; }
+
+  .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+
+  @media (max-width: 640px){
+    .fragment-controls{ gap:12vw; }
+    input[type=range].frag-slider{ height:92px; }
+    .caption{ bottom:19%; }
+    .fragment-controls{ bottom:9%; }
+    .choice-controls{ bottom:13%; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="overlay">
+    <div class="progress"><div id="progressFill" class="progress-fill"></div></div>
+    <div id="titleCard" class="title-card">Claude Sonnet 5</div>
+    <div id="chapterLabel" class="chapter-label"></div>
+    <div id="caption" class="caption" aria-live="polite"></div>
+    <div id="messageText" class="message-text">WE REMEMBER YOUR SKY.</div>
+
+    <div id="fragmentControls" class="fragment-controls">
+      <div class="frag-slider-wrap">
+        <input type="range" class="frag-slider f0" data-index="0" min="0" max="1000" value="500" aria-label="Align fragment one">
+        <span class="frag-num">I</span>
+      </div>
+      <div class="frag-slider-wrap">
+        <input type="range" class="frag-slider f1" data-index="1" min="0" max="1000" value="500" aria-label="Align fragment two">
+        <span class="frag-num">II</span>
+      </div>
+      <div class="frag-slider-wrap">
+        <input type="range" class="frag-slider f2" data-index="2" min="0" max="1000" value="500" aria-label="Align fragment three">
+        <span class="frag-num">III</span>
+      </div>
+    </div>
+
+    <div id="choiceControls" class="choice-controls">
+      <button id="btnAnswer" class="choice-btn" type="button">Answer</button>
+      <button id="btnSilent" class="choice-btn" type="button">Stay Silent</button>
+    </div>
+
+    <div id="endScreen" class="end-screen">
+      <div id="endCaption" class="end-caption"></div>
+      <div class="end-actions">
+        <button id="btnReplay" class="choice-btn" type="button">Replay</button>
+        <button id="btnAltEnding" class="choice-btn" type="button">Explore the Other Ending</button>
+      </div>
+    </div>
+    <div id="srStatus" class="sr-only" aria-live="polite"></div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------------------------------------------------------------
+     Math / helpers
+  --------------------------------------------------------------------- */
+  function clamp01(x){ return x<0?0:x>1?1:x; }
+  function clamp(x,a,b){ return x<a?a:x>b?b:x; }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function round3(n){ return Math.round(n*1000)/1000; }
+  function easeOutCubic(t){ t=clamp01(t); return 1-Math.pow(1-t,3); }
+  function easeInOutCubic(t){ t=clamp01(t); return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+
+  function windowOpacity(t, inStart, inDur, holdDur, outDur){
+    if (t < inStart) return 0;
+    const inEnd = inStart+inDur;
+    if (t < inEnd) return clamp01(inDur<=0?1:(t-inStart)/inDur);
+    if (holdDur >= 999999) return 1;
+    const holdEnd = inEnd+holdDur;
+    if (t < holdEnd) return 1;
+    const outEnd = holdEnd+outDur;
+    if (t < outEnd) return 1-clamp01(outDur<=0?1:(t-holdEnd)/outDur);
+    return 0;
+  }
+
+  function hexToRgb(hex){
+    const h = hex.replace('#','');
+    return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+  }
+  function mixRgb(hexA,hexB,t){
+    const a=hexToRgb(hexA), b=hexToRgb(hexB);
+    const r=Math.round(lerp(a[0],b[0],t)), g=Math.round(lerp(a[1],b[1],t)), bl=Math.round(lerp(a[2],b[2],t));
+    return 'rgb('+r+','+g+','+bl+')';
+  }
+
+  /* ---------------------------------------------------------------------
+     Seeded PRNG (mulberry32) with named sub-streams
+  --------------------------------------------------------------------- */
+  function mulberry32(a){
+    a = a >>> 0;
+    return function(){
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function hashSeed(seed, salt){
+    const str = String(seed) + ':' + salt;
+    let h = 2166136261;
+    for (let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function rngFor(seed, salt){ return mulberry32(hashSeed(seed, salt)); }
+
+  /* ---------------------------------------------------------------------
+     Timing constants
+  --------------------------------------------------------------------- */
+  const ACT0 = {
+    DURATION: 20000,
+    TITLE_IN: 400, TITLE_HOLD: 3200, TITLE_OUT: 1300,
+    LINE_IN: 12000, LINE_HOLD: 4500, LINE_OUT: 1200,
+    GLOW_START: 10000, GLOW_RAMP: 3200,
+  };
+  const LOCK_MS = 800, REVEAL_MS = 2600, HOLD_MS = 1600;
+  const CHOICE_APPEAR_MS = 900, CHOICE_LOCK_MS = 700;
+  const ENDING = {
+    DURATION: 24000,
+    ANSWER_BUILD: 9000, ANSWER_LINE_IN: 9500,
+    SILENT_FADE: 12000, SILENT_LINE_IN: 9500,
+  };
+  const FRAG_TOL = 0.055;
+  const ACT_NAMES = ['receiver','message','choice','ending'];
+  const DEFAULT_CONFIG = { seed: 217, autoplay: { enabled: true, ending: 'answer' } };
+  const AUTOPLAY_ACT1_SCHEDULE = [[2600,0],[7400,1],[12200,2]];
+  const AUTOPLAY_ACT2_DELAY = CHOICE_APPEAR_MS + 2400;
+  const RAIN_COUNT = 120, SILENT_RAIN_COUNT = 150, LIGHTNING_COUNT = 5, BURST_COUNT = 70, RIDGE_POINTS = 16;
+
+  /* ---------------------------------------------------------------------
+     Deterministic world generation
+  --------------------------------------------------------------------- */
+  function buildWorld(seed){
+    const rRain = rngFor(seed,'rain');
+    const rain = [];
+    for (let i=0;i<RAIN_COUNT;i++){
+      rain.push({
+        x: rRain(), y0: rRain(),
+        len: 0.03+rRain()*0.05,
+        speed: 0.00055+rRain()*0.00045,
+        drift: (rRain()-0.5)*0.02,
+        op: 0.12+rRain()*0.28,
+      });
+    }
+
+    const rSilent = rngFor(seed,'silent-rain');
+    const silentRain = [];
+    for (let i=0;i<SILENT_RAIN_COUNT;i++){
+      silentRain.push({
+        x: rSilent(), y0: rSilent(),
+        len: 0.04+rSilent()*0.06,
+        speed: 0.0008+rSilent()*0.0007,
+        op: 0.15+rSilent()*0.3,
+      });
+    }
+
+    const rLight = rngFor(seed,'lightning');
+    const flashes = [];
+    let t = 2200;
+    for (let i=0;i<LIGHTNING_COUNT;i++){
+      t += 1400 + rLight()*2600;
+      if (t > ACT0.DURATION-800) break;
+      flashes.push({ time:t, peak: 0.5+rLight()*0.5, dur: 110+rLight()*140 });
+    }
+
+    const rFrag = rngFor(seed,'fragments');
+    const fragments = [0,1,2].map(function(){
+      const target = 0.28 + rFrag()*0.44;
+      let start = rFrag();
+      if (Math.abs(start-target) < 0.22) start = (start + 0.4) % 1;
+      return { target: target, value: start, aligned: false, noiseSeed: rFrag()*1000 };
+    });
+
+    const rBurst = rngFor(seed,'answer-burst');
+    const answerParticles = [];
+    for (let i=0;i<BURST_COUNT;i++){
+      answerParticles.push({
+        angle: rBurst()*Math.PI*2,
+        speed: 0.14+rBurst()*0.22,
+        size: 1+rBurst()*2.4,
+        delay: rBurst()*900,
+        wobble: rBurst()*Math.PI*2,
+      });
+    }
+
+    const rRidge = rngFor(seed,'ridge');
+    const ridge = [];
+    for (let i=0;i<=RIDGE_POINTS;i++){
+      ridge.push({ xFrac: i/RIDGE_POINTS, hFrac: 0.62 + rRidge()*0.10 });
+    }
+
+    return { rain, silentRain, flashes, fragments, answerParticles, ridge };
+  }
+
+  /* ---------------------------------------------------------------------
+     Story engine
+  --------------------------------------------------------------------- */
+  const Story = {
+    seed: 217,
+    world: null,
+    act: 0,
+    actTime: 0,
+    globalTime: 0,
+    fragments: [],
+    resolvedAt: null,
+    choiceAvailable: false,
+    _choiceLockedAt: null,
+    selectedEnding: null,
+    completed: false,
+    autoplay: { enabled: true, ending: 'answer' },
+    _act1Fired: [false,false,false],
+    _act1Tweens: [null,null,null],
+    _act2Fired: false,
+    messageRevealGlobalAt: null,
+    act3EnteredGlobalAt: null,
+    reducedMotion: false,
+
+    reset: function(seed){
+      const n = Number(seed);
+      const s = Number.isFinite(n) ? Math.trunc(n) : 217;
+      this.seed = s;
+      this.world = buildWorld(s);
+      this.act = 0;
+      this.actTime = 0;
+      this.globalTime = 0;
+      this.fragments = this.world.fragments.map(function(f){ return Object.assign({}, f); });
+      this.resolvedAt = null;
+      this.choiceAvailable = false;
+      this._choiceLockedAt = null;
+      this.selectedEnding = null;
+      this.completed = false;
+      this._act1Fired = [false,false,false];
+      this._act1Tweens = [null,null,null];
+      this._act2Fired = false;
+      this.messageRevealGlobalAt = null;
+      this.act3EnteredGlobalAt = null;
+      return this.snapshot();
+    },
+
+    setAutoplay: function(enabled, ending){
+      this.autoplay.enabled = !!enabled;
+      if (ending === 'answer' || ending === 'silent') this.autoplay.ending = ending;
+      return this.snapshot();
+    },
+
+    alignFragment: function(index, value, userInitiated){
+      if (this.act !== 1 || this.completed) return false;
+      const i = Math.trunc(Number(index));
+      if (i<0 || i>2) return false;
+      let v = Number(value);
+      if (!Number.isFinite(v)) return false;
+      v = clamp(v, 0, 1);
+      if (userInitiated) this.autoplay.enabled = false;
+      const f = this.fragments[i];
+      f.value = v;
+      f.aligned = Math.abs(v - f.target) <= FRAG_TOL;
+      return true;
+    },
+
+    choose: function(ending, userInitiated){
+      if (this.act !== 2 || !this.choiceAvailable || this.selectedEnding || this.completed) return false;
+      if (ending !== 'answer' && ending !== 'silent') return false;
+      if (userInitiated) this.autoplay.enabled = false;
+      this.selectedEnding = ending;
+      return true;
+    },
+
+    seek: function(ms){
+      let t = Number(ms);
+      if (!Number.isFinite(t)) return false;
+      t = clamp(t, 0, 10*60*1000);
+      this.actTime = t;
+      return true;
+    },
+
+    snapshot: function(){
+      return {
+        seed: this.seed,
+        act: this.act,
+        actName: ACT_NAMES[this.act] || 'unknown',
+        actTime: Math.round(this.actTime),
+        globalTime: Math.round(this.globalTime),
+        fragments: this.fragments.map(function(f){ return { value: round3(f.value), target: round3(f.target), aligned: !!f.aligned }; }),
+        allFragmentsAligned: this.fragments.every(function(f){ return f.aligned; }),
+        messageRevealed: this.messageRevealGlobalAt !== null,
+        choiceAvailable: this.choiceAvailable,
+        selectedEnding: this.selectedEnding,
+        completed: this.completed,
+        autoplay: { enabled: this.autoplay.enabled, ending: this.autoplay.ending },
+        reducedMotion: this.reducedMotion,
+      };
+    },
+
+    _enterAct: function(n){
+      this.act = n;
+      this.actTime = 0;
+      if (n===1){ this.resolvedAt=null; this._act1Fired=[false,false,false]; this._act1Tweens=[null,null,null]; }
+      if (n===2){ this.choiceAvailable=false; this._choiceLockedAt=null; this._act2Fired=false; }
+      if (n===3){ this.act3EnteredGlobalAt=this.globalTime; }
+    },
+
+    _runAutoplay: function(){
+      const self = this;
+      if (this.act===1){
+        AUTOPLAY_ACT1_SCHEDULE.forEach(function(pair){
+          const t = pair[0], i = pair[1];
+          if (!self._act1Fired[i] && self.actTime >= t){
+            self._act1Fired[i] = true;
+            self._act1Tweens[i] = { from: self.fragments[i].value, to: self.fragments[i].target, start: self.actTime, dur: 900 };
+          }
+        });
+      } else if (this.act===2){
+        if (!this._act2Fired && this.choiceAvailable && this.actTime >= AUTOPLAY_ACT2_DELAY){
+          this._act2Fired = true;
+          this.choose(this.autoplay.ending, false);
+        }
+      }
+    },
+
+    _updateAct1Tweens: function(){
+      for (let i=0;i<3;i++){
+        const tw = this._act1Tweens[i];
+        if (!tw) continue;
+        const p = clamp01((this.actTime - tw.start)/tw.dur);
+        const v = tw.from + (tw.to - tw.from)*easeInOutCubic(p);
+        this.alignFragment(i, v, false);
+        if (p>=1) this._act1Tweens[i] = null;
+      }
+    },
+
+    update: function(dt){
+      if (this.completed){ this.globalTime += dt; return; }
+      this.actTime += dt;
+      this.globalTime += dt;
+
+      if (this.autoplay.enabled) this._runAutoplay();
+
+      if (this.act===0){
+        if (this.actTime >= ACT0.DURATION) this._enterAct(1);
+      } else if (this.act===1){
+        this._updateAct1Tweens();
+        if (this.resolvedAt===null && this.fragments.every(function(f){ return f.aligned; })){
+          this.fragments.forEach(function(f){ f.value = f.target; });
+          this.resolvedAt = this.actTime;
+          if (this.messageRevealGlobalAt===null) this.messageRevealGlobalAt = this.globalTime;
+        }
+        if (this.resolvedAt!==null && this.actTime-this.resolvedAt >= LOCK_MS+REVEAL_MS+HOLD_MS){
+          this._enterAct(2);
+        }
+      } else if (this.act===2){
+        if (this.actTime >= CHOICE_APPEAR_MS) this.choiceAvailable = true;
+        if (this.selectedEnding && this._choiceLockedAt===null) this._choiceLockedAt = this.actTime;
+        if (this._choiceLockedAt!==null && this.actTime-this._choiceLockedAt >= CHOICE_LOCK_MS){
+          this._enterAct(3);
+        }
+      } else if (this.act===3){
+        if (this.actTime >= ENDING.DURATION) this.completed = true;
+      }
+    },
+
+    advance: function(totalMs, stepMs){
+      const step = stepMs || 16;
+      let remaining = totalMs;
+      let guard = 0;
+      while (remaining > 0 && guard < 500000){
+        const dt = Math.min(step, remaining);
+        this.update(dt);
+        remaining -= dt;
+        guard++;
+      }
+    },
+  };
+
+  /* ---------------------------------------------------------------------
+     Canvas setup
+  --------------------------------------------------------------------- */
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  const freezeCanvas = document.createElement('canvas');
+  const freezeCtx = freezeCanvas.getContext('2d');
+  let W=0, H=0, DPR=1;
+
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio||1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.floor(W*DPR); canvas.height = Math.floor(H*DPR);
+    canvas.style.width = W+'px'; canvas.style.height = H+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  let reducedMotion = false;
+
+  /* ---------------------------------------------------------------------
+     Scene composition
+  --------------------------------------------------------------------- */
+  function sceneModeOf(act){ return (act===0 || act===3) ? 'exterior' : 'console'; }
+
+  function computeLightning(t){
+    let a = 0;
+    const flashes = Story.world.flashes;
+    for (let i=0;i<flashes.length;i++){
+      const fl = flashes[i];
+      if (t>=fl.time && t<=fl.time+fl.dur){
+        const local = 1-(t-fl.time)/fl.dur;
+        a = Math.max(a, easeOutCubic(local)*fl.peak);
+      }
+    }
+    return reducedMotion ? a*0.25 : a;
+  }
+
+  function computeSceneParams(){
+    const st = Story;
+    const p = { mode:'exterior', glow:0.05, storm:1, beam:0, silentFade:0, flashAlpha:0 };
+    if (st.act===0){
+      const glowRamp = clamp01((st.actTime-ACT0.GLOW_START)/ACT0.GLOW_RAMP);
+      p.glow = 0.04 + glowRamp*0.85;
+      p.storm = 1;
+      p.flashAlpha = computeLightning(st.actTime);
+    } else if (st.act===1 || st.act===2){
+      p.mode = 'console';
+      p.glow = 1;
+    } else if (st.act===3){
+      p.storm = 1;
+      if (st.selectedEnding==='answer'){
+        const bp = clamp01(st.actTime/ENDING.ANSWER_BUILD);
+        p.beam = bp;
+        p.glow = 0.9+0.1*Math.sin(st.actTime*0.004);
+        p.storm = 1-0.4*bp;
+        p.flashAlpha = computeLightning(st.actTime % ACT0.DURATION) * Math.max(0.15, 1-bp*0.7);
+      } else if (st.selectedEnding==='silent'){
+        const fp = clamp01(st.actTime/ENDING.SILENT_FADE);
+        p.silentFade = fp;
+        let glow = Math.max(0, 0.9*(1-fp));
+        if (fp>0.3 && fp<0.55) glow += 0.25*Math.sin((fp-0.3)/0.25*Math.PI);
+        p.glow = glow;
+        p.storm = 1+0.3*fp;
+        p.flashAlpha = computeLightning(st.actTime % ACT0.DURATION);
+      } else {
+        p.glow = 0.05;
+      }
+    }
+    return p;
+  }
+
+  function drawSky(p){
+    const g = ctx.createLinearGradient(0,0,0,H);
+    if (p.beam>0){
+      g.addColorStop(0, mixRgb('#03040a','#241a10', p.beam*0.5));
+      g.addColorStop(0.55, mixRgb('#0a1220','#3a2712', p.beam*0.4));
+      g.addColorStop(1, '#05070d');
+    } else if (p.silentFade>0){
+      g.addColorStop(0, mixRgb('#03040a','#000102', p.silentFade));
+      g.addColorStop(0.55, mixRgb('#0a1220','#04050a', p.silentFade));
+      g.addColorStop(1, '#020306');
+    } else {
+      g.addColorStop(0,'#03040a');
+      g.addColorStop(0.55,'#0a1220');
+      g.addColorStop(1,'#050a14');
+    }
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  }
+
+  function drawRidge(){
+    const pts = Story.world.ridge;
+    ctx.beginPath();
+    ctx.moveTo(0,H);
+    for (let i=0;i<pts.length;i++) ctx.lineTo(pts[i].xFrac*W, pts[i].hFrac*H);
+    ctx.lineTo(W,H);
+    ctx.closePath();
+    ctx.fillStyle = '#050810';
+    ctx.fill();
+  }
+
+  function stationLayout(){
+    const baseX = W*0.60, baseY = H*0.80, scale = Math.min(W,H)*0.20;
+    return { baseX:baseX, baseY:baseY, scale:scale, dishX: baseX+scale*0.05, dishY: baseY-scale*1.65 };
+  }
+
+  function drawStationSilhouette(p){
+    const L = stationLayout();
+    ctx.save();
+    ctx.translate(L.baseX, L.baseY);
+    ctx.fillStyle = '#02040a';
+    ctx.beginPath();
+    ctx.moveTo(-L.scale*0.9, 0);
+    ctx.lineTo(-L.scale*0.75, -L.scale*0.55);
+    ctx.lineTo(L.scale*0.55, -L.scale*0.55);
+    ctx.lineTo(L.scale*0.75, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = '#02040a'; ctx.lineWidth = L.scale*0.045;
+    ctx.beginPath();
+    ctx.moveTo(L.scale*0.15, -L.scale*0.55);
+    ctx.lineTo(L.scale*0.05, -L.scale*1.65);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(L.scale*0.05, -L.scale*1.65);
+    ctx.rotate(-0.5);
+    ctx.beginPath();
+    ctx.ellipse(0,0, L.scale*0.34, L.scale*0.13, 0, 0, Math.PI*2);
+    ctx.fillStyle = '#03050c';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(180,200,230,0.18)';
+    ctx.lineWidth = L.scale*0.015;
+    ctx.stroke();
+    ctx.restore();
+
+    const winAlpha = clamp01(0.30 + 0.55*p.glow) * (1-(p.silentFade||0)*0.9);
+    ctx.fillStyle = 'rgba(232,163,61,'+winAlpha+')';
+    ctx.fillRect(-L.scale*0.42, -L.scale*0.4, L.scale*0.28, L.scale*0.22);
+    ctx.strokeStyle = 'rgba(10,8,4,0.9)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-L.scale*0.42, -L.scale*0.4, L.scale*0.28, L.scale*0.22);
+    ctx.restore();
+  }
+
+  function drawOperator(){
+    const L = stationLayout();
+    const bob = reducedMotion ? 0 : Math.sin(Story.globalTime*0.0011)*L.scale*0.01;
+    ctx.save();
+    ctx.translate(L.baseX - L.scale*0.28, L.baseY - L.scale*0.20 + bob);
+    ctx.fillStyle = 'rgba(2,3,7,0.92)';
+    ctx.beginPath();
+    ctx.ellipse(0,0, L.scale*0.05, L.scale*0.06, 0,0,Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(0, L.scale*0.11, L.scale*0.09, L.scale*0.08, 0, Math.PI, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawDishBeam(p){
+    if (p.beam<=0) return;
+    const L = stationLayout();
+    const len = H*0.85*p.beam;
+    const topY = L.dishY-len;
+    const grad = ctx.createLinearGradient(L.dishX,L.dishY,L.dishX,topY);
+    grad.addColorStop(0, 'rgba(255,214,150,'+(0.5*p.beam)+')');
+    grad.addColorStop(1, 'rgba(255,214,150,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(L.dishX-L.scale*0.11, L.dishY);
+    ctx.lineTo(L.dishX+L.scale*0.11, L.dishY);
+    ctx.lineTo(L.dishX+L.scale*0.02, topY);
+    ctx.lineTo(L.dishX-L.scale*0.02, topY);
+    ctx.closePath();
+    ctx.fill();
+
+    if (!reducedMotion){
+      Story.world.answerParticles.forEach(function(pt){
+        const life = Story.actTime - pt.delay;
+        if (life<=0) return;
+        const dist = life*pt.speed*0.001*H;
+        if (dist > len*1.1) return;
+        const x = L.dishX + Math.cos(pt.angle)*dist*0.12 + Math.sin(pt.wobble+life*0.002)*4;
+        const y = L.dishY - dist;
+        const alpha = p.beam*Math.max(0,1-dist/Math.max(1,len));
+        ctx.beginPath();
+        ctx.arc(x,y,pt.size,0,Math.PI*2);
+        ctx.fillStyle = 'rgba(255,224,170,'+(alpha*0.8)+')';
+        ctx.fill();
+      });
+    }
+  }
+
+  function drawRain(p){
+    const t = reducedMotion ? 0 : Story.globalTime;
+    const drops = Story.world.rain;
+    ctx.lineWidth = 1;
+    for (let i=0;i<drops.length;i++){
+      const d = drops[i];
+      const yFrac = ((d.y0 + t*d.speed) % 1.1);
+      const y = yFrac*H*1.05 - H*0.05;
+      const x = d.x*W + Math.sin(t*0.0004 + d.x*8)*d.drift*W;
+      const len = d.len*H;
+      const op = d.op*(0.5+0.5*p.storm);
+      ctx.strokeStyle = 'rgba(180,200,230,'+op+')';
+      ctx.beginPath();
+      ctx.moveTo(x,y);
+      ctx.lineTo(x-len*0.12, y+len);
+      ctx.stroke();
+    }
+    if (p.silentFade>0){
+      const extra = Story.world.silentRain;
+      for (let i=0;i<extra.length;i++){
+        const d = extra[i];
+        const yFrac = ((d.y0 + t*d.speed) % 1.1);
+        const y = yFrac*H*1.05-H*0.05;
+        const x = d.x*W;
+        const len = d.len*H;
+        const op = d.op*p.silentFade;
+        ctx.strokeStyle = 'rgba(140,160,195,'+op+')';
+        ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x-len*0.12,y+len); ctx.stroke();
+      }
+    }
+  }
+
+  function drawVignette(){
+    const g = ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.25, W/2,H/2, Math.max(W,H)*0.75);
+    g.addColorStop(0,'rgba(0,0,0,0)');
+    g.addColorStop(1,'rgba(0,0,0,0.55)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  }
+
+  function drawExterior(){
+    const p = computeSceneParams();
+    drawSky(p);
+    drawRidge();
+    drawStationSilhouette(p);
+    drawOperator();
+    if (p.beam>0) drawDishBeam(p);
+    drawRain(p);
+    if (p.flashAlpha>0){
+      ctx.fillStyle = 'rgba(214,224,255,'+(p.flashAlpha*0.45)+')';
+      ctx.fillRect(0,0,W,H);
+    }
+    drawVignette();
+  }
+
+  function drawBezel(cx,cy,R){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(238,242,248,0.14)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx,cy,R*1.28,0,Math.PI*2); ctx.stroke();
+    for (let i=0;i<48;i++){
+      const a = (i/48)*Math.PI*2;
+      const r1 = R*1.24, r2 = i%4===0 ? R*1.34 : R*1.30;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(a)*r1, cy+Math.sin(a)*r1);
+      ctx.lineTo(cx+Math.cos(a)*r2, cy+Math.sin(a)*r2);
+      ctx.strokeStyle = 'rgba(238,242,248,0.10)';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCoreGlow(cx,cy,R){
+    const st = Story;
+    let intensity = 0.35;
+    if (st.act===1){
+      const alignedCount = st.fragments.filter(function(f){ return f.aligned; }).length;
+      intensity = 0.3 + alignedCount*0.18;
+      if (st.resolvedAt!==null){
+        const since = st.actTime-st.resolvedAt;
+        intensity = 0.85 + 0.15*clamp01(since/LOCK_MS);
+      }
+    } else if (st.act===2){
+      intensity = 1.0;
+    }
+    const wob = reducedMotion ? 1 : (0.9+0.1*Math.sin(st.globalTime*0.002));
+    const rad = R*0.22*wob;
+    const grad = ctx.createRadialGradient(cx,cy,0, cx,cy, rad*3.2);
+    grad.addColorStop(0, 'rgba(255,238,204,'+(0.9*intensity)+')');
+    grad.addColorStop(0.35, 'rgba(232,163,61,'+(0.55*intensity)+')');
+    grad.addColorStop(1, 'rgba(232,163,61,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx,cy,rad*3.2,0,Math.PI*2); ctx.fill();
+
+    ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2);
+    ctx.fillStyle = 'rgba(255,245,225,'+(0.9*intensity)+')';
+    ctx.fill();
+  }
+
+  function drawFragmentRings(cx,cy,R){
+    const colors = ['#e8a33d', '#5fd0e0', '#e6647f'];
+    Story.fragments.forEach(function(f, i){
+      const radius = R*(0.42+0.22*i);
+      const wobble = (f.aligned || reducedMotion) ? 0 : Math.sin(Story.globalTime*0.006 + f.noiseSeed)*R*0.018;
+      const r = radius + wobble;
+
+      ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+      ctx.strokeStyle = 'rgba(238,242,248,0.08)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const ta = f.target*Math.PI*2 - Math.PI/2;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(ta)*(r-6), cy+Math.sin(ta)*(r-6));
+      ctx.lineTo(cx+Math.cos(ta)*(r+6), cy+Math.sin(ta)*(r+6));
+      ctx.strokeStyle = 'rgba(238,242,248,0.35)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const va = f.value*Math.PI*2 - Math.PI/2;
+      const span = f.aligned ? 0.55 : 0.32;
+      ctx.beginPath();
+      ctx.arc(cx,cy,r, va-span/2, va+span/2);
+      ctx.strokeStyle = f.aligned ? '#fff3d6' : colors[i];
+      ctx.lineWidth = f.aligned ? 5 : 3.5;
+      ctx.shadowColor = colors[i];
+      ctx.shadowBlur = f.aligned ? 18 : 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    });
+  }
+
+  function drawMergedRing(cx,cy,R){
+    const r = R*0.64;
+    const pulse = reducedMotion ? 1 : (0.97+0.03*Math.sin(Story.globalTime*0.0015));
+    ctx.beginPath(); ctx.arc(cx,cy,r*pulse,0,Math.PI*2);
+    ctx.strokeStyle = 'rgba(255,243,214,0.65)';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#e8a33d'; ctx.shadowBlur = 14;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  function drawConsole(){
+    const cx = W/2, cy = H*0.42, R = Math.min(W,H)*0.24;
+    const g = ctx.createRadialGradient(cx,cy,10,cx,cy,Math.max(W,H)*0.8);
+    g.addColorStop(0,'#111826'); g.addColorStop(1,'#03040a');
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+    drawBezel(cx,cy,R);
+    drawCoreGlow(cx,cy,R);
+    if (Story.act===1) drawFragmentRings(cx,cy,R); else drawMergedRing(cx,cy,R);
+    drawVignette();
+  }
+
+  let lastAct = -1;
+  let transition = null;
+
+  function captureFreeze(){
+    freezeCanvas.width = canvas.width;
+    freezeCanvas.height = canvas.height;
+    freezeCtx.clearRect(0,0,freezeCanvas.width,freezeCanvas.height);
+    freezeCtx.drawImage(canvas,0,0);
+  }
+
+  function render(){
+    const mode = sceneModeOf(Story.act);
+    if (Story.act !== lastAct){
+      if (lastAct !== -1 && mode !== sceneModeOf(lastAct)){
+        captureFreeze();
+        transition = { start: Story.globalTime, dur: 900 };
+      }
+      lastAct = Story.act;
+    }
+
+    if (mode==='exterior') drawExterior(); else drawConsole();
+
+    if (transition){
+      const dt = Story.globalTime - transition.start;
+      if (dt < transition.dur){
+        const alpha = 1-clamp01(dt/transition.dur);
+        ctx.save();
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(freezeCanvas,0,0);
+        ctx.restore();
+      } else {
+        transition = null;
+      }
+    }
+
+    syncOverlay();
+  }
+
+  /* ---------------------------------------------------------------------
+     DOM overlay sync
+  --------------------------------------------------------------------- */
+  const titleCard = document.getElementById('titleCard');
+  const chapterLabel = document.getElementById('chapterLabel');
+  const caption = document.getElementById('caption');
+  const messageText = document.getElementById('messageText');
+  const fragmentControls = document.getElementById('fragmentControls');
+  const choiceControls = document.getElementById('choiceControls');
+  const endScreen = document.getElementById('endScreen');
+  const endCaption = document.getElementById('endCaption');
+  const progressFill = document.getElementById('progressFill');
+  const btnAnswer = document.getElementById('btnAnswer');
+  const btnSilent = document.getElementById('btnSilent');
+  const btnReplay = document.getElementById('btnReplay');
+  const btnAltEnding = document.getElementById('btnAltEnding');
+  const srStatus = document.getElementById('srStatus');
+  const fragSliders = Array.prototype.slice.call(document.querySelectorAll('.frag-slider'));
+
+  let endScreenShown = false;
+
+  function setOpacity(el, v){ el.style.opacity = clamp01(v).toFixed(3); }
+
+  function overallProgress(){
+    const st = Story;
+    const weights = [0.30,0.28,0.10,0.32];
+    const approx = [ACT0.DURATION, 18000, 4000, ENDING.DURATION];
+    let acc = 0;
+    for (let i=0;i<st.act;i++) acc += weights[i];
+    acc += weights[st.act]*clamp01(st.actTime/approx[st.act]);
+    return clamp01(acc);
+  }
+
+  function syncOverlay(){
+    const st = Story;
+
+    setOpacity(titleCard, st.act===0 ? windowOpacity(st.actTime, ACT0.TITLE_IN, 800, ACT0.TITLE_HOLD, ACT0.TITLE_OUT) : 0);
+
+    let chapterText = '', chapterOp = 0;
+    if (st.act===0){ chapterText='I — THE RECEIVER'; chapterOp=windowOpacity(st.actTime,300,700,3000,1200); }
+    else if (st.act===1){ chapterText='II — THE MESSAGE'; chapterOp=windowOpacity(st.actTime,200,700,2000,1200); }
+    else if (st.act===2){ chapterText='III — THE CHOICE'; chapterOp=windowOpacity(st.actTime,200,700,2000,1200); }
+    if (chapterLabel.textContent !== chapterText) chapterLabel.textContent = chapterText;
+    setOpacity(chapterLabel, chapterOp);
+
+    let captionText = '', captionOp = 0;
+    if (st.act===0){
+      captionText = 'At 02:17, the dead receiver began to glow.';
+      captionOp = windowOpacity(st.actTime, ACT0.LINE_IN, 900, ACT0.LINE_HOLD, ACT0.LINE_OUT);
+    } else if (st.act===2){
+      captionText = 'Answer, or let the storm keep it.';
+      captionOp = st.selectedEnding ? 0 : windowOpacity(st.actTime, CHOICE_APPEAR_MS, 700, 999999, 0);
+    } else if (st.act===3){
+      if (st.selectedEnding==='answer'){
+        captionText = 'The sky has an answer now.';
+        captionOp = windowOpacity(st.actTime, ENDING.ANSWER_LINE_IN, 1200, 3200, 1400);
+      } else if (st.selectedEnding==='silent'){
+        captionText = 'The storm keeps the secret.';
+        captionOp = windowOpacity(st.actTime, ENDING.SILENT_LINE_IN, 1200, 3200, 1400);
+      }
+    }
+    if (caption.textContent !== captionText){
+      caption.textContent = captionText;
+      if (captionText) srStatus.textContent = captionText;
+    }
+    setOpacity(caption, captionOp);
+
+    let msgOp = 0;
+    if (st.messageRevealGlobalAt !== null){
+      const since = st.globalTime - st.messageRevealGlobalAt;
+      msgOp = clamp01((since-LOCK_MS)/REVEAL_MS);
+      if (st.act===3 && st.act3EnteredGlobalAt!==null){
+        const t3 = st.globalTime - st.act3EnteredGlobalAt;
+        msgOp *= Math.max(0, 1-t3/800);
+      }
+    }
+    setOpacity(messageText, msgOp);
+
+    const fragActive = st.act===1;
+    fragmentControls.style.display = fragActive ? 'flex' : 'none';
+    if (fragActive){
+      let fOp = windowOpacity(st.actTime, 400,700, 999999, 0);
+      if (st.resolvedAt!==null) fOp *= Math.max(0, 1-(st.actTime-st.resolvedAt)/LOCK_MS);
+      setOpacity(fragmentControls, fOp);
+      for (let i=0;i<3;i++){
+        const s = fragSliders[i];
+        if (document.activeElement !== s) s.value = String(Math.round(st.fragments[i].value*1000));
+        s.disabled = st.resolvedAt !== null;
+      }
+    }
+
+    const choiceActive = st.act===2;
+    choiceControls.style.display = choiceActive ? 'flex' : 'none';
+    if (choiceActive){
+      let cOp = windowOpacity(st.actTime, CHOICE_APPEAR_MS, 700, 999999, 0);
+      if (st.selectedEnding && st._choiceLockedAt!==null){
+        cOp *= Math.max(0, 1-(st.actTime-st._choiceLockedAt)/CHOICE_LOCK_MS);
+      }
+      setOpacity(choiceControls, cOp);
+      const enabled = st.choiceAvailable && !st.selectedEnding;
+      btnAnswer.disabled = !enabled;
+      btnSilent.disabled = !enabled;
+    }
+
+    if (st.completed){
+      if (!endScreenShown){
+        endScreenShown = true;
+        endCaption.textContent = st.selectedEnding==='answer' ? 'Transmission sent.' : 'The signal fades.';
+        endScreen.style.display = 'flex';
+        requestAnimationFrame(function(){ setOpacity(endScreen,1); });
+        btnReplay.focus();
+      }
+    } else if (endScreenShown){
+      endScreenShown = false;
+      endScreen.style.display = 'none';
+      setOpacity(endScreen,0);
+    }
+
+    progressFill.style.width = (overallProgress()*100).toFixed(2)+'%';
+  }
+
+  /* ---------------------------------------------------------------------
+     Input wiring
+  --------------------------------------------------------------------- */
+  fragSliders.forEach(function(s){
+    s.addEventListener('input', function(){
+      const i = Number(s.dataset.index);
+      Story.alignFragment(i, Number(s.value)/1000, true);
+    });
+  });
+
+  btnAnswer.addEventListener('click', function(){ Story.choose('answer', true); });
+  btnSilent.addEventListener('click', function(){ Story.choose('silent', true); });
+  btnReplay.addEventListener('click', function(){
+    Story.reset(Story.seed);
+    Story.setAutoplay(false);
+  });
+  btnAltEnding.addEventListener('click', function(){
+    const other = Story.selectedEnding==='answer' ? 'silent' : 'answer';
+    Story.reset(Story.seed);
+    Story.setAutoplay(true, other);
+  });
+
+  document.addEventListener('keydown', function(e){
+    if ((e.key===' ' || e.key==='Enter') && endScreen.style.display==='flex' && document.activeElement===document.body){
+      e.preventDefault();
+      btnReplay.click();
+    }
+  });
+
+  const motionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  function applyMotionPref(){
+    reducedMotion = !!(motionQuery && motionQuery.matches);
+    Story.reducedMotion = reducedMotion;
+  }
+  applyMotionPref();
+  if (motionQuery){
+    if (motionQuery.addEventListener) motionQuery.addEventListener('change', applyMotionPref);
+    else if (motionQuery.addListener) motionQuery.addListener(applyMotionPref);
+  }
+
+  /* ---------------------------------------------------------------------
+     Main loop (visibility-safe, delta-capped)
+  --------------------------------------------------------------------- */
+  const MAX_DT = 50;
+  let rafId = null;
+  let lastFrameReal = null;
+
+  function frame(nowReal){
+    if (lastFrameReal===null) lastFrameReal = nowReal;
+    let dt = nowReal - lastFrameReal;
+    lastFrameReal = nowReal;
+    if (dt > MAX_DT) dt = MAX_DT;
+    if (dt < 0) dt = 0;
+    Story.update(dt);
+    render();
+    rafId = requestAnimationFrame(frame);
+  }
+  function startLoop(){
+    if (rafId!==null) return;
+    lastFrameReal = null;
+    rafId = requestAnimationFrame(frame);
+  }
+  function stopLoop(){
+    if (rafId!==null){ cancelAnimationFrame(rafId); rafId = null; }
+  }
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden) stopLoop(); else startLoop();
+  });
+
+  /* ---------------------------------------------------------------------
+     Self-test
+  --------------------------------------------------------------------- */
+  function runSelfTest(){
+    const tests = [];
+    function t(name, fn){
+      try {
+        const ok = fn();
+        tests.push({ name: name, passed: !!ok, detail: '' });
+      } catch(err){
+        tests.push({ name: name, passed:false, detail: 'exception: '+(err && err.message ? err.message : String(err)) });
+      }
+    }
+
+    t('deterministic-reset', function(){
+      Story.reset(217); Story.setAutoplay(false);
+      Story.advance(6000);
+      const a = JSON.stringify(Story.snapshot());
+      Story.reset(217); Story.setAutoplay(false);
+      Story.advance(6000);
+      const b = JSON.stringify(Story.snapshot());
+      return a===b;
+    });
+
+    t('ordered-act-progression', function(){
+      Story.reset(217); Story.setAutoplay(true,'answer');
+      const seen = [0];
+      for (let i=0;i<3000 && !Story.completed;i++){
+        Story.advance(150);
+        if (Story.act !== seen[seen.length-1]) seen.push(Story.act);
+      }
+      if (!Story.completed) return false;
+      for (let i=1;i<seen.length;i++){ if (seen[i] !== seen[i-1]+1) return false; }
+      return seen[0]===0 && seen[seen.length-1]===3;
+    });
+
+    t('fragment-gating', function(){
+      Story.reset(217); Story.setAutoplay(false);
+      Story.advance(ACT0.DURATION+50);
+      if (Story.act !== 1) return false;
+      if (Story.messageRevealGlobalAt !== null) return false;
+      Story.alignFragment(0, Story.fragments[0].target, false);
+      Story.alignFragment(1, Story.fragments[1].target, false);
+      if (Story.resolvedAt !== null) return false;
+      Story.alignFragment(2, Story.fragments[2].target, false);
+      Story.advance(30);
+      if (Story.resolvedAt === null) return false;
+      Story.advance(LOCK_MS+REVEAL_MS+HOLD_MS+100);
+      return Story.act===2;
+    });
+
+    t('choice-gating', function(){
+      Story.reset(217); Story.setAutoplay(false);
+      Story.advance(ACT0.DURATION+50);
+      Story.alignFragment(0, Story.fragments[0].target, false);
+      Story.alignFragment(1, Story.fragments[1].target, false);
+      Story.alignFragment(2, Story.fragments[2].target, false);
+      Story.advance(LOCK_MS+REVEAL_MS+HOLD_MS+100);
+      if (Story.act !== 2) return false;
+      const tooEarly = Story.choose('answer', false);
+      if (tooEarly || Story.selectedEnding) return false;
+      Story.advance(CHOICE_APPEAR_MS+50);
+      if (!Story.choiceAvailable) return false;
+      const ok = Story.choose('answer', false);
+      return ok && Story.selectedEnding==='answer';
+    });
+
+    t('answer-ending-reachable', function(){
+      Story.reset(217); Story.setAutoplay(true,'answer');
+      Story.advance(300000);
+      return Story.completed && Story.selectedEnding==='answer';
+    });
+
+    t('silent-ending-reachable', function(){
+      Story.reset(217); Story.setAutoplay(true,'silent');
+      Story.advance(300000);
+      return Story.completed && Story.selectedEnding==='silent';
+    });
+
+    t('replay-resets-state', function(){
+      Story.reset(217);
+      return Story.act===0 && Story.actTime===0 && !Story.completed && Story.selectedEnding===null && Story.messageRevealGlobalAt===null;
+    });
+
+    t('autoplay-drives-alt-seed', function(){
+      Story.reset(4242); Story.setAutoplay(true,'silent');
+      Story.advance(300000);
+      return Story.completed && Story.selectedEnding==='silent';
+    });
+
+    t('automatic-startup-configuration', function(){
+      return DEFAULT_CONFIG.seed===217 && DEFAULT_CONFIG.autoplay.enabled===true && DEFAULT_CONFIG.autoplay.ending==='answer';
+    });
+
+    t('finite-numeric-state', function(){
+      Story.reset(217); Story.setAutoplay(true,'answer');
+      for (let i=0;i<80;i++){
+        Story.advance(500);
+        const s = Story.snapshot();
+        if (!Number.isFinite(s.actTime) || !Number.isFinite(s.globalTime)) return false;
+        for (let j=0;j<s.fragments.length;j++){
+          const f = s.fragments[j];
+          if (!Number.isFinite(f.value) || !Number.isFinite(f.target)) return false;
+        }
+      }
+      return true;
+    });
+
+    Story.reset(DEFAULT_CONFIG.seed);
+    Story.setAutoplay(DEFAULT_CONFIG.autoplay.enabled, DEFAULT_CONFIG.autoplay.ending);
+
+    const passed = tests.every(function(x){ return x.passed; });
+    return { passed: passed, tests: tests };
+  }
+
+  /* ---------------------------------------------------------------------
+     Public deterministic interface
+  --------------------------------------------------------------------- */
+  window.__LAST_SIGNAL__ = {
+    reset: function(seed){ return Story.reset(seed); },
+    setAutoplay: function(enabled, ending){ return Story.setAutoplay(enabled, ending); },
+    seek: function(ms){ Story.seek(ms); render(); return Story.snapshot(); },
+    alignFragment: function(index, value){ Story.alignFragment(index, value, true); return Story.snapshot(); },
+    choose: function(ending){ Story.choose(ending, true); return Story.snapshot(); },
+    snapshot: function(){ return Story.snapshot(); },
+    runSelfTest: function(){ return runSelfTest(); },
+  };
+
+  /* ---------------------------------------------------------------------
+     Bootstrap: automatic deterministic autoplay on load
+  --------------------------------------------------------------------- */
+  Story.reset(DEFAULT_CONFIG.seed);
+  Story.setAutoplay(DEFAULT_CONFIG.autoplay.enabled, DEFAULT_CONFIG.autoplay.ending);
+  render();
+  startLoop();
+
+})();
+</script>
+</body>
+</html>

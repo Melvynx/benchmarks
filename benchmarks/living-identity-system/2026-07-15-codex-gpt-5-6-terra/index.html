@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>codex-gpt-5-6-terra</title>
+  <style>
+    :root {
+      --ink: #090a0b;
+      --paper: #ded9c9;
+      --chalk: #f7f4e8;
+      --acid: #ddff37;
+      --violet: #a17bff;
+      --coral: #ff7166;
+      --cyan: #7af7e9;
+      --line: rgba(247, 244, 232, .24);
+      --muted: rgba(247, 244, 232, .58);
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --display: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--ink);
+      color: var(--chalk);
+      font-family: var(--mono);
+      letter-spacing: .025em;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--acid); outline-offset: 3px; }
+
+    #app {
+      height: 100%;
+      min-height: 560px;
+      position: relative;
+      isolation: isolate;
+      background-color: var(--ink);
+      background-image: linear-gradient(rgba(255,255,255,.024) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.024) 1px, transparent 1px);
+      background-size: 32px 32px;
+      overflow: hidden;
+    }
+    #app::after {
+      content: "";
+      position: absolute; inset: 0; pointer-events: none; z-index: 20;
+      opacity: .18;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+      mix-blend-mode: screen;
+    }
+
+    .topbar {
+      height: 68px;
+      position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 25px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(9,10,11,.82);
+      backdrop-filter: blur(10px);
+    }
+    .model-title {
+      margin: 0;
+      color: var(--chalk);
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .13em;
+      text-transform: lowercase;
+      white-space: nowrap;
+    }
+    .topbar-left, .topbar-right, .mode-switcher, .seed-strip { display: flex; align-items: center; }
+    .topbar-left { gap: 15px; }
+    .eyebrow { font-size: 9px; color: var(--acid); letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+    .mode-switcher { gap: 2px; padding: 3px; border: 1px solid var(--line); }
+    .mode-button, .icon-button, .seed-button {
+      appearance: none; border: 0; background: transparent; cursor: pointer;
+      min-height: 28px; padding: 0 11px; color: var(--muted);
+      font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+      transition: background .22s ease, color .22s ease;
+    }
+    .mode-button:hover, .icon-button:hover, .seed-button:hover { color: var(--chalk); }
+    .mode-button.active { color: var(--ink); background: var(--acid); }
+    .topbar-right { gap: 14px; }
+    .system-note { color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+
+    .experience { position: absolute; inset: 68px 0 0; }
+    .mode {
+      position: absolute; inset: 0;
+      opacity: 0; pointer-events: none; transform: scale(1.012);
+      transition: opacity .5s ease, transform .7s cubic-bezier(.16, 1, .3, 1);
+      overflow: hidden;
+    }
+    .mode.active { opacity: 1; pointer-events: auto; transform: scale(1); }
+    .mode:focus { outline: none; }
+
+    /* POSTER */
+    #poster {
+      display: grid; place-items: center;
+      padding: clamp(18px, 4vh, 42px) 16px;
+      background: #090a0b;
+    }
+    .poster-pedestal {
+      position: absolute; width: min(86vw, 580px); aspect-ratio: 1 / 1;
+      border-radius: 50%; background: var(--acid); filter: blur(75px); opacity: .08;
+      transform: translateY(8%);
+    }
+    .poster-frame {
+      width: min(calc((100vh - 118px) * .8), 78vw, 560px);
+      max-height: calc(100vh - 110px);
+      aspect-ratio: 4 / 5;
+      position: relative;
+      filter: drop-shadow(0 28px 50px rgba(0,0,0,.55));
+    }
+    .poster-art {
+      position: absolute; inset: 0; overflow: hidden;
+      color: #101114; background: var(--paper);
+      padding: 6.2% 6.1% 5.2%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.17);
+    }
+    .poster-art::before {
+      content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .45;
+      background-image: repeating-linear-gradient(0deg, rgba(0,0,0,.055) 0 1px, transparent 1px 4px), radial-gradient(circle at 66% 29%, transparent 0 23%, rgba(255,255,255,.55) 23.2% 23.5%, transparent 23.8%);
+      mix-blend-mode: multiply;
+    }
+    .poster-code, .poster-caption, .poster-meta, .poster-signal { position: relative; z-index: 2; }
+    .poster-code { display: flex; justify-content: space-between; align-items: start; font-size: clamp(7px, .82vw, 10px); line-height: 1.25; letter-spacing: .07em; }
+    .poster-code strong { color: #101114; }
+    .poster-code .acid-chip { display: inline-block; padding: .2em .42em; background: var(--acid); }
+    .poster-core { position: relative; z-index: 1; min-height: 0; }
+    .poster-ring, .poster-ring::before, .poster-ring::after { position: absolute; border-radius: 50%; }
+    .poster-ring { width: 78%; aspect-ratio: 1; top: 6%; left: 10%; border: 2px solid #15161a; }
+    .poster-ring::before { content: ""; inset: 7%; border: 1px solid rgba(21,22,26,.58); }
+    .poster-ring::after { content: ""; width: 21%; aspect-ratio: 1; background: #101114; top: 39%; left: 39%; box-shadow: 0 0 0 9px var(--acid), 0 0 0 11px #101114; }
+    .poster-axis { position: absolute; height: 1px; background: #101114; width: 140%; left: -22%; top: 45%; transform: rotate(-23deg); transform-origin: center; }
+    .poster-axis::before, .poster-axis::after { content: ""; position: absolute; width: 9px; height: 9px; border: 1px solid #101114; border-radius: 50%; top: -5px; background: var(--paper); }
+    .poster-axis::before { left: 2%; } .poster-axis::after { right: 2%; }
+    .poster-sun { position: absolute; width: 35%; aspect-ratio: 1; right: -4%; top: 17%; border-radius: 50%; background: var(--coral); mix-blend-mode: multiply; }
+    .poster-sun::before { content: ""; position: absolute; inset: 20%; border: 1px solid #101114; border-radius: 50%; }
+    .poster-orbit { position: absolute; width: 112%; height: 34%; top: 33%; left: -7%; border: 1px solid #101114; border-radius: 50%; transform: rotate(22deg); }
+    .poster-orbit::after { content: ""; position: absolute; width: 14px; height: 14px; top: 44%; left: 16%; border-radius: 50%; background: var(--violet); border: 1px solid #101114; }
+    .poster-needle { position: absolute; width: 1px; height: 95%; background: #101114; left: 50%; top: -4%; transform: rotate(24deg); transform-origin: bottom; }
+    .poster-needle::after { content: ""; position: absolute; width: 8px; height: 8px; background: var(--acid); border: 1px solid #101114; border-radius: 50%; top: 15%; left: -4px; }
+    .poster-title-wrap { position: absolute; left: -1%; right: -3%; top: 38%; transform: rotate(-3deg); z-index: 3; }
+    .poster-title {
+      margin: 0; font-family: var(--display); font-size: clamp(56px, 11.5vw, 111px); line-height: .73; font-weight: 900; letter-spacing: -.075em; text-transform: uppercase;
+      white-space: nowrap; color: #101114; transform: scaleX(.91); transform-origin: left;
+    }
+    .poster-title .cut { display: block; color: transparent; -webkit-text-stroke: 1.5px #101114; transform: translateX(11%); }
+    .poster-title .electric { color: var(--violet); text-shadow: 2px 0 #101114; }
+    .poster-caption { align-self: end; display: grid; grid-template-columns: 1.05fr .95fr; gap: 12px; font-size: clamp(7px, .82vw, 10px); line-height: 1.25; }
+    .poster-caption > div { border-top: 1px solid #101114; padding-top: 6px; }
+    .poster-caption b { display: block; font-size: 1.08em; margin-bottom: 5px; }
+    .poster-meta { margin-top: 16px; display: flex; justify-content: space-between; align-items: end; gap: 10px; font-size: clamp(6.5px, .74vw, 9px); line-height: 1.25; }
+    .poster-meta .artists { max-width: 62%; text-align: right; font-weight: 700; }
+    .poster-barcode { width: 54px; height: 24px; background: repeating-linear-gradient(90deg, #101114 0 1px, transparent 1px 3px, #101114 3px 5px, transparent 5px 7px); }
+    .poster-side { position: absolute; right: 1.5%; bottom: 15%; writing-mode: vertical-rl; font-size: clamp(6px, .68vw, 8px); letter-spacing: .14em; transform: rotate(180deg); z-index: 3; }
+    .poster-edition { position: absolute; left: 6.1%; bottom: 13.5%; z-index: 3; width: 13%; aspect-ratio: 1; border: 1px solid #101114; border-radius: 50%; display: grid; place-items: center; font-size: clamp(5px,.56vw,7px); text-align: center; line-height: 1.05; }
+    .poster-legend { position: absolute; left: -110px; bottom: 4%; width: 95px; color: var(--muted); text-align: right; font-size: 9px; line-height: 1.45; letter-spacing: .1em; }
+
+    /* MOTION */
+    #motion { background: #0b0b0e; }
+    .motion-stage { position: absolute; inset: 0 0 100px; overflow: hidden; }
+    .motion-grid { position: absolute; inset: 0; opacity: .45; background-image: linear-gradient(rgba(122,247,233,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(122,247,233,.18) 1px, transparent 1px); background-size: 8.333vw 8.333vw; transform-origin: center; }
+    .motion-horizon { position: absolute; left: 0; right: 0; top: 51%; height: 1px; background: var(--acid); box-shadow: 0 0 14px var(--acid); }
+    .motion-horizon::before { content: ""; position: absolute; width: 74vmin; aspect-ratio: 1; border: 1px solid rgba(221,255,55,.7); border-radius: 50%; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+    .motion-beam { position: absolute; left: 50%; top: 50%; width: 145vmax; height: 1px; background: var(--coral); transform-origin: left; opacity: .87; }
+    .motion-beam::after { content: ""; position: absolute; width: 18px; height: 18px; right: 15%; top: -9px; border: 1px solid var(--chalk); border-radius: 50%; background: var(--violet); }
+    .motion-copy { position: absolute; left: clamp(18px,4vw,62px); right: clamp(18px,4vw,62px); top: 50%; transform: translateY(-50%); pointer-events: none; }
+    .motion-word { margin: 0; overflow: hidden; font-family: var(--display); text-transform: uppercase; font-size: clamp(64px, 16vw, 270px); letter-spacing: -.075em; line-height: .7; white-space: nowrap; transform-origin: left center; }
+    .motion-word span { display: inline-block; }
+    .motion-word.stroke { color: transparent; -webkit-text-stroke: 1px var(--chalk); transform: translateX(10%) skewX(-9deg); }
+    .motion-word.acid { color: var(--acid); mix-blend-mode: screen; transform: translateX(-5%) skewX(6deg); }
+    .motion-word.bottom { color: var(--chalk); transform: translateX(19%) skewX(-4deg); }
+    .motion-annotation { position: absolute; color: var(--chalk); font-size: 10px; letter-spacing: .13em; line-height: 1.4; text-transform: uppercase; opacity: 0; }
+    .motion-annotation.one { left: 5%; top: 20%; } .motion-annotation.two { right: 5%; bottom: 14%; text-align: right; }
+    .motion-stamp { position: absolute; width: 95px; aspect-ratio: 1; right: 9%; top: 15%; border: 1px solid var(--acid); border-radius: 50%; display: grid; place-items: center; color: var(--acid); font-size: 8px; line-height: 1.1; text-align: center; transform: rotate(-13deg); }
+    .motion-stamp::before { content: ""; position: absolute; inset: 10px; border: 1px dashed var(--acid); border-radius: 50%; }
+    .motion-controls {
+      position: absolute; height: 100px; bottom: 0; left: 0; right: 0; z-index: 3;
+      display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 13px; padding: 0 clamp(18px,4vw,62px);
+      border-top: 1px solid var(--line); background: rgba(9,10,11,.88); backdrop-filter: blur(10px);
+    }
+    .motion-controls .icon-button { border: 1px solid var(--line); min-height: 34px; }
+    .timeline-wrap { display: grid; gap: 7px; }
+    .timeline-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 9px; }
+    input[type="range"] { width: 100%; accent-color: var(--acid); cursor: pointer; }
+    .motion-time { color: var(--acid); font-size: 12px; letter-spacing: .08em; min-width: 70px; text-align: right; }
+
+    /* INSTRUMENT */
+    #instrument { background: #08090b; }
+    #instrument-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+    .instrument-overlay { position: absolute; inset: 0; pointer-events: none; }
+    .instrument-title { position: absolute; left: clamp(18px,4vw,62px); top: clamp(22px,5vh,58px); max-width: 600px; }
+    .instrument-kicker { font-size: 10px; letter-spacing: .15em; color: var(--acid); text-transform: uppercase; }
+    .instrument-name { margin: 8px 0 0; font-family: var(--display); font-size: clamp(55px,11vw,175px); line-height: .68; letter-spacing: -.075em; text-transform: uppercase; color: var(--chalk); }
+    .instrument-name em { font-style: normal; color: transparent; -webkit-text-stroke: 1px var(--acid); }
+    .instrument-instruction { position: absolute; left: clamp(18px,4vw,62px); bottom: 47px; max-width: 340px; font-size: 10px; color: var(--muted); line-height: 1.55; }
+    .instrument-instruction b { color: var(--chalk); font-weight: 500; }
+    .seed-strip { position: absolute; right: clamp(18px,4vw,62px); bottom: 44px; gap: 5px; pointer-events: auto; }
+    .seed-button { border: 1px solid var(--line); padding: 0 10px; min-height: 30px; }
+    .seed-button.active { background: var(--acid); color: var(--ink); border-color: var(--acid); }
+    .seed-input { width: 70px; min-height: 30px; border: 1px solid var(--line); border-radius: 0; color: var(--chalk); background: rgba(9,10,11,.75); padding: 0 8px; font-size: 10px; }
+    .instrument-readout { position: absolute; right: clamp(18px,4vw,62px); top: clamp(22px,5vh,58px); width: 140px; font-size: 9px; line-height: 1.55; color: var(--muted); text-align: right; }
+    .instrument-readout b { color: var(--cyan); font-weight: 500; }
+
+    .mode-corner { position: absolute; right: 18px; top: 14px; color: rgba(247,244,232,.33); font-size: 9px; letter-spacing: .15em; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    @media (max-width: 650px) {
+      #app { min-height: 520px; }
+      .topbar { height: 102px; padding: 12px 15px; align-items: stretch; flex-direction: column; }
+      .topbar-left, .topbar-right { justify-content: space-between; }
+      .topbar-right .system-note { display: none; }
+      .experience { inset: 102px 0 0; }
+      .poster-frame { width: min(calc((100vh - 145px) * .8), 88vw); }
+      .poster-legend { display: none; }
+      .motion-stage { inset: 0 0 118px; }
+      .motion-controls { height: 118px; grid-template-columns: auto auto 1fr; gap: 8px; padding: 0 15px; }
+      .motion-time { grid-column: 3; grid-row: 1; align-self: end; font-size: 10px; }
+      .timeline-wrap { grid-column: 1 / -1; grid-row: 2; }
+      .instrument-readout { top: 23px; }
+      .instrument-title { top: 38%; }
+      .instrument-instruction { bottom: 93px; max-width: 265px; }
+      .seed-strip { left: 15px; right: auto; bottom: 28px; }
+      .seed-button { padding: 0 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mode, .mode-button, .icon-button, .seed-button { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app" aria-label="Living identity for Nocturne Festival of Impossible Light">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="model-title">codex-gpt-5-6-terra</h1>
+        <span class="eyebrow">A living identity system</span>
+      </div>
+      <div class="topbar-right">
+        <nav class="mode-switcher" aria-label="Choose expression">
+          <button class="mode-button active" data-mode="poster" type="button">Poster</button>
+          <button class="mode-button" data-mode="motion" type="button">Motion</button>
+          <button class="mode-button" data-mode="instrument" type="button">Instrument</button>
+        </nav>
+        <span class="system-note">ATLAS / 18.10 / 19:30</span>
+      </div>
+    </header>
+
+    <section class="experience">
+      <section id="poster" class="mode active" aria-label="Poster expression" tabindex="-1">
+        <div class="poster-pedestal" aria-hidden="true"></div>
+        <article class="poster-frame" aria-label="Nocturne festival poster">
+          <div class="poster-art">
+            <div class="poster-code"><span><strong>ATLAS OBSERVATORY</strong><br>COORD. 50° 27′</span><span class="acid-chip">N° 018</span></div>
+            <div class="poster-core" aria-hidden="true">
+              <div class="poster-ring"></div><div class="poster-axis"></div><div class="poster-sun"></div><div class="poster-orbit"></div><div class="poster-needle"></div>
+              <div class="poster-title-wrap"><div class="poster-title">NOC<span class="electric">TUR</span>NE<span class="cut">NOCTURNE</span></div></div>
+              <div class="poster-side">FESTIVAL OF IMPOSSIBLE LIGHT</div>
+              <div class="poster-edition">ONE<br>NIGHT<br>ONLY</div>
+            </div>
+            <div>
+              <div class="poster-caption">
+                <div><b>18 OCTOBER</b>DOORS 19:30<br>ATLAS OBSERVATORY</div>
+                <div><b>FESTIVAL OF<br>IMPOSSIBLE LIGHT</b>CEREMONIAL<br>ELECTRIC · INTIMATE</div>
+              </div>
+              <div class="poster-meta"><div class="poster-barcode" aria-hidden="true"></div><div class="artists">MIRA VALE · GLASS CHOIR · STATIC BLOOM</div></div>
+            </div>
+          </div>
+        </article>
+        <div class="poster-legend" aria-hidden="true">A ceremony<br>for the eye.<br><br>1 / 3</div>
+      </section>
+
+      <section id="motion" class="mode" aria-label="Motion expression" tabindex="-1">
+        <div class="motion-stage" aria-hidden="true">
+          <div class="motion-grid"></div><div class="motion-horizon"></div><div class="motion-beam"></div>
+          <div class="motion-copy">
+            <p class="motion-word stroke">NOCTURNE</p>
+            <p class="motion-word acid">NOCTURNE</p>
+            <p class="motion-word bottom">NOCTURNE</p>
+          </div>
+          <div class="motion-annotation one">Atlas Observatory<br>18 October · doors 19:30</div>
+          <div class="motion-annotation two">Mira Vale · Glass Choir<br>Static Bloom</div>
+          <div class="motion-stamp">FESTIVAL<br>OF IMPOSSIBLE<br>LIGHT</div>
+        </div>
+        <div class="motion-controls">
+          <button id="play-button" class="icon-button" type="button" aria-label="Play motion sequence">Play</button>
+          <button id="replay-button" class="icon-button" type="button">Replay</button>
+          <label class="timeline-wrap"><span class="sr-only">Motion timeline</span><input id="timeline" type="range" min="0" max="12000" value="0" step="10"><span class="timeline-labels"><span>OPENING</span><span>DEVELOPMENT</span><span>CLIMAX</span><span>RESOLVE</span></span></label>
+          <output id="motion-time" class="motion-time">00:00.0</output>
+        </div>
+      </section>
+
+      <section id="instrument" class="mode" aria-label="Instrument expression" tabindex="-1">
+        <canvas id="instrument-canvas" aria-label="Interactive generative light instrument. Move or drag to bend the observatory light." role="img"></canvas>
+        <div class="instrument-overlay">
+          <div class="instrument-title"><div class="instrument-kicker">Nocturne / light organ</div><div class="instrument-name">LUMEN<br><em>CHOIR</em></div></div>
+          <div class="instrument-readout">SEED <b id="seed-readout">018</b><br>RESONANCE <b id="resonance-readout">0.00</b><br>ORBIT <b id="orbit-readout">00°</b></div>
+          <div class="instrument-instruction"><b>Draw through the dark.</b><br>Move to tune the choir. Drag to score a temporary orbit. Press space to strike the observatory bell.</div>
+          <div class="seed-strip" aria-label="Identity seed controls">
+            <button class="seed-button active" data-seed="18" type="button">018</button>
+            <button class="seed-button" data-seed="303" type="button">303</button>
+            <button class="seed-button" data-seed="808" type="button">808</button>
+            <label class="sr-only" for="seed-input">Custom identity seed</label><input id="seed-input" class="seed-input" type="number" value="18" step="1" inputmode="numeric">
+            <button id="apply-seed" class="seed-button" type="button">Set</button>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+  (() => {
+    'use strict';
+    const DURATION = 12000;
+    const validModes = new Set(['poster', 'motion', 'instrument']);
+    const app = document.getElementById('app');
+    const canvas = document.getElementById('instrument-canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const state = {
+      seed: 18, mode: 'poster', motionTime: 0, playing: false, startedAt: 0,
+      pointer: { x: .5, y: .52, down: false, energy: 0, lastX: .5, lastY: .52 },
+      bell: 0, trails: [], frame: 0, lastFrame: 0, viewport: { width: 1, height: 1, dpr: 1 }, identity: null
+    };
+
+    function makeRng(seed) {
+      let value = (Number(seed) >>> 0) || 1;
+      return () => {
+        value |= 0; value = value + 0x6D2B79F5 | 0;
+        let t = Math.imul(value ^ value >>> 15, 1 | value);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+    function easeInOut(t) { t = clamp(t, 0, 1); return t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2; }
+    function easeOut(t) { return 1 - Math.pow(1 - clamp(t, 0, 1), 3); }
+    function tween(t, start, end) { return easeInOut((t - start) / (end - start)); }
+    function formatTime(ms) { return `00:${String(Math.floor(ms / 1000)).padStart(2, '0')}.${Math.floor((ms % 1000) / 100)}`; }
+
+    function createIdentity(seed) {
+      const random = makeRng(seed);
+      const anchors = Array.from({ length: 10 }, (_, i) => ({
+        angle: (i / 10) * Math.PI * 2 + (random() - .5) * .28,
+        radius: .22 + random() * .36, size: 1 + random() * 2.8,
+        phase: random() * Math.PI * 2, hue: random() > .5 ? 'cyan' : 'acid'
+      }));
+      const stars = Array.from({ length: 110 }, () => ({ x: random(), y: random(), r: random() * 1.3 + .2, a: random() * .6 + .14 }));
+      const bands = Array.from({ length: 5 }, (_, i) => ({ offset: random() * Math.PI * 2, depth: .12 + i * .06, direction: random() > .5 ? 1 : -1 }));
+      return { anchors, stars, bands, tilt: (random() - .5) * .45, colorIndex: Math.floor(random() * 3) };
+    }
+    function setSeed(seed) {
+      const cleaned = Number.isFinite(Number(seed)) ? Math.trunc(Number(seed)) : 18;
+      state.seed = cleaned;
+      state.identity = createIdentity(cleaned);
+      state.pointer = { x: .5, y: .52, down: false, energy: 0, lastX: .5, lastY: .52 };
+      state.bell = 0; state.trails = [];
+      document.getElementById('seed-input').value = cleaned;
+      document.getElementById('seed-readout').textContent = String(Math.abs(cleaned) % 1000).padStart(3, '0');
+      document.querySelectorAll('.seed-button[data-seed]').forEach(button => button.classList.toggle('active', Number(button.dataset.seed) === cleaned));
+      drawInstrument();
+    }
+    function resizeCanvas() {
+      const box = canvas.getBoundingClientRect();
+      const dpr = clamp(window.devicePixelRatio || 1, 1, 2.5);
+      state.viewport = { width: Math.max(1, box.width), height: Math.max(1, box.height), dpr };
+      canvas.width = Math.round(state.viewport.width * dpr);
+      canvas.height = Math.round(state.viewport.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawInstrument();
+    }
+    function color(name, alpha = 1) {
+      const values = { acid: `rgba(221,255,55,${alpha})`, cyan: `rgba(122,247,233,${alpha})`, violet: `rgba(161,123,255,${alpha})`, coral: `rgba(255,113,102,${alpha})`, chalk: `rgba(247,244,232,${alpha})` };
+      return values[name];
+    }
+    function drawInstrument() {
+      if (!state.identity || !ctx) return;
+      const { width: w, height: h } = state.viewport;
+      const now = performance.now() * .001;
+      const pointer = state.pointer;
+      const cx = w * (.5 + (pointer.x - .5) * .16);
+      const cy = h * (.54 + (pointer.y - .5) * .16);
+      const unit = Math.min(w, h);
+      const activity = clamp(pointer.energy + state.bell * .55, 0, 1.35);
+      ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, w, h);
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      for (const star of state.identity.stars) {
+        const drift = Math.sin(now * .35 + star.x * 11 + state.seed) * .002;
+        ctx.fillStyle = color('chalk', star.a * (.55 + activity * .45));
+        ctx.fillRect((star.x + drift) * w, star.y * h, star.r, star.r);
+      }
+      ctx.translate(cx, cy);
+      ctx.rotate(state.identity.tilt + (pointer.x - .5) * .24 + Math.sin(now*.3)*.015);
+      ctx.globalCompositeOperation = 'screen';
+      const core = unit * (.086 + activity * .024 + Math.sin(now * 1.4) * .004);
+      ctx.fillStyle = color('acid', .94); ctx.beginPath(); ctx.arc(0, 0, core, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = color('chalk', .82); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, core * 1.22, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < state.identity.bands.length; i++) {
+        const band = state.identity.bands[i];
+        const rx = unit * (.15 + i * .085 + activity * .035);
+        const ry = rx * (.20 + i * .055) + Math.sin(now * .6 + band.offset) * unit * .008;
+        const bend = (pointer.y - .5) * (i + 1) * .5 + Math.sin(now * .7 + band.offset) * .12;
+        ctx.save(); ctx.rotate(bend);
+        ctx.strokeStyle = color(i % 2 ? 'cyan' : 'acid', .43 + activity*.3);
+        ctx.lineWidth = i === 0 ? 1.4 : 1;
+        ctx.setLineDash(i === 4 ? [3, 6] : []);
+        ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.setLineDash([]);
+      state.identity.anchors.forEach((anchor, index) => {
+        const pulse = 1 + Math.sin(now * (1.2 + index*.06) + anchor.phase) * .18 + activity*.28;
+        const r = unit * anchor.radius * pulse;
+        const a = anchor.angle + (pointer.x - .5) * .85 + now * .055 * (index % 2 ? 1 : -1);
+        const x = Math.cos(a) * r; const y = Math.sin(a) * r;
+        ctx.strokeStyle = color(anchor.hue, .36 + activity*.35); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(x, y); ctx.stroke();
+        ctx.fillStyle = color(anchor.hue, .98); ctx.beginPath(); ctx.arc(x, y, anchor.size + activity * 2.1, 0, Math.PI*2); ctx.fill();
+      });
+      for (const trail of state.trails) {
+        const age = now - trail.time;
+        const opacity = clamp(1 - age / 1.2, 0, 1);
+        const tx = (trail.x - .5) * w * .86 - (cx - w*.5);
+        const ty = (trail.y - .5) * h * .86 - (cy - h*.5);
+        ctx.strokeStyle = color('coral', opacity * .68); ctx.lineWidth = 1.2 + opacity * 2.5;
+        ctx.beginPath(); ctx.arc(tx, ty, unit * (.02 + age*.085), 0, Math.PI*2); ctx.stroke();
+      }
+      if (state.bell > .01) {
+        const radius = unit * (.11 + (1 - state.bell) * .62);
+        ctx.strokeStyle = color('violet', state.bell*.72); ctx.lineWidth = 1 + state.bell*4;
+        ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
+      const orbit = Math.round(((pointer.x - .5) * 132 + state.identity.tilt * 180 / Math.PI + 360) % 360);
+      document.getElementById('resonance-readout').textContent = activity.toFixed(2);
+      document.getElementById('orbit-readout').textContent = `${String(orbit).padStart(3, '0')}°`;
+    }
+    function pulseInstrument(deltaSeconds) {
+      state.pointer.energy = Math.max(0, state.pointer.energy - deltaSeconds * .9);
+      state.bell = Math.max(0, state.bell - deltaSeconds * 1.32);
+      state.trails = state.trails.filter(trail => performance.now()*.001 - trail.time < 1.25);
+      if (state.mode === 'instrument') drawInstrument();
+    }
+    function movePointer(event) {
+      const box = canvas.getBoundingClientRect();
+      const x = clamp((event.clientX - box.left) / Math.max(1, box.width), 0, 1);
+      const y = clamp((event.clientY - box.top) / Math.max(1, box.height), 0, 1);
+      const speed = Math.hypot(x - state.pointer.lastX, y - state.pointer.lastY);
+      state.pointer.x = x; state.pointer.y = y; state.pointer.lastX = x; state.pointer.lastY = y;
+      state.pointer.energy = clamp(state.pointer.energy + speed * 6 + .05, 0, 1.2);
+      if (state.pointer.down && (state.trails.length === 0 || performance.now() - state.trails[state.trails.length - 1].rawTime > 45)) {
+        state.trails.push({ x, y, time: performance.now()*.001, rawTime: performance.now() });
+      }
+      drawInstrument();
+    }
+
+    const motion = {
+      stage: document.querySelector('.motion-stage'), grid: document.querySelector('.motion-grid'), beam: document.querySelector('.motion-beam'),
+      words: [...document.querySelectorAll('.motion-word')], annotations: [...document.querySelectorAll('.motion-annotation')], stamp: document.querySelector('.motion-stamp'),
+      timeline: document.getElementById('timeline'), output: document.getElementById('motion-time'), play: document.getElementById('play-button')
+    };
+    function renderMotion() {
+      const t = state.motionTime;
+      const p = t / DURATION;
+      const opening = easeOut(clamp(t / 2500, 0, 1));
+      const alignment = tween(t, 2100, 4800);
+      const climax = tween(t, 5000, 8100);
+      const dissolve = tween(t, 9300, 12000);
+      const resolve = tween(t, 10100, 12000);
+      const wobble = Math.sin(t / 250) * (t > 4800 && t < 8600 ? 1 : 0);
+      motion.grid.style.transform = `perspective(550px) rotateX(${32 - opening*30 + climax*5}deg) scale(${1.32 - opening*.3 + climax*.1})`;
+      motion.grid.style.opacity = String(.08 + opening*.42 - dissolve*.24);
+      motion.beam.style.transform = `rotate(${(-62 + opening*74 + alignment*64 - climax*55 + resolve*43 + wobble*2).toFixed(2)}deg) scaleX(${.1 + opening*.9 + climax*.18})`;
+      motion.beam.style.opacity = String(.18 + opening*.75 - dissolve*.25);
+      const transforms = [
+        `translate(${-105 + opening*88 + alignment*16 - climax*38 + resolve*23}%, ${-35 + opening*35}px) skewX(${-11 + alignment*11}deg)`,
+        `translate(${105 - opening*98 + alignment*7 + climax*17 - resolve*20}%, ${38 - opening*38}px) skewX(${10 - alignment*8}deg)`,
+        `translate(${-15 + opening*35 - alignment*8 + climax*24 - resolve*25}%, ${105 - opening*99 + alignment*9}px) skewX(${-8 + climax*13}deg)`
+      ];
+      motion.words.forEach((word, index) => { word.style.transform = transforms[index]; word.style.opacity = String(clamp(opening * 1.25 - dissolve*.18, 0, 1)); });
+      motion.words[1].style.filter = `blur(${Math.max(0, climax*2 - resolve*2)}px)`;
+      motion.annotations[0].style.opacity = String(tween(t, 3000, 4600) * (1-dissolve));
+      motion.annotations[1].style.opacity = String(tween(t, 7400, 8800) * (1-dissolve*.45));
+      motion.stamp.style.transform = `rotate(${-43 + opening*30 + climax*330 - resolve*290}deg) scale(${.4 + opening*.6 + climax*.17 - dissolve*.15})`;
+      motion.stamp.style.opacity = String(clamp(opening*1.3 - dissolve*.3, 0, 1));
+      motion.timeline.value = Math.round(t);
+      motion.output.value = formatTime(t);
+      motion.output.textContent = formatTime(t);
+      motion.play.textContent = state.playing ? 'Pause' : (t >= DURATION ? 'Replay' : 'Play');
+      motion.play.setAttribute('aria-label', state.playing ? 'Pause motion sequence' : 'Play motion sequence');
+    }
+    function seek(milliseconds) {
+      state.motionTime = clamp(Number(milliseconds) || 0, 0, DURATION);
+      state.startedAt = performance.now() - state.motionTime;
+      if (state.motionTime >= DURATION) state.playing = false;
+      renderMotion();
+      return state.motionTime;
+    }
+    function setPlaying(playing) {
+      state.playing = Boolean(playing) && !reducedMotion;
+      state.startedAt = performance.now() - state.motionTime;
+      renderMotion();
+    }
+    function setMode(name) {
+      if (!validModes.has(name)) throw new Error(`Unknown mode: ${name}`);
+      state.mode = name;
+      document.querySelectorAll('.mode').forEach(section => section.classList.toggle('active', section.id === name));
+      document.querySelectorAll('.mode-button').forEach(button => { const active = button.dataset.mode === name; button.classList.toggle('active', active); button.setAttribute('aria-current', active ? 'page' : 'false'); });
+      if (name !== 'motion') setPlaying(false);
+      if (name === 'instrument') drawInstrument();
+      return name;
+    }
+    function reset(seed = state.seed) {
+      setPlaying(false); setSeed(seed); state.motionTime = 0; state.startedAt = performance.now(); state.frame = 0; renderMotion(); setMode('poster');
+      return snapshot();
+    }
+    function snapshot() {
+      return {
+        seed: state.seed, mode: state.mode, motionTime: Math.round(state.motionTime), playing: state.playing,
+        instrument: {
+          pointer: { x: Number(state.pointer.x.toFixed(5)), y: Number(state.pointer.y.toFixed(5)), down: state.pointer.down, energy: Number(state.pointer.energy.toFixed(5)) },
+          bell: Number(state.bell.toFixed(5)), trails: state.trails.length, tilt: Number(state.identity.tilt.toFixed(5))
+        }
+      };
+    }
+    function runSelfTest() {
+      const original = snapshot();
+      const tests = [];
+      const check = (name, pass, detail) => tests.push({ name, pass: Boolean(pass), detail });
+      try {
+        reset(4242); const a = JSON.stringify(snapshot().instrument);
+        reset(4242); const b = JSON.stringify(snapshot().instrument);
+        check('deterministic reset', a === b && state.seed === 4242, 'same seed reconstructs the same identity state');
+        ['poster', 'motion', 'instrument'].forEach(mode => { setMode(mode); check(`mode ${mode}`, state.mode === mode, `${mode} is accepted and rendered`); });
+        seek(6137); check('exact motion seek', state.motionTime === 6137, 'timeline accepts exact millisecond positions');
+        seek(12000); check('12-second boundary', state.motionTime === DURATION && !state.playing, 'timeline clamps at 12000ms');
+        setMode('instrument'); state.pointer.x = .34; state.pointer.y = .68; state.pointer.energy = .77; state.bell = .4; drawInstrument();
+        const finite = [state.pointer.x, state.pointer.y, state.pointer.energy, state.bell, state.identity.tilt].every(Number.isFinite);
+        check('finite interaction state', finite, 'instrument state remains finite after a real render');
+      } catch (error) { check('self-test execution', false, error.message); }
+      reset(original.seed); seek(original.motionTime); setMode(original.mode); if (original.playing) setPlaying(true);
+      return { passed: tests.every(test => test.pass), tests };
+    }
+    function animate(now) {
+      const deltaSeconds = Math.min(50, Math.max(0, now - (state.lastFrame || now))) / 1000;
+      state.lastFrame = now;
+      if (state.playing && state.mode === 'motion') {
+        const next = clamp(now - state.startedAt, 0, DURATION);
+        state.motionTime = next;
+        if (next >= DURATION) state.playing = false;
+        renderMotion();
+      }
+      pulseInstrument(deltaSeconds);
+      state.frame++;
+      requestAnimationFrame(animate);
+    }
+
+    document.querySelectorAll('.mode-button').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+    motion.play.addEventListener('click', () => { if (state.motionTime >= DURATION) seek(0); setPlaying(!state.playing); });
+    document.getElementById('replay-button').addEventListener('click', () => { seek(0); setPlaying(true); });
+    motion.timeline.addEventListener('input', event => { setPlaying(false); seek(event.target.value); });
+    canvas.addEventListener('pointerdown', event => { state.pointer.down = true; canvas.setPointerCapture(event.pointerId); movePointer(event); });
+    canvas.addEventListener('pointermove', movePointer);
+    canvas.addEventListener('pointerup', event => { state.pointer.down = false; state.trails.push({ x: state.pointer.x, y: state.pointer.y, time: performance.now()*.001, rawTime: performance.now() }); if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId); });
+    canvas.addEventListener('pointercancel', () => { state.pointer.down = false; });
+    document.querySelectorAll('.seed-button[data-seed]').forEach(button => button.addEventListener('click', () => reset(Number(button.dataset.seed))));
+    document.getElementById('apply-seed').addEventListener('click', () => reset(document.getElementById('seed-input').value));
+    document.getElementById('seed-input').addEventListener('keydown', event => { if (event.key === 'Enter') reset(event.currentTarget.value); });
+    window.addEventListener('keydown', event => {
+      if (event.target.matches('input')) return;
+      if (event.key === ' ') { event.preventDefault(); setMode('instrument'); state.bell = 1; state.pointer.energy = Math.min(1.2, state.pointer.energy + .55); drawInstrument(); }
+      if (event.key === '1') setMode('poster'); if (event.key === '2') setMode('motion'); if (event.key === '3') setMode('instrument');
+    });
+    window.addEventListener('resize', resizeCanvas, { passive: true });
+    document.addEventListener('visibilitychange', () => { if (document.hidden && state.playing) setPlaying(false); });
+
+    window.__LIVING_IDENTITY__ = { reset, setMode, seek, snapshot, runSelfTest };
+    setSeed(18); resizeCanvas(); renderMotion(); requestAnimationFrame(animate);
+  })();
+  </script>
+</body>
+</html>

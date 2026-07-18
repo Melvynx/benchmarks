@@ -1,0 +1,1861 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Codex</title>
+  <style>
+    :root {
+      --ink: #071014;
+      --deep: #0b171c;
+      --storm: #193039;
+      --mist: #8ca6a5;
+      --paper: #ded8c7;
+      --paper-dim: #9d9b91;
+      --signal: #efb35c;
+      --signal-pale: #ffe0a2;
+      --cold: #9dd0d0;
+      --ease-out: cubic-bezier(.22, 1, .36, 1);
+      --safe-top: max(20px, env(safe-area-inset-top));
+      --safe-right: max(22px, env(safe-area-inset-right));
+      --safe-bottom: max(20px, env(safe-area-inset-bottom));
+      --safe-left: max(22px, env(safe-area-inset-left));
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--ink);
+      color: var(--paper);
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    button { font: inherit; }
+
+    button:focus-visible {
+      outline: 1px solid var(--signal-pale);
+      outline-offset: 5px;
+    }
+
+    #story {
+      position: fixed;
+      inset: 0;
+      isolation: isolate;
+      overflow: hidden;
+      background: var(--ink);
+    }
+
+    #film {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: default;
+    }
+
+    #texture,
+    #vignette {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    #texture {
+      z-index: 2;
+      opacity: .18;
+      mix-blend-mode: soft-light;
+      background-image:
+        repeating-linear-gradient(102deg, transparent 0 3px, rgba(255,255,255,.035) 4px, transparent 5px 9px),
+        radial-gradient(circle at 23% 38%, rgba(255,255,255,.12) 0 1px, transparent 1.5px),
+        radial-gradient(circle at 76% 64%, rgba(255,255,255,.08) 0 1px, transparent 1.5px);
+      background-size: auto, 17px 19px, 23px 29px;
+    }
+
+    #vignette {
+      z-index: 3;
+      box-shadow: inset 0 0 16vw 5vw rgba(0, 0, 0, .78);
+      background: linear-gradient(to bottom, rgba(0,0,0,.45), transparent 17%, transparent 80%, rgba(0,0,0,.55));
+    }
+
+    .chrome {
+      position: absolute;
+      z-index: 8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-transform: uppercase;
+      letter-spacing: .19em;
+      font-size: 10px;
+      color: rgba(222, 216, 199, .62);
+    }
+
+    #stationMark {
+      top: var(--safe-top);
+      left: var(--safe-left);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    #stationMark::before {
+      content: "";
+      width: 19px;
+      height: 1px;
+      background: currentColor;
+    }
+
+    #timecode {
+      top: var(--safe-top);
+      right: var(--safe-right);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #replayTop {
+      position: absolute;
+      z-index: 9;
+      top: calc(var(--safe-top) + 28px);
+      right: var(--safe-right);
+      padding: 8px 0 8px 12px;
+      border: 0;
+      color: rgba(222, 216, 199, .54);
+      background: transparent;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 220ms var(--ease-out);
+    }
+
+    #replayTop:hover { color: var(--paper); }
+
+    #progress {
+      position: absolute;
+      z-index: 8;
+      left: var(--safe-left);
+      right: var(--safe-right);
+      bottom: var(--safe-bottom);
+      height: 1px;
+      overflow: hidden;
+      background: rgba(222, 216, 199, .16);
+    }
+
+    #progressFill {
+      width: 0;
+      height: 100%;
+      transform-origin: left;
+      background: linear-gradient(90deg, rgba(157, 208, 208, .5), var(--signal));
+      transition: width 140ms linear;
+    }
+
+    #actPips {
+      position: absolute;
+      z-index: 8;
+      left: var(--safe-left);
+      bottom: calc(var(--safe-bottom) + 12px);
+      display: flex;
+      gap: 7px;
+    }
+
+    .pip {
+      width: 17px;
+      height: 2px;
+      background: rgba(222, 216, 199, .2);
+      transition: width 400ms var(--ease-out), background-color 400ms var(--ease-out);
+    }
+
+    .pip.active {
+      width: 34px;
+      background: var(--signal);
+    }
+
+    #titleBlock {
+      position: absolute;
+      z-index: 6;
+      left: clamp(28px, 8vw, 150px);
+      top: clamp(120px, 23vh, 240px);
+      max-width: min(580px, 78vw);
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 700ms var(--ease-out), transform 900ms var(--ease-out);
+    }
+
+    #titleBlock.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    #storyLabel {
+      margin: 0 0 13px;
+      color: var(--signal);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: clamp(9px, .85vw, 12px);
+      letter-spacing: .34em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--paper);
+      font-size: clamp(48px, 8vw, 124px);
+      font-weight: 400;
+      line-height: .85;
+      letter-spacing: -.055em;
+      text-shadow: 0 4px 28px rgba(0,0,0,.65);
+    }
+
+    #actLabel {
+      position: absolute;
+      z-index: 7;
+      left: 50%;
+      top: calc(var(--safe-top) + 54px);
+      transform: translate(-50%, -5px);
+      opacity: 0;
+      color: rgba(222, 216, 199, .58);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      letter-spacing: .3em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      transition: opacity 500ms var(--ease-out), transform 500ms var(--ease-out);
+    }
+
+    #actLabel.visible {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    #caption {
+      position: absolute;
+      z-index: 7;
+      left: 50%;
+      bottom: clamp(64px, 12vh, 132px);
+      width: min(760px, calc(100% - 48px));
+      margin: 0;
+      transform: translate(-50%, 8px);
+      opacity: 0;
+      color: var(--paper);
+      font-size: clamp(17px, 2vw, 27px);
+      font-weight: 400;
+      line-height: 1.35;
+      letter-spacing: .01em;
+      text-align: center;
+      text-wrap: balance;
+      text-shadow: 0 2px 20px #000, 0 2px 20px #000;
+      transition: opacity 600ms var(--ease-out), transform 700ms var(--ease-out);
+      pointer-events: none;
+    }
+
+    #caption.visible {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    #signalMessage {
+      position: absolute;
+      z-index: 7;
+      left: 50%;
+      top: 50%;
+      width: min(920px, calc(100% - 42px));
+      transform: translate(-50%, -44%) scale(.985);
+      opacity: 0;
+      color: var(--signal-pale);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: clamp(24px, 4.6vw, 68px);
+      font-weight: 500;
+      line-height: 1;
+      letter-spacing: .12em;
+      text-align: center;
+      text-shadow: 0 0 12px rgba(239,179,92,.55), 0 0 60px rgba(239,179,92,.28);
+      transition: opacity 900ms var(--ease-out), transform 1200ms var(--ease-out);
+      pointer-events: none;
+    }
+
+    #signalMessage.visible {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    #tuner {
+      position: absolute;
+      z-index: 9;
+      left: 50%;
+      bottom: clamp(74px, 10vh, 112px);
+      width: min(560px, calc(100% - 40px));
+      transform: translate(-50%, 8px);
+      opacity: 0;
+      visibility: hidden;
+      text-align: center;
+      transition: opacity 400ms var(--ease-out), transform 500ms var(--ease-out), visibility 0s 500ms;
+    }
+
+    #tuner.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translate(-50%, 0);
+      transition-delay: 0s;
+    }
+
+    #tunerHint {
+      margin: 0 0 14px;
+      color: rgba(222, 216, 199, .72);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: clamp(8px, .8vw, 10px);
+      letter-spacing: .18em;
+      line-height: 1.55;
+      text-transform: uppercase;
+    }
+
+    #fragmentButtons {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .fragment-button {
+      width: 38px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid rgba(222, 216, 199, .24);
+      border-radius: 50%;
+      color: rgba(222, 216, 199, .64);
+      background: rgba(7, 16, 20, .42);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      cursor: pointer;
+      transition: color 180ms var(--ease-out), border-color 180ms var(--ease-out), background 180ms var(--ease-out), transform 140ms var(--ease-out);
+    }
+
+    .fragment-button:hover,
+    .fragment-button.active {
+      color: var(--paper);
+      border-color: rgba(222, 216, 199, .64);
+    }
+
+    .fragment-button:active { transform: scale(.95); }
+
+    .fragment-button.aligned {
+      color: var(--ink);
+      border-color: var(--signal);
+      background: var(--signal);
+    }
+
+    #choice {
+      position: absolute;
+      z-index: 10;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(30px, 10vw, 180px);
+      padding: 15vh 30px 8vh;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 700ms var(--ease-out), visibility 0s 700ms;
+    }
+
+    #choice.visible {
+      opacity: 1;
+      visibility: visible;
+      transition-delay: 0s;
+    }
+
+    #choice::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 33%;
+      bottom: 28%;
+      width: 1px;
+      background: linear-gradient(transparent, rgba(222,216,199,.34), transparent);
+    }
+
+    .choice-button {
+      position: relative;
+      width: min(34vw, 350px);
+      min-height: 160px;
+      padding: 42px 14px;
+      border: 0;
+      color: rgba(222, 216, 199, .72);
+      background: transparent;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: clamp(14px, 1.7vw, 22px);
+      letter-spacing: .25em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 280ms var(--ease-out), transform 280ms var(--ease-out), text-shadow 280ms var(--ease-out);
+    }
+
+    .choice-button::before,
+    .choice-button::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      width: 70px;
+      height: 1px;
+      transform: translateX(-50%) scaleX(.42);
+      background: currentColor;
+      opacity: .46;
+      transition: transform 360ms var(--ease-out), opacity 360ms var(--ease-out);
+    }
+
+    .choice-button::before { top: 25px; }
+    .choice-button::after { bottom: 25px; }
+
+    .choice-button:hover,
+    .choice-button:focus-visible {
+      color: var(--signal-pale);
+      transform: translateY(-3px);
+      text-shadow: 0 0 22px rgba(239,179,92,.34);
+    }
+
+    .choice-button:hover::before,
+    .choice-button:hover::after,
+    .choice-button:focus-visible::before,
+    .choice-button:focus-visible::after {
+      opacity: .8;
+      transform: translateX(-50%) scaleX(1);
+    }
+
+    #endingPanel {
+      position: absolute;
+      z-index: 10;
+      left: 50%;
+      bottom: clamp(64px, 10vh, 112px);
+      width: min(680px, calc(100% - 42px));
+      transform: translate(-50%, 10px);
+      opacity: 0;
+      visibility: hidden;
+      text-align: center;
+      transition: opacity 900ms var(--ease-out), transform 900ms var(--ease-out), visibility 0s 900ms;
+    }
+
+    #endingPanel.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translate(-50%, 0);
+      transition-delay: 0s;
+    }
+
+    #endingTitle {
+      margin: 0 0 22px;
+      color: var(--paper);
+      font-size: clamp(22px, 3vw, 42px);
+      font-weight: 400;
+      letter-spacing: .04em;
+      line-height: 1.1;
+      text-wrap: balance;
+    }
+
+    #endingActions {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .ending-button {
+      min-height: 42px;
+      padding: 0 18px;
+      border: 1px solid rgba(222, 216, 199, .28);
+      border-radius: 999px;
+      color: rgba(222, 216, 199, .72);
+      background: rgba(7,16,20,.5);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 200ms var(--ease-out), border-color 200ms var(--ease-out), background 200ms var(--ease-out), transform 140ms var(--ease-out);
+    }
+
+    .ending-button:hover {
+      color: var(--ink);
+      border-color: var(--signal-pale);
+      background: var(--signal-pale);
+    }
+
+    .ending-button:active { transform: scale(.96); }
+
+    #modeNote {
+      position: absolute;
+      z-index: 8;
+      right: var(--safe-right);
+      bottom: calc(var(--safe-bottom) + 12px);
+      color: rgba(222, 216, 199, .38);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 8px;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    @media (max-width: 680px) {
+      #titleBlock { top: 18vh; }
+      #choice { gap: 5px; padding-inline: 10px; }
+      #choice::before { top: 34%; bottom: 31%; }
+      .choice-button { width: 47vw; min-height: 140px; letter-spacing: .16em; }
+      #caption { bottom: 92px; }
+      #tuner { bottom: 76px; }
+      #modeNote { display: none; }
+      #stationMark { max-width: 58vw; line-height: 1.4; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+      }
+      #texture { opacity: .1; }
+    }
+  </style>
+</head>
+<body>
+  <main id="story" aria-label="The Last Signal, an interactive visual story">
+    <canvas id="film" role="img" aria-label="A lone operator inside an abandoned listening station during a violent storm"></canvas>
+    <div id="texture" aria-hidden="true"></div>
+    <div id="vignette" aria-hidden="true"></div>
+
+    <div id="stationMark" class="chrome">North Array · Station 03</div>
+    <div id="timecode" class="chrome">02:17:00</div>
+    <button id="replayTop" type="button" aria-label="Replay from the beginning">↺ Replay</button>
+
+    <section id="titleBlock" aria-live="polite">
+      <p id="storyLabel">The Last Signal</p>
+      <h1>Codex</h1>
+    </section>
+
+    <div id="actLabel" aria-hidden="true"></div>
+    <p id="caption" aria-live="polite"></p>
+    <div id="signalMessage" aria-live="assertive">WE REMEMBER YOUR SKY.</div>
+
+    <section id="tuner" aria-label="Signal fragment alignment controls">
+      <p id="tunerHint">Drag each living thread into its pale echo<br>1–3 select · arrows tune · enter aligns</p>
+      <div id="fragmentButtons">
+        <button class="fragment-button" type="button" data-fragment="0" aria-label="Select signal fragment one">I</button>
+        <button class="fragment-button" type="button" data-fragment="1" aria-label="Select signal fragment two">II</button>
+        <button class="fragment-button" type="button" data-fragment="2" aria-label="Select signal fragment three">III</button>
+      </div>
+    </section>
+
+    <section id="choice" aria-label="Choose the operator's response">
+      <button id="answerButton" class="choice-button" type="button">Answer</button>
+      <button id="silentButton" class="choice-button" type="button">Stay Silent</button>
+    </section>
+
+    <section id="endingPanel" aria-live="polite">
+      <h2 id="endingTitle"></h2>
+      <div id="endingActions">
+        <button id="endingReplay" class="ending-button" type="button">Replay manually</button>
+        <button id="alternateEnding" class="ending-button" type="button"></button>
+      </div>
+    </section>
+
+    <div id="actPips" aria-hidden="true">
+      <span class="pip active"></span><span class="pip"></span><span class="pip"></span>
+    </div>
+    <div id="progress" aria-hidden="true"><div id="progressFill"></div></div>
+    <div id="modeNote">Autoplay · Answer</div>
+    <p id="screenReaderState" class="sr-only" aria-live="polite"></p>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const MODEL_NAME = 'Codex';
+      const STARTUP = Object.freeze({ seed: 217, autoplay: true, ending: 'answer' });
+      const STEP = 1000 / 60;
+      const ACT_ONE_DURATION = 23000;
+      const RESOLVE_HOLD = 6500;
+      const CHOICE_DELAY = 2200;
+      const AUTO_CHOICE_TIME = 6200;
+      const ENDING_DURATION = Object.freeze({ answer: 22500, silent: 19500 });
+      const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const TAU = Math.PI * 2;
+
+      const canvas = document.getElementById('film');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      const titleBlock = document.getElementById('titleBlock');
+      const actLabel = document.getElementById('actLabel');
+      const caption = document.getElementById('caption');
+      const signalMessage = document.getElementById('signalMessage');
+      const tuner = document.getElementById('tuner');
+      const fragmentButtons = [...document.querySelectorAll('.fragment-button')];
+      const choicePanel = document.getElementById('choice');
+      const answerButton = document.getElementById('answerButton');
+      const silentButton = document.getElementById('silentButton');
+      const endingPanel = document.getElementById('endingPanel');
+      const endingTitle = document.getElementById('endingTitle');
+      const endingReplay = document.getElementById('endingReplay');
+      const alternateEnding = document.getElementById('alternateEnding');
+      const replayTop = document.getElementById('replayTop');
+      const progressFill = document.getElementById('progressFill');
+      const pips = [...document.querySelectorAll('.pip')];
+      const timecode = document.getElementById('timecode');
+      const modeNote = document.getElementById('modeNote');
+      const screenReaderState = document.getElementById('screenReaderState');
+
+      let state;
+      let world;
+      let viewport = { width: 0, height: 0, dpr: 1, scale: 1, ox: 0, oy: 0 };
+      let lastFrame = performance.now();
+      let accumulator = 0;
+      let paused = document.hidden;
+      let dragging = null;
+
+      function clamp(value, min = 0, max = 1) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
+
+      function ease(t) {
+        const x = clamp(t);
+        return 1 - Math.pow(1 - x, 4);
+      }
+
+      function smoothstep(a, b, value) {
+        const x = clamp((value - a) / (b - a));
+        return x * x * (3 - 2 * x);
+      }
+
+      function windowed(value, enter, full, exit, gone) {
+        return smoothstep(enter, full, value) * (1 - smoothstep(exit, gone, value));
+      }
+
+      function mulberry32(seed) {
+        let value = seed >>> 0;
+        return () => {
+          value += 0x6D2B79F5;
+          let t = value;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function hash(index, salt = 0) {
+        let n = (index * 374761393 + state.seed * 668265263 + salt * 1442695041) >>> 0;
+        n = Math.imul(n ^ (n >>> 13), 1274126177);
+        return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+      }
+
+      function makeWorld(seed) {
+        const random = mulberry32(seed);
+        const targets = Array.from({ length: 3 }, () => +(random() * 1.1 - .55).toFixed(4));
+        const initial = targets.map((target, index) => {
+          const direction = index === 1 ? -1 : 1;
+          let value = target + direction * (.52 + random() * .28);
+          if (value > .95 || value < -.95) value = target - direction * (.52 + random() * .2);
+          return +clamp(value, -.95, .95).toFixed(4);
+        });
+        return {
+          targets,
+          initial,
+          rain: Array.from({ length: 176 }, () => ({
+            x: random() * 1920,
+            y: random() * 1080,
+            length: 16 + random() * 44,
+            speed: .55 + random() * 1.15,
+            alpha: .08 + random() * .22
+          })),
+          dust: Array.from({ length: 42 }, () => ({
+            x: 540 + random() * 820,
+            y: 170 + random() * 610,
+            radius: .4 + random() * 1.5,
+            drift: .3 + random() * .8,
+            phase: random() * TAU
+          })),
+          cloudBands: Array.from({ length: 8 }, () => ({
+            x: random() * 1800 - 200,
+            y: 90 + random() * 430,
+            width: 280 + random() * 620,
+            height: 50 + random() * 120,
+            speed: .8 + random() * 1.8,
+            alpha: .08 + random() * .13
+          })),
+          lightning: Array.from({ length: 6 }, (_, index) => 2800 + index * 3900 + random() * 1700),
+          wireJitter: Array.from({ length: 28 }, () => random() * 2 - 1),
+          stars: Array.from({ length: 58 }, () => ({
+            x: 130 + random() * 1080,
+            y: 90 + random() * 500,
+            size: .5 + random() * 1.9,
+            phase: random() * TAU
+          }))
+        };
+      }
+
+      function freshState(seed) {
+        const normalized = Number.isFinite(Number(seed)) ? Math.trunc(Number(seed)) : STARTUP.seed;
+        world = makeWorld(normalized);
+        return {
+          seed: normalized,
+          act: 'receiver',
+          actTime: 0,
+          storyTime: 0,
+          fragments: world.initial.map((value, index) => ({
+            index,
+            value,
+            initial: value,
+            target: world.targets[index],
+            aligned: false
+          })),
+          activeFragment: 0,
+          resolved: false,
+          resolvedAt: null,
+          choiceAvailable: false,
+          selectedEnding: null,
+          completion: false,
+          autoplay: STARTUP.autoplay,
+          autoplayEnding: STARTUP.ending,
+          manualTakeover: false
+        };
+      }
+
+      function reset(seed = STARTUP.seed) {
+        state = freshState(seed);
+        accumulator = 0;
+        lastFrame = performance.now();
+        dragging = null;
+        renderDOM();
+        draw();
+        return snapshot();
+      }
+
+      function setAutoplay(enabled, ending = state.autoplayEnding) {
+        if (ending !== 'answer' && ending !== 'silent') {
+          throw new TypeError('ending must be "answer" or "silent"');
+        }
+        state.autoplay = Boolean(enabled);
+        state.autoplayEnding = ending;
+        state.manualTakeover = !enabled;
+        renderDOM();
+        return snapshot();
+      }
+
+      function boot(seed = STARTUP.seed, autoplay = STARTUP.autoplay, ending = STARTUP.ending) {
+        reset(seed);
+        state.autoplay = Boolean(autoplay);
+        state.autoplayEnding = ending === 'silent' ? 'silent' : 'answer';
+        state.manualTakeover = !autoplay;
+        renderDOM();
+        return snapshot();
+      }
+
+      function takeManualControl() {
+        if (state.autoplay) {
+          state.autoplay = false;
+          state.manualTakeover = true;
+          renderDOM();
+        }
+      }
+
+      function setFragment(index, value) {
+        const fragment = state.fragments[index];
+        if (!fragment || state.act !== 'message' || state.resolved) return false;
+        fragment.value = +clamp(Number(value), -1, 1).toFixed(4);
+        fragment.aligned = Math.abs(fragment.value - fragment.target) <= .045;
+
+        if (state.fragments.every(item => item.aligned)) {
+          state.fragments.forEach(item => {
+            item.value = item.target;
+            item.aligned = true;
+          });
+          state.resolved = true;
+          state.resolvedAt = state.actTime;
+          screenReaderState.textContent = 'All three signal fragments aligned. Message resolved: WE REMEMBER YOUR SKY.';
+        }
+        return true;
+      }
+
+      function alignFragment(index, value) {
+        const numericIndex = Math.trunc(Number(index));
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) return false;
+        const changed = setFragment(numericIndex, numericValue);
+        renderDOM();
+        draw();
+        return changed;
+      }
+
+      function enterAct(act, overflow = 0) {
+        state.act = act;
+        state.actTime = Math.max(0, overflow);
+        if (act === 'choice') {
+          state.choiceAvailable = state.actTime >= CHOICE_DELAY;
+          state.selectedEnding = null;
+        }
+      }
+
+      function applyAutoplayAlignment() {
+        if (!state.autoplay || state.act !== 'message' || state.resolved) return;
+        state.fragments.forEach((fragment, index) => {
+          const start = 4500 + index * 5000;
+          const progress = ease((state.actTime - start) / 4000);
+          if (progress > 0) setFragment(index, lerp(fragment.initial, fragment.target, progress));
+        });
+      }
+
+      function advanceSimulation(milliseconds) {
+        if (!Number.isFinite(milliseconds) || milliseconds <= 0 || state.completion) return;
+        state.actTime += milliseconds;
+        state.storyTime += milliseconds;
+
+        if (state.act === 'receiver' && state.actTime >= ACT_ONE_DURATION) {
+          enterAct('message', state.actTime - ACT_ONE_DURATION);
+        }
+
+        if (state.act === 'message') {
+          applyAutoplayAlignment();
+          if (state.resolved && state.resolvedAt !== null && state.actTime >= state.resolvedAt + RESOLVE_HOLD) {
+            enterAct('choice', state.actTime - state.resolvedAt - RESOLVE_HOLD);
+          }
+        }
+
+        if (state.act === 'choice') {
+          state.choiceAvailable = state.actTime >= CHOICE_DELAY;
+          if (state.autoplay && state.choiceAvailable && state.actTime >= AUTO_CHOICE_TIME) {
+            choose(state.autoplayEnding);
+          }
+        }
+
+        if (state.act === 'ending-answer' || state.act === 'ending-silent') {
+          const ending = state.act.slice(7);
+          if (state.actTime >= ENDING_DURATION[ending]) {
+            state.actTime = ENDING_DURATION[ending];
+            state.completion = true;
+          }
+        }
+      }
+
+      function seek(milliseconds) {
+        const requested = Math.max(0, Number(milliseconds) || 0);
+        if (state.act === 'receiver') state.actTime = clamp(requested, 0, ACT_ONE_DURATION - STEP);
+        else if (state.act === 'message') {
+          state.actTime = requested;
+          applyAutoplayAlignment();
+        } else if (state.act === 'choice') {
+          state.actTime = requested;
+          state.choiceAvailable = state.actTime >= CHOICE_DELAY;
+        } else {
+          const ending = state.act.slice(7);
+          state.actTime = clamp(requested, 0, ENDING_DURATION[ending]);
+          state.completion = state.actTime >= ENDING_DURATION[ending];
+        }
+        renderDOM();
+        draw();
+        return snapshot();
+      }
+
+      function choose(ending) {
+        if (ending !== 'answer' && ending !== 'silent') return false;
+        if (state.act !== 'choice' || !state.choiceAvailable) return false;
+        state.selectedEnding = ending;
+        state.choiceAvailable = false;
+        state.act = `ending-${ending}`;
+        state.actTime = 0;
+        screenReaderState.textContent = ending === 'answer'
+          ? 'The operator chose to answer the signal.'
+          : 'The operator chose to stay silent.';
+        renderDOM();
+        return true;
+      }
+
+      function snapshot() {
+        return {
+          seed: state.seed,
+          act: state.act,
+          actTime: +state.actTime.toFixed(3),
+          fragmentState: state.fragments.map(fragment => ({
+            index: fragment.index,
+            value: fragment.value,
+            target: fragment.target,
+            aligned: fragment.aligned
+          })),
+          choiceAvailability: state.choiceAvailable,
+          selectedEnding: state.selectedEnding,
+          completion: state.completion,
+          autoplay: state.autoplay,
+          autoplayEnding: state.autoplayEnding
+        };
+      }
+
+      function simulateFor(milliseconds) {
+        const steps = Math.ceil(milliseconds / STEP);
+        for (let i = 0; i < steps; i += 1) advanceSimulation(STEP);
+      }
+
+      function reachChoice() {
+        reset(217);
+        state.autoplay = false;
+        simulateFor(ACT_ONE_DURATION + 100);
+        state.actTime = 5200;
+        state.fragments.forEach((fragment, index) => setFragment(index, fragment.target));
+        simulateFor(RESOLVE_HOLD + CHOICE_DELAY + 100);
+      }
+
+      function finiteNumbers(value) {
+        if (typeof value === 'number') return Number.isFinite(value);
+        if (Array.isArray(value)) return value.every(finiteNumbers);
+        if (value && typeof value === 'object') return Object.values(value).every(finiteNumbers);
+        return true;
+      }
+
+      function runSelfTest() {
+        const tests = [];
+        const test = (name, assertion) => {
+          try {
+            const passed = Boolean(assertion());
+            tests.push({ name, passed });
+          } catch (error) {
+            tests.push({ name, passed: false, detail: String(error && error.message ? error.message : error) });
+          }
+        };
+
+        try {
+          test('deterministic reset', () => {
+            reset(913);
+            const first = JSON.stringify(snapshot().fragmentState);
+            const firstRain = JSON.stringify(world.rain.slice(0, 3));
+            reset(913);
+            return first === JSON.stringify(snapshot().fragmentState) && firstRain === JSON.stringify(world.rain.slice(0, 3));
+          });
+
+          test('ordered act progression', () => {
+            reset(217);
+            state.autoplay = false;
+            simulateFor(ACT_ONE_DURATION + 100);
+            const messageReached = state.act === 'message';
+            state.actTime = 5000;
+            state.fragments.forEach((fragment, index) => alignFragment(index, fragment.target));
+            simulateFor(RESOLVE_HOLD + 100);
+            const choiceReached = state.act === 'choice';
+            return messageReached && choiceReached;
+          });
+
+          test('fragment gating', () => {
+            reset(217);
+            state.autoplay = false;
+            simulateFor(ACT_ONE_DURATION + 32000);
+            const gated = state.act === 'message' && !state.choiceAvailable;
+            state.fragments.forEach((fragment, index) => alignFragment(index, fragment.target));
+            simulateFor(RESOLVE_HOLD + CHOICE_DELAY + 50);
+            return gated && state.act === 'choice' && state.choiceAvailable;
+          });
+
+          test('answer ending reachable', () => {
+            reachChoice();
+            const chosen = choose('answer');
+            simulateFor(ENDING_DURATION.answer + 100);
+            return chosen && state.selectedEnding === 'answer' && state.completion;
+          });
+
+          test('silent ending reachable', () => {
+            reachChoice();
+            const chosen = choose('silent');
+            simulateFor(ENDING_DURATION.silent + 100);
+            return chosen && state.selectedEnding === 'silent' && state.completion;
+          });
+
+          test('replay restores beginning', () => {
+            reachChoice();
+            choose('answer');
+            reset(217);
+            return state.act === 'receiver' && state.actTime === 0 && !state.completion && state.selectedEnding === null;
+          });
+
+          test('autoplay traverses real systems', () => {
+            boot(217, true, 'silent');
+            simulateFor(90000);
+            return state.fragments.every(fragment => fragment.aligned)
+              && state.resolved
+              && state.selectedEnding === 'silent'
+              && state.completion;
+          });
+
+          test('automatic startup configuration', () => (
+            STARTUP.seed === 217 && STARTUP.autoplay === true && STARTUP.ending === 'answer'
+          ));
+
+          test('finite numeric state', () => finiteNumbers(snapshot()));
+        } finally {
+          boot(STARTUP.seed, STARTUP.autoplay, STARTUP.ending);
+        }
+
+        return { passed: tests.every(item => item.passed), tests };
+      }
+
+      function resize() {
+        viewport.width = Math.max(1, window.innerWidth);
+        viewport.height = Math.max(1, window.innerHeight);
+        viewport.dpr = Math.min(window.devicePixelRatio || 1, 2);
+        viewport.scale = Math.max(viewport.width / 1920, viewport.height / 1080);
+        viewport.ox = (viewport.width - 1920 * viewport.scale) / 2;
+        viewport.oy = (viewport.height - 1080 * viewport.scale) / 2;
+        canvas.width = Math.round(viewport.width * viewport.dpr);
+        canvas.height = Math.round(viewport.height * viewport.dpr);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        draw();
+      }
+
+      function designTransform() {
+        ctx.setTransform(
+          viewport.dpr * viewport.scale, 0, 0, viewport.dpr * viewport.scale,
+          viewport.dpr * viewport.ox, viewport.dpr * viewport.oy
+        );
+      }
+
+      function roundedRect(x, y, width, height, radius) {
+        const r = Math.min(radius, width / 2, height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + width, y, x + width, y + height, r);
+        ctx.arcTo(x + width, y + height, x, y + height, r);
+        ctx.arcTo(x, y + height, x, y, r);
+        ctx.arcTo(x, y, x + width, y, r);
+        ctx.closePath();
+      }
+
+      function camera() {
+        let x = 960;
+        let y = 540;
+        let zoom = 1;
+        if (state.act === 'receiver') {
+          const p = ease(state.actTime / ACT_ONE_DURATION);
+          x = lerp(960, 1010, p);
+          y = lerp(540, 535, p);
+          zoom = lerp(1, 1.075, p);
+        } else if (state.act === 'message') {
+          const p = ease(state.actTime / 5500);
+          x = lerp(1010, 930, p);
+          y = lerp(535, 525, p);
+          zoom = lerp(1.075, 1.16, p);
+        } else if (state.act === 'choice') {
+          const p = ease(state.actTime / 3000);
+          x = lerp(930, 990, p);
+          zoom = lerp(1.16, 1.02, p);
+        } else if (state.act === 'ending-answer') {
+          const p = ease(state.actTime / ENDING_DURATION.answer);
+          x = lerp(990, 700, p);
+          y = lerp(540, 410, p);
+          zoom = lerp(1.02, .91, p);
+        } else {
+          const p = ease(state.actTime / ENDING_DURATION.silent);
+          x = lerp(990, 1020, p);
+          y = lerp(540, 500, p);
+          zoom = lerp(1.02, .96, p);
+        }
+        if (REDUCED.matches) zoom = Math.round(zoom * 100) / 100;
+        return { x, y, zoom };
+      }
+
+      function currentLightning() {
+        if (REDUCED.matches || state.act !== 'receiver') return 0;
+        let intensity = 0;
+        for (const time of world.lightning) {
+          const distance = Math.abs(state.actTime - time);
+          if (distance < 70) intensity = Math.max(intensity, 1 - distance / 70);
+          const echo = Math.abs(state.actTime - (time + 170));
+          if (echo < 45) intensity = Math.max(intensity, .58 * (1 - echo / 45));
+        }
+        return intensity;
+      }
+
+      function drawSky(lightning) {
+        const sky = ctx.createLinearGradient(0, 70, 0, 760);
+        sky.addColorStop(0, lightning > .05 ? '#71868a' : '#102128');
+        sky.addColorStop(.55, lightning > .05 ? '#455f64' : '#172c33');
+        sky.addColorStop(1, '#091318');
+        ctx.fillStyle = sky;
+        ctx.fillRect(62, 75, 1180, 700);
+
+        const cloudTime = REDUCED.matches ? 0 : state.storyTime * .001;
+        world.cloudBands.forEach((cloud, index) => {
+          const x = ((cloud.x + cloudTime * cloud.speed * 12 + index * 37) % 2100) - 300;
+          ctx.fillStyle = `rgba(5, 13, 17, ${cloud.alpha + (1 - lightning) * .08})`;
+          ctx.beginPath();
+          ctx.ellipse(x, cloud.y, cloud.width, cloud.height, -.08, 0, TAU);
+          ctx.fill();
+        });
+
+        ctx.fillStyle = '#0a1418';
+        ctx.beginPath();
+        ctx.moveTo(62, 650);
+        ctx.lineTo(270, 594);
+        ctx.lineTo(410, 632);
+        ctx.lineTo(565, 570);
+        ctx.lineTo(760, 629);
+        ctx.lineTo(945, 579);
+        ctx.lineTo(1242, 642);
+        ctx.lineTo(1242, 780);
+        ctx.lineTo(62, 780);
+        ctx.closePath();
+        ctx.fill();
+
+        drawArray(lightning);
+        drawRain();
+        if (lightning > 0) drawLightning(lightning);
+      }
+
+      function drawArray(lightning) {
+        ctx.save();
+        ctx.strokeStyle = lightning > .2 ? 'rgba(222,232,225,.72)' : 'rgba(120,145,145,.38)';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(332, 640);
+        ctx.lineTo(332, 365);
+        ctx.stroke();
+
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.ellipse(332, 362, 160, 58, -.22, .1, Math.PI * 1.88);
+        ctx.stroke();
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 7; i += 1) {
+          const a = -.1 + i * .24;
+          ctx.beginPath();
+          ctx.moveTo(332, 362);
+          ctx.lineTo(332 + Math.cos(a + Math.PI) * 150, 362 + Math.sin(a + Math.PI) * 56);
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#0a1418';
+        ctx.fillRect(286, 638, 92, 40);
+        ctx.restore();
+      }
+
+      function drawRain() {
+        const t = REDUCED.matches ? 0 : state.storyTime * .12;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(62, 75, 1180, 700);
+        ctx.clip();
+        ctx.lineWidth = 1.5;
+        world.rain.forEach(drop => {
+          const y = ((drop.y + t * drop.speed) % 900) + 20;
+          const x = ((drop.x - t * .18 * drop.speed) % 1400 + 1400) % 1400 - 80;
+          ctx.strokeStyle = `rgba(166, 198, 197, ${drop.alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x - drop.length * .28, y + drop.length);
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
+
+      function drawLightning(intensity) {
+        ctx.save();
+        ctx.globalAlpha = intensity;
+        ctx.shadowColor = '#e9f7ef';
+        ctx.shadowBlur = 24;
+        ctx.strokeStyle = '#e8f1e8';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(1000, 70);
+        for (let i = 0; i < 12; i += 1) {
+          ctx.lineTo(1000 - i * 34 + world.wireJitter[i] * 28, 80 + i * 43);
+        }
+        ctx.stroke();
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(865, 252);
+        ctx.lineTo(780, 332);
+        ctx.lineTo(736, 421);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawArchitecture() {
+        const wall = ctx.createLinearGradient(0, 0, 1920, 1080);
+        wall.addColorStop(0, '#111d20');
+        wall.addColorStop(.65, '#0b1417');
+        wall.addColorStop(1, '#070d10');
+        ctx.fillStyle = wall;
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        ctx.save();
+        roundedRect(46, 58, 1215, 738, 5);
+        ctx.clip();
+        drawSky(currentLightning());
+        ctx.restore();
+
+        ctx.fillStyle = '#060c0e';
+        ctx.fillRect(0, 0, 1920, 62);
+        ctx.fillRect(0, 0, 55, 830);
+        ctx.fillRect(1244, 0, 676, 830);
+        ctx.fillRect(0, 776, 1920, 304);
+
+        ctx.fillStyle = '#192529';
+        ctx.fillRect(45, 58, 16, 740);
+        ctx.fillRect(1240, 58, 21, 740);
+        ctx.fillRect(45, 58, 1216, 17);
+        ctx.fillRect(45, 760, 1216, 22);
+        ctx.fillRect(622, 60, 18, 710);
+
+        ctx.strokeStyle = 'rgba(143, 164, 159, .12)';
+        ctx.lineWidth = 2;
+        for (let y = 118; y < 760; y += 78) {
+          ctx.beginPath();
+          ctx.moveTo(45, y);
+          ctx.lineTo(1260, y + 4);
+          ctx.stroke();
+        }
+
+        const floor = ctx.createLinearGradient(0, 780, 0, 1080);
+        floor.addColorStop(0, '#10191b');
+        floor.addColorStop(1, '#05090a');
+        ctx.fillStyle = floor;
+        ctx.fillRect(0, 780, 1920, 300);
+        ctx.strokeStyle = 'rgba(114, 132, 126, .08)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i += 1) {
+          ctx.beginPath();
+          ctx.moveTo(900, 780);
+          ctx.lineTo(i * 250 - 80, 1080);
+          ctx.stroke();
+        }
+        for (let y = 820; y < 1080; y += 55) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(1920, y);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = '#111a1d';
+        ctx.fillRect(1425, 135, 420, 468);
+        ctx.strokeStyle = 'rgba(151,169,161,.14)';
+        ctx.strokeRect(1454, 165, 356, 406);
+        ctx.fillStyle = 'rgba(3,8,9,.66)';
+        for (let y = 191; y < 548; y += 44) {
+          roundedRect(1480, y, 305, 25, 3);
+          ctx.fill();
+        }
+        for (let y = 204; y < 548; y += 88) {
+          ctx.fillStyle = 'rgba(239,179,92,.2)';
+          ctx.beginPath();
+          ctx.arc(1752, y, 3, 0, TAU);
+          ctx.fill();
+        }
+      }
+
+      function receiverGlow() {
+        if (state.act === 'receiver') return smoothstep(8400, 13000, state.actTime) * .82;
+        if (state.act === 'message') return state.resolved ? 1 : .72 + Math.sin(state.actTime * .006) * .12;
+        if (state.act === 'choice') return .92;
+        if (state.act === 'ending-answer') return 1 - smoothstep(10000, 19000, state.actTime) * .25;
+        return 1 - smoothstep(2000, 13500, state.actTime) * .96;
+      }
+
+      function drawReceiver() {
+        const glow = receiverGlow();
+        ctx.save();
+        ctx.shadowColor = `rgba(239,179,92,${glow})`;
+        ctx.shadowBlur = 42 * glow;
+        const body = ctx.createLinearGradient(712, 500, 1120, 744);
+        body.addColorStop(0, '#273033');
+        body.addColorStop(.45, '#151e20');
+        body.addColorStop(1, '#090f10');
+        ctx.fillStyle = body;
+        roundedRect(710, 505, 430, 245, 14);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.strokeStyle = 'rgba(180,180,162,.25)';
+        ctx.lineWidth = 3;
+        roundedRect(710, 505, 430, 245, 14);
+        ctx.stroke();
+
+        ctx.fillStyle = '#070c0d';
+        roundedRect(748, 544, 250, 100, 7);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(239,179,92,${.2 + glow * .55})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        const glass = ctx.createRadialGradient(875, 595, 2, 875, 595, 135);
+        glass.addColorStop(0, `rgba(255,224,162,${.16 + glow * .68})`);
+        glass.addColorStop(.32, `rgba(239,179,92,${glow * .32})`);
+        glass.addColorStop(1, 'rgba(7,12,13,0)');
+        ctx.fillStyle = glass;
+        ctx.fillRect(748, 544, 250, 100);
+
+        ctx.save();
+        ctx.beginPath();
+        roundedRect(748, 544, 250, 100, 7);
+        ctx.clip();
+        ctx.strokeStyle = `rgba(255,224,162,${.16 + glow * .7})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let x = 750; x <= 996; x += 4) {
+          const y = 594 + Math.sin(x * .043 + state.storyTime * .005) * (5 + glow * 10)
+            + Math.sin(x * .11 - state.storyTime * .002) * 3;
+          if (x === 750) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#080d0f';
+        ctx.beginPath();
+        ctx.arc(1048, 587, 34, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(197,190,168,.24)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(1048, 587);
+        ctx.lineTo(1064, 566);
+        ctx.stroke();
+
+        for (let i = 0; i < 5; i += 1) {
+          ctx.fillStyle = i < 3 && glow > .55 ? `rgba(239,179,92,${glow * (.32 + i * .12)})` : '#2b302d';
+          ctx.beginPath();
+          ctx.arc(762 + i * 36, 692, 5, 0, TAU);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = '#090f10';
+        ctx.fillRect(680, 745, 500, 35);
+        ctx.fillStyle = '#0b1214';
+        ctx.fillRect(720, 780, 22, 170);
+        ctx.fillRect(1115, 780, 22, 170);
+      }
+
+      function drawOperator() {
+        ctx.save();
+        const edgeGlow = receiverGlow();
+        ctx.fillStyle = '#030708';
+        ctx.shadowColor = `rgba(239,179,92,${edgeGlow * .18})`;
+        ctx.shadowBlur = 18;
+
+        ctx.beginPath();
+        ctx.arc(1378, 516, 55, 0, TAU);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(1334, 564);
+        ctx.quadraticCurveTo(1283, 632, 1295, 780);
+        ctx.lineTo(1480, 798);
+        ctx.quadraticCurveTo(1492, 636, 1420, 558);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#030708';
+        ctx.lineWidth = 38;
+        ctx.beginPath();
+        ctx.moveTo(1332, 620);
+        ctx.quadraticCurveTo(1230, 638, 1092, 665);
+        ctx.stroke();
+        ctx.lineWidth = 26;
+        ctx.beginPath();
+        ctx.moveTo(1094, 665);
+        ctx.lineTo(1047, 654);
+        ctx.stroke();
+
+        ctx.fillStyle = '#05090a';
+        ctx.fillRect(1304, 790, 178, 27);
+        ctx.fillRect(1323, 817, 20, 158);
+        ctx.fillRect(1448, 817, 20, 158);
+
+        ctx.strokeStyle = `rgba(239,179,92,${edgeGlow * .26})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(1378, 516, 56, 1.45, 3.8);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(1332, 565);
+        ctx.quadraticCurveTo(1288, 650, 1301, 780);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawDust() {
+        const time = REDUCED.matches ? 0 : state.storyTime * .00035;
+        ctx.save();
+        world.dust.forEach((particle, index) => {
+          const x = particle.x + Math.sin(time * particle.drift + particle.phase) * 20;
+          const y = particle.y + Math.cos(time * .7 + particle.phase) * 12;
+          const pulse = .16 + .12 * Math.sin(time * 2 + index);
+          ctx.fillStyle = `rgba(255,224,162,${Math.max(.03, pulse) * receiverGlow()})`;
+          ctx.beginPath();
+          ctx.arc(x, y, particle.radius, 0, TAU);
+          ctx.fill();
+        });
+        ctx.restore();
+      }
+
+      function drawWaveLine(y, offset, alpha, color, phase, width = 3) {
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (let x = 560; x <= 1360; x += 5) {
+          const envelope = Math.sin(((x - 560) / 800) * Math.PI);
+          const wave = Math.sin(x * .031 + phase) * 17 * envelope
+            + Math.sin(x * .081 - phase * .7) * 7 * envelope;
+          const yy = y + offset + wave;
+          if (x === 560) ctx.moveTo(x, yy);
+          else ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      function drawFragments() {
+        if (state.act !== 'message' || state.resolved) return;
+        const opacity = smoothstep(1800, 4200, state.actTime);
+        if (opacity <= 0) return;
+        ctx.save();
+        ctx.fillStyle = `rgba(4,10,12,${.34 * opacity})`;
+        ctx.fillRect(490, 275, 940, 520);
+        ctx.strokeStyle = `rgba(206,214,200,${.08 * opacity})`;
+        ctx.strokeRect(490, 275, 940, 520);
+
+        state.fragments.forEach((fragment, index) => {
+          const y = 395 + index * 130;
+          const phase = index * 1.8 + state.storyTime * .0012;
+          drawWaveLine(y, 0, .18 * opacity, '#d9dfd2', phase, 1.5);
+          const offset = (fragment.target - fragment.value) * 112;
+          ctx.save();
+          ctx.shadowColor = fragment.aligned ? '#ffe0a2' : '#efb35c';
+          ctx.shadowBlur = fragment.aligned ? 20 : 9;
+          drawWaveLine(y, offset, (.66 + (fragment.aligned ? .3 : 0)) * opacity, '#efb35c', phase, fragment.aligned ? 4 : 2.6);
+          ctx.restore();
+
+          ctx.fillStyle = `rgba(222,216,199,${.32 * opacity})`;
+          ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+          ctx.textAlign = 'right';
+          ctx.fillText(String(index + 1).padStart(2, '0'), 530, y + 4);
+
+          if (index === state.activeFragment) {
+            ctx.strokeStyle = `rgba(255,224,162,${.5 * opacity})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(545, y - 42);
+            ctx.lineTo(545, y + 42);
+            ctx.stroke();
+          }
+        });
+        ctx.restore();
+      }
+
+      function drawResolvedSignal() {
+        if (!state.resolved || (state.act !== 'message' && state.act !== 'choice')) return;
+        const local = state.act === 'message' ? state.actTime - state.resolvedAt : RESOLVE_HOLD + state.actTime;
+        const appearance = smoothstep(0, 1400, local);
+        const spread = 1 - smoothstep(300, 1900, local);
+        ctx.save();
+        ctx.shadowColor = '#efb35c';
+        ctx.shadowBlur = 18 * appearance;
+        for (let i = 0; i < 3; i += 1) {
+          drawWaveLine(525, (i - 1) * 26 * spread, appearance * (.48 + i * .16), i === 1 ? '#ffe0a2' : '#efb35c', i * 1.6 + state.storyTime * .0008, 2.5);
+        }
+        ctx.restore();
+      }
+
+      function drawChoiceMotif() {
+        if (state.act !== 'choice') return;
+        const p = smoothstep(500, 3200, state.actTime);
+        ctx.save();
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 3; i += 1) {
+          ctx.strokeStyle = i === 1 ? `rgba(255,224,162,${.44 * p})` : `rgba(239,179,92,${.3 * p})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(930, 594 + i * 5);
+          ctx.bezierCurveTo(850, 515, 690, 475 + i * 8, 405, 500 - i * 12);
+          ctx.moveTo(930, 594 + i * 5);
+          ctx.bezierCurveTo(1040, 520, 1210, 474 - i * 5, 1510, 500 + i * 12);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawAnswerEnding() {
+        if (state.act !== 'ending-answer') return;
+        const t = state.actTime;
+        const launch = smoothstep(1200, 6300, t);
+        const reach = smoothstep(4600, 12500, t);
+        const response = smoothstep(13000, 19000, t);
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.globalCompositeOperation = 'screen';
+        for (let i = 0; i < 3; i += 1) {
+          ctx.strokeStyle = i === 1 ? `rgba(255,224,162,${.7 * launch})` : `rgba(239,179,92,${.48 * launch})`;
+          ctx.lineWidth = i === 1 ? 4 : 2;
+          ctx.shadowColor = '#efb35c';
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.moveTo(875 + i * 7, 580);
+          const topY = lerp(580, -100, reach);
+          for (let segment = 0; segment <= 28; segment += 1) {
+            const y = 580 - segment * ((580 - topY) / 28);
+            const x = 885 + Math.sin(segment * .66 + i * 2.1 + t * .0015) * (10 + segment * .42);
+            ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = `rgba(157,208,208,${.28 * response})`;
+        ctx.shadowColor = '#9dd0d0';
+        ctx.shadowBlur = 16;
+        for (let i = 0; i < 4; i += 1) {
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(900, 250, 100 + i * 115 * response, 28 + i * 44 * response, 0, 0, TAU);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        if (response > .1) {
+          ctx.save();
+          ctx.fillStyle = `rgba(157,208,208,${response * .8})`;
+          ctx.shadowColor = '#9dd0d0';
+          ctx.shadowBlur = 22;
+          [[282, 304], [498, 238], [1144, 322]].forEach(([x, y], index) => {
+            const pulse = .65 + Math.sin(t * .004 + index * 2) * .35;
+            ctx.globalAlpha = response * pulse;
+            ctx.beginPath();
+            ctx.arc(x, y, 3 + index, 0, TAU);
+            ctx.fill();
+          });
+          ctx.restore();
+        }
+      }
+
+      function drawSilentEnding() {
+        if (state.act !== 'ending-silent') return;
+        const t = state.actTime;
+        const fade = smoothstep(1200, 10500, t);
+        const clear = smoothstep(6500, 15200, t);
+        ctx.save();
+        ctx.fillStyle = `rgba(2,7,9,${fade * .48})`;
+        ctx.fillRect(0, 0, 1920, 1080);
+        ctx.restore();
+
+        ctx.save();
+        world.stars.forEach((star, index) => {
+          const alpha = clear * (.18 + .58 * (.5 + .5 * Math.sin(index + (REDUCED.matches ? 0 : t * .0005))));
+          ctx.fillStyle = `rgba(202,220,211,${alpha})`;
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, star.size, 0, TAU);
+          ctx.fill();
+        });
+        ctx.fillStyle = `rgba(255,224,162,${clear * .72})`;
+        ctx.shadowColor = '#efb35c';
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        ctx.arc(875, 595, lerp(8, 1.8, fade), 0, TAU);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(239,179,92,${(1 - fade) * .42})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i += 1) {
+          ctx.beginPath();
+          ctx.moveTo(875, 595 + i * 4);
+          ctx.bezierCurveTo(760, 540 + i * 10, 510, 565 - i * 12, 180, 520 + i * 18);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function draw() {
+        if (!ctx || !state || viewport.width === 0) return;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = '#071014';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        designTransform();
+
+        const cam = camera();
+        ctx.save();
+        ctx.translate(960, 540);
+        ctx.scale(cam.zoom, cam.zoom);
+        ctx.translate(-cam.x, -cam.y);
+        drawArchitecture();
+        drawReceiver();
+        drawOperator();
+        drawDust();
+        drawResolvedSignal();
+        drawChoiceMotif();
+        drawAnswerEnding();
+        drawSilentEnding();
+        ctx.restore();
+
+        drawFragments();
+
+        const lightning = currentLightning();
+        if (lightning > 0) {
+          ctx.fillStyle = `rgba(210,230,224,${lightning * .1})`;
+          ctx.fillRect(0, 0, 1920, 1080);
+        }
+
+        ctx.fillStyle = '#030708';
+        ctx.fillRect(0, 0, 1920, 22);
+        ctx.fillRect(0, 1058, 1920, 22);
+      }
+
+      function setCaption(text, visible) {
+        if (caption.textContent !== text) caption.textContent = text;
+        caption.classList.toggle('visible', Boolean(visible && text));
+      }
+
+      function progressValue() {
+        if (state.act === 'receiver') return (state.actTime / ACT_ONE_DURATION) * .29;
+        if (state.act === 'message') {
+          const expected = state.resolvedAt === null ? 25000 : state.resolvedAt + RESOLVE_HOLD;
+          return .29 + clamp(state.actTime / Math.max(expected, 1)) * .34;
+        }
+        if (state.act === 'choice') return .63 + clamp(state.actTime / AUTO_CHOICE_TIME) * .09;
+        const ending = state.act.slice(7);
+        return .72 + clamp(state.actTime / ENDING_DURATION[ending]) * .28;
+      }
+
+      function renderDOM() {
+        if (!state) return;
+        const t = state.actTime;
+        const actOne = state.act === 'receiver';
+        const actTwo = state.act === 'message';
+        const actThree = state.act === 'choice';
+        const isEnding = state.act.startsWith('ending-');
+        const localResolved = actTwo && state.resolved ? t - state.resolvedAt : -1;
+
+        titleBlock.classList.toggle('visible', actOne && t >= 800 && t < 7200);
+        signalMessage.classList.toggle('visible', actTwo && state.resolved && localResolved >= 650 && localResolved < 6000);
+        tuner.classList.toggle('visible', actTwo && t >= 3000 && !state.resolved);
+        choicePanel.classList.toggle('visible', actThree && state.choiceAvailable);
+        endingPanel.classList.toggle('visible', isEnding && state.completion);
+
+        let actText = '';
+        let showAct = false;
+        if (actOne) {
+          actText = 'Act I · The Receiver';
+          showAct = t > 6800 && t < 10100;
+        } else if (actTwo) {
+          actText = 'Act II · The Message';
+          showAct = t < 3900;
+        } else if (actThree) {
+          actText = 'Act III · The Choice';
+          showAct = t < 4300;
+        }
+        actLabel.textContent = actText;
+        actLabel.classList.toggle('visible', showAct);
+
+        if (actOne && t >= 9800 && t < 19400) {
+          setCaption('“At 02:17, the dead receiver began to glow.”', true);
+        } else if (actOne && t >= 19700 && t < 22700) {
+          setCaption('Thirty years of weather. Nothing had answered.', true);
+        } else if (actTwo && t >= 600 && t < 3900) {
+          setCaption('The carrier arrived in three broken threads.', true);
+        } else if (actThree && t >= 100 && t < 4100) {
+          setCaption('The storm held its breath.', true);
+        } else if (state.act === 'ending-answer' && t >= 2100 && t < 8200) {
+          setCaption('He sent one word into the weather: HERE.', true);
+        } else if (state.act === 'ending-answer' && t >= 12400 && t < 19300) {
+          setCaption('Far beyond the storm, something turned toward Earth.', true);
+        } else if (state.act === 'ending-silent' && t >= 1800 && t < 7500) {
+          setCaption('He let the carrier fall away.', true);
+        } else if (state.act === 'ending-silent' && t >= 8600 && t < 15800) {
+          setCaption('For one impossible minute, the sky remembered him.', true);
+        } else {
+          setCaption('', false);
+        }
+
+        fragmentButtons.forEach((button, index) => {
+          button.classList.toggle('active', index === state.activeFragment);
+          button.classList.toggle('aligned', state.fragments[index].aligned);
+          button.setAttribute('aria-pressed', String(index === state.activeFragment));
+          button.setAttribute('aria-label', `Select signal fragment ${index + 1}${state.fragments[index].aligned ? ', aligned' : ''}`);
+        });
+
+        if (isEnding) {
+          const ending = state.act.slice(7);
+          endingTitle.textContent = ending === 'answer'
+            ? 'The storm answered back.'
+            : 'The sky kept the secret.';
+          alternateEnding.textContent = ending === 'answer'
+            ? 'Follow the silence'
+            : 'Answer this time';
+        }
+
+        const actIndex = actOne ? 0 : actTwo ? 1 : 2;
+        pips.forEach((pip, index) => pip.classList.toggle('active', index === actIndex));
+        progressFill.style.width = `${(progressValue() * 100).toFixed(2)}%`;
+        modeNote.textContent = state.autoplay
+          ? `Autoplay · ${state.autoplayEnding}`
+          : 'Manual control';
+
+        const seconds = Math.floor(state.storyTime / 1000);
+        const frames = Math.floor((state.storyTime % 1000) / 10);
+        timecode.textContent = `02:${String(17 + Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}.${String(frames).padStart(2, '0')}`;
+      }
+
+      function frame(now) {
+        if (!paused) {
+          const delta = Math.min(100, Math.max(0, now - lastFrame));
+          accumulator += delta;
+          while (accumulator >= STEP) {
+            advanceSimulation(STEP);
+            accumulator -= STEP;
+          }
+          renderDOM();
+          draw();
+        }
+        lastFrame = now;
+        requestAnimationFrame(frame);
+      }
+
+      function pointerToDesign(event) {
+        const rect = canvas.getBoundingClientRect();
+        const cssX = event.clientX - rect.left;
+        const cssY = event.clientY - rect.top;
+        return {
+          x: (cssX - viewport.ox) / viewport.scale,
+          y: (cssY - viewport.oy) / viewport.scale
+        };
+      }
+
+      function onPointerDown(event) {
+        if (state.act !== 'message' || state.actTime < 2500 || state.resolved) return;
+        const point = pointerToDesign(event);
+        const rows = [395, 525, 655];
+        let nearest = -1;
+        let distance = Infinity;
+        rows.forEach((row, index) => {
+          const currentY = row + (state.fragments[index].target - state.fragments[index].value) * 112;
+          const d = Math.abs(point.y - currentY);
+          if (d < distance) {
+            nearest = index;
+            distance = d;
+          }
+        });
+        if (point.x < 500 || point.x > 1430 || distance > 72) return;
+        event.preventDefault();
+        takeManualControl();
+        state.activeFragment = nearest;
+        dragging = { index: nearest, startY: point.y, startValue: state.fragments[nearest].value };
+        canvas.setPointerCapture(event.pointerId);
+        renderDOM();
+      }
+
+      function onPointerMove(event) {
+        if (!dragging) return;
+        const point = pointerToDesign(event);
+        const value = dragging.startValue - (point.y - dragging.startY) / 112;
+        setFragment(dragging.index, value);
+        renderDOM();
+        draw();
+      }
+
+      function onPointerUp(event) {
+        if (!dragging) return;
+        dragging = null;
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      }
+
+      function onKeyDown(event) {
+        if (state.act !== 'message' || state.resolved || state.actTime < 2500) return;
+        if (event.key >= '1' && event.key <= '3') {
+          event.preventDefault();
+          takeManualControl();
+          state.activeFragment = Number(event.key) - 1;
+          renderDOM();
+          return;
+        }
+        if (event.key === 'ArrowUp' || event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+          event.preventDefault();
+          takeManualControl();
+          const direction = event.key === 'ArrowUp' || event.key === 'ArrowRight' ? 1 : -1;
+          const fragment = state.fragments[state.activeFragment];
+          alignFragment(state.activeFragment, fragment.value + direction * .025);
+          return;
+        }
+        if ((event.key === 'Enter' || event.key === ' ') && !event.target.classList.contains('fragment-button')) {
+          event.preventDefault();
+          takeManualControl();
+          const fragment = state.fragments[state.activeFragment];
+          alignFragment(state.activeFragment, fragment.target);
+        }
+      }
+
+      fragmentButtons.forEach((button, index) => {
+        button.addEventListener('click', () => {
+          takeManualControl();
+          state.activeFragment = index;
+          const fragment = state.fragments[index];
+          if (state.act === 'message' && !state.resolved) alignFragment(index, fragment.target);
+          renderDOM();
+        });
+      });
+
+      answerButton.addEventListener('click', () => {
+        takeManualControl();
+        choose('answer');
+      });
+      silentButton.addEventListener('click', () => {
+        takeManualControl();
+        choose('silent');
+      });
+      replayTop.addEventListener('click', () => boot(STARTUP.seed, false, STARTUP.ending));
+      endingReplay.addEventListener('click', () => boot(STARTUP.seed, false, STARTUP.ending));
+      alternateEnding.addEventListener('click', () => {
+        const alternate = state.selectedEnding === 'answer' ? 'silent' : 'answer';
+        boot(STARTUP.seed, true, alternate);
+      });
+
+      canvas.addEventListener('pointerdown', onPointerDown);
+      canvas.addEventListener('pointermove', onPointerMove);
+      canvas.addEventListener('pointerup', onPointerUp);
+      canvas.addEventListener('pointercancel', onPointerUp);
+      window.addEventListener('keydown', onKeyDown);
+      window.addEventListener('resize', resize, { passive: true });
+      document.addEventListener('visibilitychange', () => {
+        paused = document.hidden;
+        accumulator = 0;
+        lastFrame = performance.now();
+      });
+      REDUCED.addEventListener?.('change', draw);
+
+      window.__LAST_SIGNAL__ = Object.freeze({
+        reset,
+        setAutoplay,
+        seek,
+        alignFragment,
+        choose,
+        snapshot,
+        runSelfTest
+      });
+
+      document.title = MODEL_NAME;
+      boot(STARTUP.seed, STARTUP.autoplay, STARTUP.ending);
+      resize();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

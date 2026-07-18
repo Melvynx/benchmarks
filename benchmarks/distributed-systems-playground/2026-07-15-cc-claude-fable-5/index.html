@@ -1,0 +1,2161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Claude Fable 5</title>
+<style>
+/* ============================================================
+   Backplane schematic console — single-file, no external assets
+   Palette (dark-mode validated): read #2B9FD9 · write #8B6FE8 ·
+   retry #BD861F · ok #2EA873 · fail #D95C5C
+   ============================================================ */
+:root{
+  --bg:#070B10;
+  --board:#0A1018;
+  --panel:#0E1620;
+  --panel-2:#121C28;
+  --panel-3:#172332;
+  --line:#1C2A3B;
+  --line-2:#2A3B52;
+  --ink:#DCE7F2;
+  --ink-2:#8FA3B8;
+  --ink-3:#5A6F86;
+  --read:#2B9FD9;   --read-hi:#6FC4EE;
+  --write:#8B6FE8;  --write-hi:#B39DF5;
+  --retry:#BD861F;  --retry-hi:#E8B45A;
+  --ok:#2EA873;     --ok-hi:#52D19A;
+  --fail:#D95C5C;   --fail-hi:#F08787;
+  --dead:#7E8CA0;   --dead-hi:#A9B4C6;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --r:10px;
+  --focus:0 0 0 2px var(--bg),0 0 0 4px var(--read);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:
+    radial-gradient(1100px 500px at 22% -10%, rgba(43,159,217,.055), transparent 62%),
+    radial-gradient(900px 460px at 88% 112%, rgba(139,111,232,.05), transparent 60%),
+    var(--bg);
+  color:var(--ink);
+  font:13px/1.45 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+::selection{background:rgba(43,159,217,.35)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0}
+:is(button,input,[tabindex],a,summary):focus-visible{outline:none;box-shadow:var(--focus);border-radius:6px}
+b,strong{font-weight:600}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:0}
+
+#app{max-width:1720px;margin:0 auto;padding:14px 16px 12px;display:flex;flex-direction:column;gap:10px;min-height:100%}
+
+/* ---------- masthead ---------- */
+.masthead{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:2px 2px 0}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+.brand .mark{width:22px;height:22px;flex:none;align-self:center}
+.brand h1{font-size:17px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+.brand .sub{font-size:10px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+.status-strip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--line);border-radius:99px;
+  background:linear-gradient(180deg,var(--panel-2),var(--panel));font-size:11px;color:var(--ink-2);white-space:nowrap}
+.chip b{color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
+.chip .lamp{width:7px;height:7px;border-radius:99px;background:var(--ink-3);flex:none}
+#chip-state{border-color:var(--line-2);font-weight:700;letter-spacing:.14em;font-size:10px;color:var(--ink)}
+#chip-state.nominal   .lamp{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+#chip-state.degraded  .lamp{background:var(--retry-hi);box-shadow:0 0 8px var(--retry)}
+#chip-state.throttled .lamp{background:var(--retry-hi);box-shadow:0 0 8px var(--retry)}
+#chip-state.failed    .lamp{background:var(--fail);box-shadow:0 0 8px var(--fail)}
+#chip-state.degraded, #chip-state.throttled{color:var(--retry-hi)}
+#chip-state.failed{color:var(--fail-hi)}
+#chip-state.nominal{color:var(--ok-hi)}
+
+/* ---------- toolbar ---------- */
+.toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);
+  border-radius:var(--r);background:linear-gradient(180deg,var(--panel-2),var(--panel))}
+.transport{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tbtn{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:8px;border:1px solid var(--line-2);
+  background:linear-gradient(180deg,var(--panel-3),var(--panel-2));font-weight:600;font-size:12px;color:var(--ink)}
+.tbtn:hover{border-color:#3A5273;background:linear-gradient(180deg,#1B2A3E,var(--panel-2))}
+.tbtn:active{transform:translateY(1px)}
+.tbtn svg{width:11px;height:11px;flex:none}
+.tbtn[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+#btn-play.playing{border-color:rgba(46,168,115,.55)}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+.seg button{padding:6px 10px;font-size:11px;font-weight:600;color:var(--ink-2);border-right:1px solid var(--line);font-family:var(--mono)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--panel-3);color:var(--read-hi);box-shadow:inset 0 -2px 0 var(--read)}
+.seed{display:inline-flex;align-items:center;gap:7px;font-size:10px;font-weight:700;letter-spacing:.14em;color:var(--ink-3)}
+.seed input{width:86px;padding:5px 8px;border:1px solid var(--line-2);border-radius:8px;background:var(--bg);
+  color:var(--ink);font-family:var(--mono);font-size:12px}
+.scenarios{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
+.scenarios .lbl{font-size:10px;font-weight:700;letter-spacing:.18em;color:var(--ink-3);margin-right:2px}
+.scn{padding:6px 11px;border-radius:99px;border:1px solid var(--line-2);font-size:11px;font-weight:600;color:var(--ink-2);
+  background:var(--panel)}
+.scn:hover{color:var(--ink);border-color:#3A5273}
+.scn[aria-pressed="true"]{color:var(--read-hi);border-color:rgba(43,159,217,.6);background:rgba(43,159,217,.09)}
+
+/* ---------- layout grid ---------- */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 372px;grid-auto-rows:auto;gap:10px;align-items:stretch}
+.panel{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);overflow:hidden;min-width:0}
+.panel>header{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);
+  font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+.panel>header .spacer{flex:1}
+
+/* ---------- board ---------- */
+.board-wrap{grid-column:1;display:flex;flex-direction:column;background:
+  linear-gradient(180deg,rgba(16,24,36,.6),rgba(10,16,24,.9)),var(--board)}
+#board{display:block;width:100%;height:auto;flex:1}
+.board-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:7px 12px;border-top:1px solid var(--line);
+  background:rgba(7,11,16,.55)}
+.lg{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-2);white-space:nowrap}
+.lg svg{width:13px;height:13px;flex:none}
+.board-foot .hint{margin-left:auto;font-size:10.5px;color:var(--ink-3)}
+.board-foot .hint kbd{font-family:var(--mono);font-size:10px;border:1px solid var(--line-2);border-bottom-width:2px;
+  border-radius:4px;padding:0 4px;color:var(--ink-2);background:var(--panel-2)}
+
+/* SVG board internals */
+#board text{font-family:var(--sans);fill:var(--ink-2)}
+#board .node-title{font-size:10px;font-weight:700;letter-spacing:.16em;fill:var(--ink-2)}
+#board .node-sub{font-size:9px;letter-spacing:.06em;fill:var(--ink-3)}
+#board .stat-k{font-size:8.5px;letter-spacing:.1em;fill:var(--ink-3);font-weight:600}
+#board .stat-v{font-family:var(--mono);font-size:11px;fill:var(--ink);font-variant-numeric:tabular-nums}
+#board .stat-v.dim{fill:var(--ink-2)}
+#board .node-box{fill:url(#nodeFill);stroke:var(--line-2);stroke-width:1;rx:9}
+#board .node[data-health="warn"] .node-box{stroke:rgba(189,134,31,.75)}
+#board .node[data-health="bad"] .node-box{stroke:rgba(217,92,92,.8)}
+#board .node[data-health="off"] .node-box{stroke-dasharray:3 3}
+#board .node-lamp{r:3.5}
+#board .edge{fill:none;stroke:var(--line-2);stroke-width:1.5;opacity:.85}
+#board .edge.bus{stroke-dasharray:1 5;stroke-linecap:round;opacity:.6}
+#board .edge-label{font-size:8.5px;letter-spacing:.14em;fill:var(--ink-3);font-weight:600}
+#board .flow{fill:none;stroke-width:1.5;stroke-linecap:round;opacity:0;stroke-dasharray:2 9}
+#board .packet{cursor:pointer}
+#board .packet .halo{opacity:0;fill:none;stroke:var(--ink);stroke-width:1}
+#board .packet.selected .halo{opacity:.9}
+#board .qcell{fill:var(--panel-3);stroke:var(--line);stroke-width:.5}
+#board .wslot{rx:4}
+#board .meter-track{fill:#0B1520;stroke:var(--line);stroke-width:.5;rx:2}
+#board .meter-fill{rx:2}
+@media (prefers-reduced-motion:no-preference){
+  #board .node[data-health="bad"] .node-lamp{animation:lampblink 1.1s steps(2,start) infinite}
+  @keyframes lampblink{50%{opacity:.25}}
+}
+
+/* ---------- rail: charts + inspector ---------- */
+.rail{grid-column:2;display:flex;flex-direction:column;gap:10px;min-width:0}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.chart{background:var(--panel);padding:9px 11px 7px;position:relative;min-width:0}
+.chart .ch-head{display:flex;align-items:baseline;gap:6px}
+.chart .ch-name{font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+.chart .ch-val{margin-left:auto;font-family:var(--mono);font-size:14px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.chart .ch-unit{font-size:9.5px;color:var(--ink-3);font-family:var(--mono)}
+.chart canvas{display:block;width:100%;height:56px;margin-top:4px}
+.chart .tip{position:absolute;pointer-events:none;background:#0B1220;border:1px solid var(--line-2);border-radius:6px;
+  padding:3px 7px;font-family:var(--mono);font-size:10.5px;color:var(--ink);white-space:nowrap;z-index:5;display:none;
+  box-shadow:0 4px 14px rgba(0,0,0,.5)}
+
+.inspector{flex:1;display:flex;flex-direction:column;min-height:230px}
+.inspector .body{flex:1;overflow:auto;padding:10px 12px;scrollbar-width:thin}
+.inspector .empty{color:var(--ink-3);font-size:12px;padding:18px 6px;text-align:center;line-height:1.7}
+.meta-grid{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:11.5px;margin-bottom:10px}
+.meta-grid dt{color:var(--ink-3);letter-spacing:.06em;font-size:10px;font-weight:600;text-transform:uppercase;align-self:center}
+.meta-grid dd{font-family:var(--mono);color:var(--ink);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.badge{display:inline-block;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;letter-spacing:.08em;border:1px solid}
+.badge.ok{color:var(--ok-hi);border-color:rgba(46,168,115,.5);background:rgba(46,168,115,.1)}
+.badge.warn{color:var(--retry-hi);border-color:rgba(189,134,31,.5);background:rgba(189,134,31,.1)}
+.badge.err{color:var(--fail-hi);border-color:rgba(217,92,92,.5);background:rgba(217,92,92,.1)}
+.badge.info{color:var(--read-hi);border-color:rgba(43,159,217,.5);background:rgba(43,159,217,.1)}
+.badge.neutral{color:var(--dead-hi);border-color:rgba(126,140,160,.5);background:rgba(126,140,160,.1)}
+.life{list-style:none;border-left:1px solid var(--line-2);margin-left:5px}
+.life li{position:relative;padding:0 0 9px 14px;font-size:11.5px;color:var(--ink-2)}
+.life li::before{content:"";position:absolute;left:-3.5px;top:5px;width:6px;height:6px;border-radius:99px;background:var(--ink-3)}
+.life li[data-lv="ok"]::before{background:var(--ok)}
+.life li[data-lv="warn"]::before{background:var(--retry-hi)}
+.life li[data-lv="err"]::before{background:var(--fail)}
+.life li[data-lv="info"]::before{background:var(--read)}
+.life .lt{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-right:6px;font-variant-numeric:tabular-nums}
+.life .lm{color:var(--ink)}
+.rec-list{list-style:none;display:flex;flex-direction:column;gap:4px}
+.rec-list li{display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;
+  background:var(--panel-2);font-family:var(--mono);font-size:11px}
+.rec-list li button{color:var(--read-hi);font-family:var(--mono);font-size:11px}
+.rec-list li button:hover{text-decoration:underline}
+.rec-list .v{margin-left:auto;color:var(--ink-2)}
+
+/* ---------- event log ---------- */
+.logpanel{grid-column:1;display:flex;flex-direction:column;min-height:190px;max-height:270px}
+.logpanel .filters{display:flex;gap:4px}
+.lf{padding:2px 9px;border-radius:99px;border:1px solid var(--line);font-size:10px;font-weight:600;color:var(--ink-3);letter-spacing:.08em}
+.lf[aria-pressed="true"]{color:var(--ink);border-color:var(--line-2);background:var(--panel-3)}
+#log-scroll{flex:1;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;font-family:var(--mono);font-size:11px}
+#log-list{list-style:none}
+#log-list li{display:flex;gap:8px;align-items:baseline;padding:2.5px 12px;border-left:2px solid transparent;white-space:nowrap}
+#log-list li:hover{background:rgba(23,35,50,.6)}
+#log-list li .t{color:var(--ink-3);flex:none;font-variant-numeric:tabular-nums}
+#log-list li .c{flex:none;width:74px;font-size:9.5px;font-weight:700;letter-spacing:.1em;color:var(--ink-3)}
+#log-list li .m{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis}
+#log-list li .rid{color:var(--read-hi);cursor:pointer}
+#log-list li .rid:hover{text-decoration:underline}
+#log-list li.ok{border-left-color:var(--ok)} #log-list li.ok .m{color:#9ED8BE}
+#log-list li.warn{border-left-color:var(--retry)} #log-list li.warn .m{color:#E3C288}
+#log-list li.err{border-left-color:var(--fail)} #log-list li.err .m{color:#EFA9A9}
+#log-list li.sys{border-left-color:var(--read)} #log-list li.sys .m{color:var(--read-hi)}
+
+/* ---------- operator controls ---------- */
+.ops{grid-column:2;display:flex;flex-direction:column}
+.ops .body{padding:10px 12px;display:flex;flex-direction:column;gap:11px;overflow:auto}
+.ctl-group{display:flex;flex-direction:column;gap:7px}
+.ctl-group>.gk{font-size:9.5px;font-weight:700;letter-spacing:.16em;color:var(--ink-3);text-transform:uppercase}
+.slider{display:grid;grid-template-columns:92px 1fr 44px;align-items:center;gap:8px;font-size:11px;color:var(--ink-2)}
+.slider output{font-family:var(--mono);font-size:11px;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;height:20px;background:transparent;width:100%}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:99px;background:linear-gradient(90deg,var(--read) var(--fill,0%),var(--panel-3) var(--fill,0%))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:99px;background:var(--ink);
+  border:2px solid var(--read);margin-top:-4.5px;cursor:grab}
+input[type=range]::-moz-range-track{height:4px;border-radius:99px;background:var(--panel-3)}
+input[type=range]::-moz-range-progress{height:4px;border-radius:99px;background:var(--read)}
+input[type=range]::-moz-range-thumb{width:9px;height:9px;border-radius:99px;background:var(--ink);border:2px solid var(--read);cursor:grab}
+.btn-row{display:flex;gap:6px;flex-wrap:wrap}
+.obtn{flex:1;min-width:88px;padding:7px 8px;border-radius:8px;border:1px solid var(--line-2);font-size:11px;font-weight:600;
+  color:var(--ink);background:linear-gradient(180deg,var(--panel-3),var(--panel-2));text-align:center}
+.obtn:hover{border-color:#3A5273}
+.obtn:active{transform:translateY(1px)}
+.obtn.armed{color:var(--fail-hi);border-color:rgba(217,92,92,.6);background:rgba(217,92,92,.08)}
+.obtn.warn-armed{color:var(--retry-hi);border-color:rgba(189,134,31,.6);background:rgba(189,134,31,.08)}
+.obtn[disabled]{opacity:.4;cursor:not-allowed}
+.dlq-list{list-style:none;display:flex;flex-direction:column;gap:5px;max-height:150px;overflow:auto;scrollbar-width:thin}
+.dlq-list .none{color:var(--ink-3);font-size:11px;padding:2px 0}
+.dlq-list li{display:flex;align-items:center;gap:7px;padding:5px 8px;border:1px solid rgba(217,92,92,.3);border-radius:7px;
+  background:rgba(217,92,92,.05);font-family:var(--mono);font-size:10.5px}
+.dlq-list li.repaired{border-color:rgba(46,168,115,.4);background:rgba(46,168,115,.05)}
+.dlq-list .did{color:var(--ink);cursor:pointer}
+.dlq-list .did:hover{text-decoration:underline}
+.dlq-list .why{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.dlq-list .act{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;border:1px solid var(--line-2);color:var(--ink-2);flex:none}
+.dlq-list .act:hover{color:var(--ink);border-color:#3A5273}
+
+/* ---------- diagnostics drawer ---------- */
+.diag{border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+.diag>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;
+  font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);user-select:none}
+.diag>summary::-webkit-details-marker{display:none}
+.diag>summary .tw{transition:transform .15s;color:var(--ink-3)}
+.diag[open]>summary .tw{transform:rotate(90deg)}
+.diag .verdict{font-family:var(--mono);letter-spacing:0;text-transform:none;font-size:11px}
+.diag .verdict.pass{color:var(--ok-hi)} .diag .verdict.fail{color:var(--fail-hi)}
+.diag .rerun{margin-left:auto;padding:4px 10px;border:1px solid var(--line-2);border-radius:7px;font-size:10.5px;
+  font-weight:600;letter-spacing:.04em;text-transform:none;color:var(--ink)}
+.diag .rerun:hover{border-color:#3A5273}
+.tests{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px;padding:4px 12px 12px}
+.tests .tcase{display:flex;gap:8px;align-items:baseline;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel-2);font-size:11px}
+.tests .tmark{font-family:var(--mono);font-weight:700;flex:none}
+.tests .tcase.pass .tmark{color:var(--ok-hi)} .tests .tcase.fail .tmark{color:var(--fail-hi)}
+.tests .tname{color:var(--ink);font-weight:600;flex:none}
+.tests .tdetail{color:var(--ink-3);font-family:var(--mono);font-size:10px;overflow-wrap:anywhere}
+.diag .apinote{padding:0 12px 10px;color:var(--ink-3);font-size:10.5px;font-family:var(--mono)}
+.diag .apinote code{color:var(--read-hi)}
+
+/* ---------- scrollbars (webkit) ---------- */
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--panel-3);border-radius:99px;border:2px solid var(--panel)}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- narrow layouts ---------- */
+@media (max-width:1180px){
+  .grid{grid-template-columns:minmax(0,1fr)}
+  .rail,.ops,.logpanel,.board-wrap{grid-column:1}
+  .charts{grid-template-columns:repeat(4,1fr)}
+  .rail{flex-direction:column}
+  .status-strip{margin-left:0}
+}
+@media (max-width:760px){
+  #app{padding:10px}
+  .charts{grid-template-columns:1fr 1fr}
+  .slider{grid-template-columns:80px 1fr 40px}
+  .brand .sub{display:none}
+  .toolbar{gap:8px}
+  .scenarios{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div id="app">
+<header class="masthead">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 22 22" aria-hidden="true">
+      <rect x="1" y="1" width="20" height="20" rx="5" fill="none" stroke="#2A3B52" stroke-width="1.5"/>
+      <circle cx="6.5" cy="11" r="2.2" fill="#2B9FD9"/>
+      <rect x="13" y="5" width="4.4" height="4.4" rx="1" fill="#8B6FE8"/>
+      <path d="M13 16.8 L15.2 12.9 L17.4 16.8 Z" fill="#BD861F"/>
+      <path d="M8.7 11 H12" stroke="#2A3B52" stroke-width="1.2"/>
+    </svg>
+    <h1>Claude Fable 5</h1>
+    <span class="sub">distributed systems playground</span>
+  </div>
+  <div class="status-strip" role="status" aria-live="off">
+    <span class="chip" id="chip-state"><span class="lamp"></span><span id="st-state">NOMINAL</span></span>
+    <span class="chip">T+<b id="st-time">00:00.00</b></span>
+    <span class="chip">completed <b id="st-done">0</b></span>
+    <span class="chip">dupes blocked <b id="st-dupes">0</b></span>
+    <span class="chip">cache hit <b id="st-cache">&ndash;</b></span>
+    <span class="chip">scenario <b id="st-scenario">healthy</b></span>
+  </div>
+</header>
+
+<nav class="toolbar" aria-label="Simulation transport and scenarios">
+  <div class="transport">
+    <button class="tbtn" id="btn-play" aria-label="Play or pause simulation">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path id="play-icon" d="M2 1.5 L10.5 6 L2 10.5 Z" fill="currentColor"/></svg>
+      <span id="play-label">Play</span>
+    </button>
+    <button class="tbtn" id="btn-step" aria-label="Advance one deterministic step (50 ms simulated)">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 1.5 L7 6 L1.5 10.5 Z" fill="currentColor"/><rect x="8.5" y="1.5" width="2" height="9" fill="currentColor"/></svg>
+      Step
+    </button>
+    <div class="seg" id="speed-seg" role="group" aria-label="Simulation speed">
+      <button data-speed="0.5" aria-pressed="false">0.5&times;</button>
+      <button data-speed="1" aria-pressed="true">1&times;</button>
+      <button data-speed="2" aria-pressed="false">2&times;</button>
+      <button data-speed="4" aria-pressed="false">4&times;</button>
+    </div>
+    <label class="seed">SEED <input id="inp-seed" inputmode="numeric" autocomplete="off" spellcheck="false" value="1337" aria-label="Simulation seed"></label>
+    <button class="tbtn" id="btn-reset">Reset</button>
+  </div>
+  <div class="scenarios" id="scenario-row" role="group" aria-label="Scenarios">
+    <span class="lbl">SCENARIO</span>
+  </div>
+</nav>
+
+<main class="grid">
+  <section class="panel board-wrap" aria-label="System topology">
+    <svg id="board" viewBox="0 0 1280 680" role="img" aria-label="Live topology of the distributed system">
+      <defs>
+        <linearGradient id="nodeFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#131E2C"/><stop offset="1" stop-color="#0D1521"/>
+        </linearGradient>
+        <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0.5 0.8 L7.2 4 L0.5 7.2" fill="none" stroke="#2A3B52" stroke-width="1.4" stroke-linecap="round"/>
+        </marker>
+        <pattern id="gridDots" width="26" height="26" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="#16202E"/>
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="1280" height="680" fill="url(#gridDots)"/>
+      <g id="board-edges"></g>
+      <g id="board-nodes"></g>
+      <g id="board-breaker"></g>
+      <g id="board-packets"></g>
+    </svg>
+    <div class="board-foot" id="legend"></div>
+  </section>
+
+  <aside class="rail">
+    <div class="charts" id="charts" aria-label="Live metrics"></div>
+    <div class="panel inspector" id="inspector">
+      <header>Inspector <span class="spacer"></span><span id="insp-id" class="num" style="letter-spacing:0;text-transform:none;color:var(--ink-2)"></span></header>
+      <div class="body" id="insp-body">
+        <div class="empty">Click a packet on the board, a request ID in the log,<br>or the primary database to inspect stored records.</div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="panel logpanel" aria-label="Structured event log">
+    <header>Event log
+      <span class="spacer"></span>
+      <div class="filters" role="group" aria-label="Log level filter">
+        <button class="lf" data-lf="all" aria-pressed="true">ALL</button>
+        <button class="lf" data-lf="warn" aria-pressed="false">WARN+</button>
+        <button class="lf" data-lf="err" aria-pressed="false">ERRORS</button>
+      </div>
+    </header>
+    <div id="log-scroll"><ul id="log-list"></ul></div>
+  </section>
+
+  <aside class="panel ops" aria-label="Operator controls">
+    <header>Operator controls</header>
+    <div class="body">
+      <div class="ctl-group">
+        <span class="gk">Load &amp; capacity</span>
+        <label class="slider">Traffic rate
+          <input type="range" id="sl-traffic" min="0" max="50" step="1" value="5" aria-label="Client traffic rate, requests per second">
+          <output id="out-traffic">5/s</output></label>
+        <label class="slider">Workers
+          <input type="range" id="sl-workers" min="1" max="12" step="1" value="4" aria-label="Worker count">
+          <output id="out-workers">4</output></label>
+        <label class="slider">Gateway limit
+          <input type="range" id="sl-gateway" min="2" max="50" step="1" value="25" aria-label="Gateway rate limit, tokens per second">
+          <output id="out-gateway">25/s</output></label>
+        <label class="slider">Service time
+          <input type="range" id="sl-service" min="80" max="800" step="20" value="260" aria-label="Mean worker service time in milliseconds">
+          <output id="out-service">260ms</output></label>
+      </div>
+      <div class="ctl-group">
+        <span class="gk">Inject traffic</span>
+        <div class="btn-row">
+          <button class="obtn" id="btn-one">Send 1</button>
+          <button class="obtn" id="btn-burst">Burst &times;20</button>
+          <button class="obtn" id="btn-dupes">Burst w/ dupes</button>
+        </div>
+      </div>
+      <div class="ctl-group">
+        <span class="gk">Fault injection</span>
+        <div class="btn-row">
+          <button class="obtn" id="btn-db">Fail primary</button>
+          <button class="obtn" id="btn-worker">Stop worker</button>
+          <button class="obtn" id="btn-lag">Add replica lag</button>
+        </div>
+      </div>
+      <div class="ctl-group">
+        <span class="gk">Dead-letter queue &middot; <span id="dlq-count" class="num">0</span></span>
+        <ul class="dlq-list" id="dlq-list"><li class="none">No dead letters.</li></ul>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<details class="diag" id="diag">
+  <summary>
+    <svg class="tw" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.5 0.5 L6.5 4 L1.5 7.5 Z" fill="currentColor"/></svg>
+    Diagnostics
+    <span class="verdict" id="diag-verdict">self-test pending&hellip;</span>
+    <button class="rerun" id="btn-selftest">Run self-test</button>
+  </summary>
+  <div class="tests" id="diag-tests"></div>
+  <div class="apinote">Deterministic API on <code>window.__DSP__</code>: <code>reset(seed)</code> &middot; <code>setScenario(name)</code> &middot; <code>step(ms)</code> &middot; <code>sendRequest(options)</code> &middot; <code>snapshot()</code> &middot; <code>runSelfTest()</code></div>
+</details>
+<script>
+'use strict';
+/* ================================================================
+   PART 1 — DETERMINISTIC SIMULATION CORE (no DOM dependencies)
+   Fixed 10 ms timestep, seeded PRNG, event scheduler. Everything
+   visible on screen is derived from this state.
+   ================================================================ */
+const TICK = 10; // simulated ms per tick
+const TENANTS = ['acme', 'nova', 'kite', 'umbra'];
+const KEYS = ['user-1','user-2','user-3','user-4','user-5','user-6','user-7','user-8'];
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+class RNG {
+  constructor(seed) { this.f = mulberry32(seed); }
+  float() { return this.f(); }
+  chance(p) { return this.f() < p; }
+  int(a, b) { return a + Math.floor(this.f() * (b - a + 1)); }
+  pick(arr) { return arr[Math.floor(this.f() * arr.length)]; }
+}
+const fmtT = ms => {
+  const s = Math.max(0, ms) / 1000, m = Math.floor(s / 60);
+  return String(m).padStart(2, '0') + ':' + (s % 60).toFixed(2).padStart(5, '0');
+};
+const pct = (n, d) => d > 0 ? (100 * n / d) : 0;
+
+const BASE_CFG = {
+  trafficRate: 5,        // client requests per second
+  readRatio: 0.65,
+  workerCount: 4,
+  serviceMean: 260,      // ms
+  serviceJitter: 120,    // +/- ms
+  gatewayRate: 25,       // tokens per second
+  gatewayBurst: 12,      // bucket capacity
+  queueCapacity: 48,
+  cacheTTL: 4000,        // ms
+  replicaLag: 400,       // ms
+  writeFailRate: 0.03,   // transient commit failures
+  readFailRate: 0.015,   // transient replica read failures
+  maxAttempts: 5,
+  retryBase: 700,        // ms, doubles per attempt
+  retryJitter: 0.25,
+  breakerThreshold: 5,   // consecutive failures to open
+  breakerCooldown: 3500, // ms before half-open probe
+};
+// hop transit durations in simulated ms (they are part of request latency)
+const HOP = {
+  client_gw: 120, gw_client: 110, gw_cache: 70, cache_gw: 70, gw_queue: 90,
+  queue_workers: 80, workers_primary: 100, workers_replica: 95,
+  primary_workers: 90, replica_workers: 90, workers_retry: 90,
+  retry_queue: 110, retry_dlq: 100, dlq_queue: 140,
+  primary_gw: 260, replica_gw: 260,
+};
+
+const SCENARIOS = {
+  'healthy': {
+    label: 'Healthy baseline', seed: 1337, cfg: {},
+    intro: 'Moderate mixed traffic. Every stage keeps up; the breaker stays closed.',
+    script: [],
+  },
+  'flash-crowd': {
+    label: 'Flash crowd', seed: 20260, cfg: { trafficRate: 4 },
+    intro: 'A sharp traffic burst at T+02.5 overruns the token bucket and backs up the queue before recovery.',
+    script: [
+      { at: 2500, run: s => { s.setTraffic(46, 'SCENARIO'); s.note('warn', 'Flash crowd begins: intake jumps to 46 req/s — token bucket drains, queue backs up'); } },
+      { at: 7500, run: s => { s.setTraffic(4, 'SCENARIO'); s.note('ok', 'Flash crowd subsides: intake back to 4 req/s — the backlog drains'); } },
+    ],
+  },
+  'database-outage': {
+    label: 'Database outage', seed: 777, cfg: { trafficRate: 6, readRatio: 0.45 },
+    intro: 'The primary fails at T+02.0. The circuit opens, retries accumulate, then recovery drains work safely.',
+    script: [
+      { at: 2000, run: s => s.failPrimary('SCENARIO') },
+      { at: 12000, run: s => s.recoverPrimary('SCENARIO') },
+    ],
+  },
+  'poison-message': {
+    label: 'Poison message', seed: 99, cfg: { trafficRate: 3 },
+    intro: 'One malformed write fails every attempt, exhausts its retries into the DLQ, and can be repaired and replayed.',
+    script: [
+      { at: 1500, run: s => {
+          const id = s.sendRequest({ op: 'write', key: 'user-3', tenant: 'acme', idemKey: 'poison-order-42', poison: true });
+          s.poisonId = id;
+          s.note('warn', `Poison message ${id} injected — it will fail every attempt until repaired from the DLQ`);
+        } },
+    ],
+  },
+  'stale-replica': {
+    label: 'Stale replica', seed: 4242, cfg: { trafficRate: 4, readRatio: 0.75, replicaLag: 4500 },
+    intro: 'Writes commit on the primary while a 4500 ms replication lag makes reads visibly stale until convergence.',
+    script: [
+      { at: 900, run: s => { s.sendRequest({ op: 'write', key: 'user-2', tenant: 'nova' }); s.note('warn', 'user-2 written on the primary — the replica is 4500 ms behind'); } },
+      { at: 1700, run: s => s.sendRequest({ op: 'read', key: 'user-2', tenant: 'nova' }) },
+      { at: 2700, run: s => s.sendRequest({ op: 'read', key: 'user-2', tenant: 'kite' }) },
+      { at: 4300, run: s => s.sendRequest({ op: 'write', key: 'user-2', tenant: 'nova' }) },
+      { at: 5100, run: s => s.sendRequest({ op: 'read', key: 'user-2', tenant: 'umbra' }) },
+      { at: 10000, run: s => { s.setReplicaLag(0, 'SCENARIO'); s.note('ok', 'Replica lag cleared — pending versions apply and reads converge'); } },
+    ],
+  },
+};
+
+class Sim {
+  constructor(seed, scenarioName) {
+    const scn = SCENARIOS[scenarioName] || SCENARIOS['healthy'];
+    this.scenario = SCENARIOS[scenarioName] ? scenarioName : 'healthy';
+    this.seed = seed >>> 0;
+    this.rng = new RNG(this.seed);
+    this.cfg = Object.assign({}, BASE_CFG, scn.cfg);
+    this.time = 0;
+    this.stepAcc = 0;
+    this.evSeq = 0;
+    this.reqSeq = 0;
+    this.burstSeq = 0;
+    this.transitSeq = 0;
+    this.arrivalAcc = 0;
+    this.poisonId = null;
+
+    this.pending = [];   // {t, seq, fn} sorted
+    this.transits = [];  // {id, edge, kind, reqId, start, end}
+    this.log = [];       // {seq,t,level,comp,reqId,msg} (capped)
+    this.requests = new Map();
+
+    this.gateway = { tokens: this.cfg.gatewayBurst, accepted: 0, rejected: 0, shed: 0, arrived: 0 };
+    this.queue = { items: [], reserved: 0 };
+    this.workers = [];
+    for (let i = 0; i < 12; i++) {
+      this.workers.push({ id: i, enabled: i < this.cfg.workerCount, stopped: false, phase: 'idle', req: null, jobToken: 0, busyStart: 0, busyUntil: 0 });
+    }
+    this.cache = { data: new Map(), hits: 0, misses: 0, expired: 0, invalidations: 0 };
+    this.primary = { up: true, seq: 0, commits: 0, data: new Map(), log: [], committedKeys: new Map() }; // idemKey -> version
+    this.replica = { data: new Map(), version: 0, applyIndex: 0, applied: 0 };
+    this.retry = { items: [], scheduled: 0 };   // {reqId, dueAt, attempt, deferred}
+    this.dlq = { items: [], replayed: 0 };      // {reqId, reason, attempts, deadAt, repaired}
+    this.breaker = { state: 'closed', failures: 0, openedAt: -1, probeInFlight: false, opens: 0 };
+    this.metrics = {
+      completions: [], errors: [],             // rolling {t, latency?, ok}
+      completed: 0, errorsTotal: 0, duplicatesPrevented: 0, staleReads: 0,
+      rateLimited: 0, shed: 0, deadLetters: 0, retriesScheduled: 0,
+      samples: { t: [], tput: [], p95: [], err: [], depth: [] },
+      last: { tput: 0, p95: 0, err: 0, depth: 0 },
+    };
+    this.ev('sys', 'SCENARIO', `${scn.label} — ${scn.intro}`, null);
+    this.ev('sys', 'SCENARIO', `reset with seed ${this.seed}; ${this.cfg.workerCount} workers, gateway ${this.cfg.gatewayRate} tok/s, replica lag ${this.cfg.replicaLag} ms`, null);
+    for (const step of scn.script) this.scheduleAt(step.at, () => step.run(this));
+  }
+
+  /* ---------- scheduling ---------- */
+  scheduleAt(t, fn) {
+    const e = { t, seq: ++this.evSeq, fn };
+    const arr = this.pending;
+    let lo = 0, hi = arr.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; const c = arr[mid]; (c.t < e.t || (c.t === e.t && c.seq < e.seq)) ? lo = mid + 1 : hi = mid; }
+    arr.splice(lo, 0, e);
+  }
+  schedule(delay, fn) { this.scheduleAt(this.time + delay, fn); }
+
+  /* ---------- log & history ---------- */
+  ev(level, comp, msg, reqId) {
+    this.log.push({ seq: ++this.evSeq, t: this.time, level, comp, reqId: reqId || null, msg });
+    if (this.log.length > 600) this.log.splice(0, this.log.length - 600);
+  }
+  note(level, msg) { this.ev(level, 'SCENARIO', msg, null); }
+  hist(req, lv, type, msg, extra) {
+    req.history.push(Object.assign({ t: this.time, lv, type, msg }, extra || {}));
+    if (req.history.length > 90) req.history.splice(0, req.history.length - 90);
+  }
+
+  /* ---------- stepping ---------- */
+  step(ms) {
+    this.stepAcc += ms;
+    while (this.stepAcc >= TICK) { this.stepAcc -= TICK; this.tick(); }
+  }
+  tick() {
+    this.time += TICK;
+    // due scheduled events (transit arrivals, service completions, scenario script)
+    while (this.pending.length && this.pending[0].t <= this.time) this.pending.shift().fn();
+    // token bucket refill
+    this.gateway.tokens = Math.min(this.cfg.gatewayBurst, this.gateway.tokens + this.cfg.gatewayRate * TICK / 1000);
+    // client arrivals
+    this.spawnArrivals();
+    // replication apply
+    this.replicaPump();
+    // due retries re-enter the queue
+    this.retryPump();
+    // idle workers pull from the queue
+    this.workerPump();
+    // metrics sampling
+    if (this.time % 200 === 0) this.sampleMetrics();
+  }
+  spawnArrivals() {
+    const rate = this.cfg.trafficRate;
+    if (rate <= 0) return;
+    const exp = rate * TICK / 1000;
+    let n = Math.floor(exp);
+    const frac = exp - n;
+    if (frac > 0 && this.rng.chance(frac)) n++;
+    for (let i = 0; i < n; i++) this.injectRequest({});
+  }
+
+  /* ---------- requests ---------- */
+  makeRequest(opts) {
+    const op = opts.op || (this.rng.chance(this.cfg.readRatio) ? 'read' : 'write');
+    const id = 'R-' + String(++this.reqSeq).padStart(4, '0');
+    const req = {
+      id, op,
+      tenant: opts.tenant || this.rng.pick(TENANTS),
+      key: opts.key || this.rng.pick(KEYS),
+      idemKey: opts.idemKey || (id + '-k'),
+      createdAt: this.time,
+      attempts: 0, redeliveries: 0,
+      poison: !!opts.poison,
+      isRetry: false, stale: false,
+      state: 'created', outcome: null, lastError: null,
+      completedAt: null, latency: null,
+      history: [],
+    };
+    this.requests.set(id, req);
+    if (this.requests.size > 900) { // bound memory: drop oldest finished requests
+      for (const [k, r] of this.requests) {
+        if (this.requests.size <= 700) break;
+        if (r.state === 'done' || r.state === 'rejected') this.requests.delete(k);
+      }
+    }
+    this.hist(req, 'info', 'created', `${op} ${req.key} from tenant ${req.tenant} (idempotency key ${req.idemKey})`);
+    return req;
+  }
+  injectRequest(opts) {
+    const req = this.makeRequest(opts);
+    req.state = 'in-flight';
+    this.transit('client_gw', req.op, req.id, HOP.client_gw, () => this.gatewayAdmit(req));
+    return req.id;
+  }
+  sendRequest(opts) { return this.injectRequest(opts || {}); }
+  sendBurst(n) {
+    const b = ++this.burstSeq;
+    this.ev('sys', 'CLIENT', `burst of ${n} requests injected`, null);
+    for (let i = 0; i < n; i++) this.schedule(i * 24, () => this.injectRequest({}));
+  }
+  sendDuplicateBurst() {
+    const b = ++this.burstSeq;
+    this.ev('sys', 'CLIENT', `duplicate burst: 10 writes sharing 5 idempotency keys — the primary must commit each key once`, null);
+    for (let i = 0; i < 10; i++) {
+      const k = KEYS[(b + (i % 5)) % KEYS.length];
+      this.schedule(i * 30, () => this.injectRequest({ op: 'write', key: k, idemKey: `dup-${b}-${i % 5}` }));
+    }
+  }
+
+  /* ---------- transits (packets travelling between components) ---------- */
+  transit(edge, kind, reqId, dur, onArrive) {
+    const t = { id: ++this.transitSeq, edge, kind, reqId, start: this.time, end: this.time + dur };
+    this.transits.push(t);
+    this.schedule(dur, () => {
+      const i = this.transits.indexOf(t);
+      if (i >= 0) this.transits.splice(i, 1);
+      onArrive && onArrive();
+    });
+  }
+
+  /* ---------- gateway ---------- */
+  gatewayAdmit(req) {
+    this.gateway.arrived++;
+    if (this.gateway.tokens < 1) {
+      this.gateway.rejected++; this.metrics.rateLimited++;
+      req.state = 'rejected'; req.outcome = 'rejected-rate-limit'; req.lastError = 'rate-limited';
+      this.hist(req, 'err', 'rate-limited', 'gateway rejected: token bucket empty (429)');
+      this.ev('warn', 'GATEWAY', `rate limiter rejected ${req.id} — no token available (bucket empty, refills at ${this.cfg.gatewayRate}/s)`, req.id);
+      this.recordError();
+      this.transit('gw_client', 'fail', req.id, HOP.gw_client, () => this.finish(req, false));
+      return;
+    }
+    this.gateway.tokens -= 1;
+    this.gateway.accepted++;
+    if (req.op === 'read') {
+      const e = this.cache.data.get(req.key);
+      if (e && e.expiresAt > this.time) return this.serveCacheHit(req, e);
+      if (e) {
+        this.cache.data.delete(req.key);
+        this.cache.expired++;
+        this.ev('info', 'CACHE', `entry for ${req.key} expired ${this.time - e.expiresAt} ms ago — treated as a miss, not a hit`, req.id);
+      }
+      this.cache.misses++;
+      this.hist(req, 'info', 'cache-miss', `cache miss for ${req.key} — read-through via queue and replica`);
+    }
+    this.enqueueViaGateway(req);
+  }
+  serveCacheHit(req, e) {
+    this.cache.hits++;
+    const pv = this.primary.data.has(req.key) ? this.primary.data.get(req.key).version : 0;
+    const stale = e.version < pv;
+    if (stale) {
+      this.metrics.staleReads++; req.stale = true;
+      this.ev('warn', 'CACHE', `${req.id} served ${req.key}@v${e.version} from cache but primary is at v${pv} — stale until invalidation or expiry`, req.id);
+    }
+    this.hist(req, stale ? 'warn' : 'ok', 'cache-hit', `cache hit for ${req.key}@v${e.version}${stale ? ' (STALE vs primary v' + pv + ')' : ''}`);
+    this.transit('gw_cache', 'read', req.id, HOP.gw_cache, () => {
+      this.transit('cache_gw', stale ? 'stale' : 'hit', req.id, HOP.cache_gw, () => {
+        this.transit('gw_client', stale ? 'stale' : 'hit', req.id, HOP.gw_client, () => {
+          req.outcome = stale ? 'ok-cache-stale' : 'ok-cache-hit';
+          this.finish(req, true);
+        });
+      });
+    });
+  }
+  enqueueViaGateway(req) {
+    if (this.queue.items.length + this.queue.reserved >= this.cfg.queueCapacity) {
+      this.gateway.shed++; this.metrics.shed++;
+      req.state = 'rejected'; req.outcome = 'rejected-backpressure'; req.lastError = 'queue-full';
+      this.hist(req, 'err', 'shed', `queue full (${this.cfg.queueCapacity}) — request shed by backpressure`);
+      this.ev('err', 'GATEWAY', `${req.id} shed: work queue at capacity ${this.cfg.queueCapacity} (backpressure)`, req.id);
+      this.recordError();
+      this.transit('gw_client', 'fail', req.id, HOP.gw_client, () => this.finish(req, false));
+      return;
+    }
+    this.queue.reserved++;
+    this.transit('gw_queue', req.op, req.id, HOP.gw_queue, () => {
+      this.queue.reserved--;
+      this.queue.items.push(req);
+      req.state = 'queued'; req.enqueuedAt = this.time;
+      this.hist(req, 'info', 'queued', `enqueued at depth ${this.queue.items.length}/${this.cfg.queueCapacity}`);
+    });
+  }
+
+  /* ---------- workers ---------- */
+  workerPump() {
+    for (const w of this.workers) {
+      if (!w.enabled || w.stopped || w.phase !== 'idle') continue;
+      if (!this.queue.items.length) break;
+      const req = this.queue.items.shift();
+      w.phase = 'busy'; w.req = req; w.busyStart = this.time; w.busyUntil = this.time; // set for real at service start
+      const token = ++w.jobToken;
+      req.state = 'dispatched'; req.workerId = w.id;
+      this.transit('queue_workers', req.isRetry ? 'retry' : req.op, req.id, HOP.queue_workers, () => {
+        if (w.jobToken !== token || w.stopped) return; // worker was stopped mid-dispatch; request already requeued
+        const st = Math.max(40, this.cfg.serviceMean + (this.rng.float() * 2 - 1) * this.cfg.serviceJitter);
+        w.busyStart = this.time; w.busyUntil = this.time + st;
+        req.state = 'processing';
+        this.hist(req, 'info', 'processing', `worker W${w.id} processing (service ${Math.round(st)} ms, attempt ${req.attempts + 1}/${this.cfg.maxAttempts})`);
+        this.schedule(st, () => {
+          if (w.jobToken !== token || w.stopped) return;
+          w.phase = 'idle'; w.req = null;
+          this.executeOp(req, w);
+        });
+      });
+    }
+  }
+  executeOp(req, w) {
+    if (req.op === 'write') {
+      if (!this.breakerAllow()) {
+        this.ev('warn', 'BREAKER', `${req.id} failed fast — circuit is ${this.breaker.state.toUpperCase()}, primary not contacted`, req.id);
+        return this.failReq(req, 'circuit-open', 'circuit breaker open — failed fast without contacting primary', 'workers');
+      }
+      this.transit('workers_primary', req.isRetry ? 'retry' : 'write', req.id, HOP.workers_primary, () => this.commitAtPrimary(req));
+    } else {
+      this.transit('workers_replica', req.isRetry ? 'retry' : 'read', req.id, HOP.workers_replica, () => this.readAtReplica(req));
+    }
+  }
+  commitAtPrimary(req) {
+    const p = this.primary;
+    if (!p.up) {
+      this.breakerFail();
+      return this.failReq(req, 'primary-down', 'primary database unavailable — commit refused', 'primary');
+    }
+    if (req.poison) {
+      this.breakerSuccess(); // the database answered; the payload itself is bad
+      return this.failReq(req, 'poison', 'primary rejected malformed payload (poison message)', 'primary');
+    }
+    if (this.rng.chance(this.cfg.writeFailRate)) {
+      this.breakerFail();
+      return this.failReq(req, 'transient', 'transient commit error (lock timeout)', 'primary');
+    }
+    this.breakerSuccess();
+    if (p.committedKeys.has(req.idemKey)) {
+      const v = p.committedKeys.get(req.idemKey);
+      this.metrics.duplicatesPrevented++;
+      req.outcome = 'ok-dedup';
+      this.hist(req, 'ok', 'dedup', `write skipped — idempotency key "${req.idemKey}" already committed as v${v}; duplicate prevented`);
+      this.ev('ok', 'PRIMARY', `${req.id} write skipped: idempotency key "${req.idemKey}" already committed (v${v}) — duplicate prevented`, req.id);
+      return this.replyFromPrimary(req, false);
+    }
+    p.seq++;
+    const rec = { key: req.key, value: `${req.key} = v${p.seq}`, version: p.seq, idemKey: req.idemKey, writerId: req.id, committedAt: this.time };
+    p.data.set(req.key, rec);
+    p.log.push(rec);
+    p.committedKeys.set(req.idemKey, p.seq);
+    p.commits++;
+    req.outcome = 'ok-write';
+    this.hist(req, 'ok', 'committed', `committed ${req.key}@v${p.seq} durably on the primary`);
+    this.ev('ok', 'PRIMARY', `${req.id} committed ${req.key}@v${p.seq}${req.isRetry ? ' (after retry)' : ''}`, req.id);
+    this.replyFromPrimary(req, true);
+  }
+  replyFromPrimary(req, committed) {
+    this.transit('primary_gw', 'reply-write', req.id, HOP.primary_gw, () => {
+      if (committed) {
+        const had = this.cache.data.has(req.key);
+        if (had) {
+          this.cache.data.delete(req.key);
+          this.cache.invalidations++;
+          this.ev('info', 'CACHE', `key ${req.key} invalidated after write ${req.id}`, req.id);
+          this.transit('gw_cache', 'invalidate', req.id, HOP.gw_cache, null);
+        }
+      }
+      this.transit('gw_client', 'reply-write', req.id, HOP.gw_client, () => this.finish(req, true));
+    });
+  }
+  readAtReplica(req) {
+    if (this.rng.chance(this.cfg.readFailRate)) {
+      return this.failReq(req, 'transient-read', 'transient replica read error', 'replica');
+    }
+    const rec = this.replica.data.get(req.key) || null;
+    const v = rec ? rec.version : 0;
+    const pv = this.primary.data.has(req.key) ? this.primary.data.get(req.key).version : 0;
+    const stale = v < pv;
+    if (stale) {
+      this.metrics.staleReads++; req.stale = true;
+      this.hist(req, 'warn', 'stale-read', `replica returned ${req.key}@v${v} but primary is at v${pv} — replica has not applied ${pv - v} version(s) yet`);
+      this.ev('warn', 'REPLICA', `${req.id} read ${req.key}@v${v} is STALE — primary at v${pv}, replication lag ${this.cfg.replicaLag} ms`, req.id);
+    } else {
+      this.hist(req, 'ok', 'read', rec ? `read ${req.key}@v${v} from replica (fresh)` : `read ${req.key}: no record yet (empty result)`);
+    }
+    req.outcome = stale ? 'ok-read-stale' : 'ok-read';
+    this.transit('replica_gw', stale ? 'stale' : 'reply-read', req.id, HOP.replica_gw, () => {
+      if (rec) {
+        this.cache.data.set(req.key, { value: rec.value, version: rec.version, cachedAt: this.time, expiresAt: this.time + this.cfg.cacheTTL });
+        this.hist(req, 'info', 'cache-fill', `read-through: cached ${req.key}@v${rec.version} for ${this.cfg.cacheTTL} ms`);
+        this.transit('gw_cache', 'cachefill', req.id, HOP.gw_cache, null);
+      }
+      this.transit('gw_client', stale ? 'stale' : 'reply-read', req.id, HOP.gw_client, () => this.finish(req, true));
+    });
+  }
+
+  /* ---------- failure, retry, DLQ ---------- */
+  failReq(req, reason, msg, atNode) {
+    req.attempts++;
+    req.lastError = reason;
+    this.hist(req, 'err', 'failed', `attempt ${req.attempts}/${this.cfg.maxAttempts} failed: ${msg}`);
+    if (reason !== 'circuit-open') {
+      this.ev('err', atNode === 'replica' ? 'REPLICA' : 'PRIMARY', `${req.id} attempt ${req.attempts} failed — ${msg}`, req.id);
+    }
+    const toRetryNode = () => this.arriveAtRetry(req);
+    if (atNode === 'primary') this.transit('primary_workers', 'fail', req.id, HOP.primary_workers, () => this.transit('workers_retry', 'fail', req.id, HOP.workers_retry, toRetryNode));
+    else if (atNode === 'replica') this.transit('replica_workers', 'fail', req.id, HOP.replica_workers, () => this.transit('workers_retry', 'fail', req.id, HOP.workers_retry, toRetryNode));
+    else this.transit('workers_retry', 'fail', req.id, HOP.workers_retry, toRetryNode);
+  }
+  arriveAtRetry(req) {
+    if (req.attempts >= this.cfg.maxAttempts) {
+      this.transit('retry_dlq', 'dead', req.id, HOP.retry_dlq, () => {
+        req.state = 'dead';
+        this.dlq.items.push({ reqId: req.id, reason: req.lastError, attempts: req.attempts, deadAt: this.time, repaired: false });
+        this.metrics.deadLetters++;
+        this.recordError();
+        this.hist(req, 'err', 'dead-letter', `moved to dead-letter queue after ${req.attempts} attempts (last error: ${req.lastError})`);
+        this.ev('err', 'DLQ', `${req.id} moved to dead-letter queue after ${req.attempts} attempts (${req.lastError})`, req.id);
+      });
+      return;
+    }
+    const delay = this.cfg.retryBase * Math.pow(2, req.attempts - 1) * (1 + this.rng.float() * this.cfg.retryJitter);
+    const dueAt = this.time + delay;
+    this.retry.items.push({ reqId: req.reqId || req.id, dueAt, attempt: req.attempts, deferred: false });
+    this.retry.scheduled++; this.metrics.retriesScheduled++;
+    req.state = 'retry-wait'; req.nextRetryAt = dueAt;
+    this.hist(req, 'warn', 'retry-scheduled', `retry #${req.attempts} scheduled for T+${fmtT(dueAt)} (exponential backoff ${Math.round(delay)} ms)`, { dueAt, delay });
+    this.ev('warn', 'RETRY', `${req.id} retry #${req.attempts} scheduled for T+${fmtT(dueAt)} (backoff ${Math.round(delay)} ms)`, req.id);
+  }
+  retryPump() {
+    if (!this.retry.items.length) return;
+    this.retry.items.sort((a, b) => a.dueAt - b.dueAt);
+    while (this.retry.items.length && this.retry.items[0].dueAt <= this.time) {
+      if (this.queue.items.length + this.queue.reserved >= this.cfg.queueCapacity) {
+        const it = this.retry.items[0];
+        if (!it.deferred) {
+          it.deferred = true;
+          this.ev('warn', 'RETRY', `${it.reqId} due but queue is full — redelivery deferred until space frees`, it.reqId);
+        }
+        return;
+      }
+      const it = this.retry.items.shift();
+      const req = this.requests.get(it.reqId);
+      if (!req || req.state === 'dead') continue;
+      req.isRetry = true;
+      this.queue.reserved++;
+      this.transit('retry_queue', 'retry', req.id, HOP.retry_queue, () => {
+        this.queue.reserved--;
+        this.queue.items.push(req);
+        req.state = 'queued';
+        this.hist(req, 'info', 'requeued', `retry attempt re-entered the work queue`);
+      });
+    }
+  }
+
+  /* ---------- replica ---------- */
+  replicaPump() {
+    const p = this.primary, r = this.replica;
+    while (r.applyIndex < p.log.length) {
+      const rec = p.log[r.applyIndex];
+      if (rec.committedAt + this.cfg.replicaLag > this.time) break;
+      r.data.set(rec.key, rec);
+      r.version = rec.version;
+      r.applyIndex++; r.applied++;
+    }
+  }
+
+  /* ---------- circuit breaker ---------- */
+  breakerAllow() {
+    const b = this.breaker;
+    if (b.state === 'closed') return true;
+    if (b.state === 'open') {
+      if (this.time - b.openedAt >= this.cfg.breakerCooldown) {
+        b.state = 'half-open'; b.probeInFlight = false;
+        this.ev('warn', 'BREAKER', `cooldown elapsed (${this.cfg.breakerCooldown} ms) — circuit HALF-OPEN, admitting a single probe`, null);
+      } else return false;
+    }
+    if (b.state === 'half-open') {
+      if (!b.probeInFlight) { b.probeInFlight = true; return true; }
+      return false;
+    }
+    return true;
+  }
+  breakerFail() {
+    const b = this.breaker;
+    if (b.state === 'half-open') {
+      b.state = 'open'; b.openedAt = this.time; b.probeInFlight = false; b.opens++;
+      this.ev('err', 'BREAKER', 'probe failed — circuit re-OPENED for another cooldown', null);
+      return;
+    }
+    b.failures++;
+    if (b.state === 'closed' && b.failures >= this.cfg.breakerThreshold) {
+      b.state = 'open'; b.openedAt = this.time; b.opens++;
+      this.ev('err', 'BREAKER', `circuit OPENED after ${b.failures} consecutive commit failures — writes now fail fast for ${this.cfg.breakerCooldown} ms`, null);
+    }
+  }
+  breakerSuccess() {
+    const b = this.breaker;
+    if (b.state === 'half-open') {
+      b.state = 'closed'; b.failures = 0; b.probeInFlight = false;
+      this.ev('ok', 'BREAKER', 'probe succeeded — circuit CLOSED, writes flow to the primary again', null);
+    } else b.failures = 0;
+  }
+
+  /* ---------- completion & metrics ---------- */
+  finish(req, ok) {
+    req.state = ok ? 'done' : 'rejected';
+    req.completedAt = this.time;
+    req.latency = this.time - req.createdAt;
+    if (ok) {
+      this.metrics.completed++;
+      this.metrics.completions.push({ t: this.time, latency: req.latency });
+      this.hist(req, 'ok', 'completed', `response delivered to client — ${req.outcome}, end-to-end ${req.latency} ms`);
+    } else {
+      this.hist(req, 'err', 'closed', `client received failure (${req.outcome}) after ${req.latency} ms`);
+    }
+  }
+  recordError() { this.metrics.errorsTotal++; this.metrics.errors.push({ t: this.time }); }
+  sampleMetrics() {
+    const m = this.metrics, now = this.time;
+    while (m.completions.length && m.completions[0].t < now - 6000) m.completions.shift();
+    while (m.errors.length && m.errors[0].t < now - 6000) m.errors.shift();
+    const okWin = m.completions.filter(c => c.t > now - 2500).length;
+    const tput = okWin / 2.5;
+    const lats = m.completions.filter(c => c.t > now - 5000).map(c => c.latency).sort((a, b) => a - b);
+    const p95 = lats.length ? lats[Math.min(lats.length - 1, Math.floor(lats.length * 0.95))] : 0;
+    const errWin = m.errors.filter(e => e.t > now - 3000).length;
+    const okWin3 = m.completions.filter(c => c.t > now - 3000).length;
+    const err = pct(errWin, errWin + okWin3);
+    const s = m.samples;
+    s.t.push(now); s.tput.push(tput); s.p95.push(p95); s.err.push(err); s.depth.push(this.queue.items.length);
+    const cap = 240;
+    if (s.t.length > cap) { s.t.shift(); s.tput.shift(); s.p95.shift(); s.err.shift(); s.depth.shift(); }
+    m.last = { tput, p95, err, depth: this.queue.items.length };
+  }
+
+  /* ---------- operator actions ---------- */
+  setTraffic(v, who) { const old = this.cfg.trafficRate; this.cfg.trafficRate = v; if (v !== old) this.ev('sys', who || 'CONTROL', `traffic rate set to ${v} req/s`, null); }
+  setWorkers(n, who) {
+    n = Math.max(1, Math.min(12, n | 0));
+    if (n === this.cfg.workerCount) return;
+    this.cfg.workerCount = n;
+    this.workers.forEach((w, i) => { w.enabled = i < n; });
+    this.ev('sys', who || 'CONTROL', `worker pool set to ${n} worker(s)`, null);
+  }
+  setGatewayRate(v, who) { this.cfg.gatewayRate = v; this.ev('sys', who || 'CONTROL', `gateway rate limit set to ${v} tokens/s`, null); }
+  setServiceTime(v, who) { this.cfg.serviceMean = v; this.ev('sys', who || 'CONTROL', `mean service time set to ${v} ms`, null); }
+  failPrimary(who) {
+    if (!this.primary.up) return;
+    this.primary.up = false;
+    this.ev('err', 'PRIMARY', `primary database FAILED (${who || 'operator'}) — commits will be refused; no fabricated successes`, null);
+  }
+  recoverPrimary(who) {
+    if (this.primary.up) return;
+    this.primary.up = true;
+    this.ev('ok', 'PRIMARY', `primary database RECOVERED (${who || 'operator'}) — circuit must probe before writes flow again`, null);
+  }
+  togglePrimary(who) { this.primary.up ? this.failPrimary(who) : this.recoverPrimary(who); }
+  stopWorker(who) {
+    for (let i = this.workers.length - 1; i >= 0; i--) {
+      const w = this.workers[i];
+      if (w.enabled && !w.stopped) {
+        w.stopped = true; w.jobToken++;
+        if (w.req) {
+          const req = w.req;
+          w.req = null; w.phase = 'idle';
+          req.redeliveries++;
+          req.state = 'queued';
+          this.queue.items.unshift(req);
+          this.hist(req, 'warn', 'redelivered', `worker W${w.id} stopped mid-flight — unacknowledged work redelivered to the queue head (no committed work lost)`);
+          this.ev('warn', 'WORKER', `W${w.id} stopped — in-flight ${req.id} redelivered to queue; durable commits are unaffected`, req.id);
+        } else {
+          this.ev('warn', 'WORKER', `W${w.id} stopped (${who || 'operator'})`, null);
+        }
+        w.phase = 'idle';
+        return w.id;
+      }
+    }
+    return -1;
+  }
+  restoreWorker(who) {
+    for (const w of this.workers) {
+      if (w.stopped) {
+        w.stopped = false;
+        this.ev('ok', 'WORKER', `W${w.id} restored to service (${who || 'operator'})`, null);
+        return w.id;
+      }
+    }
+    return -1;
+  }
+  setReplicaLag(ms, who) {
+    this.cfg.replicaLag = ms;
+    this.ev(ms > 1500 ? 'warn' : 'sys', 'REPLICA', `replication lag set to ${ms} ms (${who || 'operator'})`, null);
+  }
+  repairDeadLetter(reqId) {
+    const it = this.dlq.items.find(d => d.reqId === reqId);
+    const req = this.requests.get(reqId);
+    if (!it || !req) return false;
+    it.repaired = true;
+    if (req.poison) {
+      req.poison = false;
+      this.hist(req, 'ok', 'repaired', 'poison payload repaired by operator — request is now committable');
+      this.ev('ok', 'DLQ', `${reqId} repaired: poison payload replaced with a valid one`, reqId);
+    } else {
+      this.ev('ok', 'DLQ', `${reqId} marked repaired`, reqId);
+    }
+    return true;
+  }
+  replayDeadLetter(reqId) {
+    const idx = this.dlq.items.findIndex(d => d.reqId === reqId);
+    const req = this.requests.get(reqId);
+    if (idx < 0 || !req) return false;
+    this.dlq.items.splice(idx, 1);
+    this.dlq.replayed++;
+    req.attempts = 0; req.isRetry = true; req.lastError = null; req.state = 'replaying';
+    this.hist(req, 'info', 'replayed', `replayed from dead-letter queue${req.poison ? ' (poison condition still present!)' : ''}`);
+    this.ev('sys', 'DLQ', `${reqId} replayed from the dead-letter queue${req.poison ? ' — poison not repaired, it will fail again' : ''}`, reqId);
+    this.queue.reserved++;
+    this.transit('dlq_queue', 'retry', req.id, HOP.dlq_queue, () => {
+      this.queue.reserved--;
+      this.queue.items.push(req);
+      req.state = 'queued';
+    });
+    return true;
+  }
+
+  /* ---------- derived state ---------- */
+  systemState() {
+    if (!this.primary.up) return 'failed';
+    const now = this.time;
+    const recentThrottle = this.metrics.errors.some(e => e.t > now - 1500) && (this.gateway.rejected + this.gateway.shed) > 0 &&
+      (this.gateway.tokens < 1 || this.queue.items.length + this.queue.reserved >= this.cfg.queueCapacity);
+    if (this.breaker.state !== 'closed') return 'degraded';
+    if (recentThrottle) return 'throttled';
+    if (this.workers.some(w => w.enabled && w.stopped)) return 'degraded';
+    if (this.queue.items.length > this.cfg.queueCapacity * 0.6) return 'degraded';
+    if (this.cfg.replicaLag > 2000) return 'degraded';
+    if (this.metrics.last.err > 15) return 'degraded';
+    return 'nominal';
+  }
+  cacheHitRate() { return pct(this.cache.hits, this.cache.hits + this.cache.misses); }
+
+  snapshot() {
+    const q = this.queue, m = this.metrics;
+    return {
+      time: this.time, seed: this.seed, scenario: this.scenario, state: this.systemState(),
+      config: Object.assign({}, this.cfg),
+      gateway: {
+        tokens: Math.round(this.gateway.tokens * 1000) / 1000, burst: this.cfg.gatewayBurst, ratePerSec: this.cfg.gatewayRate,
+        accepted: this.gateway.accepted, rateLimited: this.gateway.rejected, shed: this.gateway.shed,
+      },
+      queue: { depth: q.items.length, reserved: q.reserved, capacity: this.cfg.queueCapacity, ids: q.items.slice(0, 12).map(r => r.id) },
+      workers: this.workers.map(w => ({ id: w.id, enabled: w.enabled, stopped: w.stopped, phase: w.phase, reqId: w.req ? w.req.id : null })),
+      cache: {
+        size: this.cache.data.size, ttlMs: this.cfg.cacheTTL, hits: this.cache.hits, misses: this.cache.misses,
+        expired: this.cache.expired, invalidations: this.cache.invalidations,
+        hitRate: Math.round(this.cacheHitRate() * 10) / 10,
+        entries: [...this.cache.data.entries()].map(([k, e]) => ({ key: k, version: e.version, expiresInMs: e.expiresAt - this.time })),
+      },
+      primary: {
+        up: this.primary.up, version: this.primary.seq, commits: this.primary.commits,
+        committedKeys: this.primary.committedKeys.size,
+        records: [...this.primary.data.values()].slice(-10).map(r => ({ key: r.key, value: r.value, version: r.version, idemKey: r.idemKey, writerId: r.writerId })),
+      },
+      replica: {
+        version: this.replica.version, lagMs: this.cfg.replicaLag,
+        behind: this.primary.log.length - this.replica.applyIndex, applied: this.replica.applied, records: this.replica.data.size,
+      },
+      retry: {
+        pending: this.retry.items.map(i => ({ reqId: i.reqId, dueAt: i.dueAt, attempt: i.attempt })).sort((a, b) => a.dueAt - b.dueAt),
+        scheduledTotal: this.retry.scheduled,
+      },
+      breaker: { state: this.breaker.state, consecutiveFailures: this.breaker.failures, openedAt: this.breaker.openedAt, opens: this.breaker.opens, cooldownMs: this.cfg.breakerCooldown },
+      dlq: this.dlq.items.map(d => ({ reqId: d.reqId, reason: d.reason, attempts: d.attempts, deadAt: d.deadAt, repaired: d.repaired })),
+      metrics: {
+        completed: m.completed, errors: m.errorsTotal, duplicatesPrevented: m.duplicatesPrevented,
+        staleReads: m.staleReads, rateLimited: m.rateLimited, shed: m.shed, deadLetters: m.deadLetters,
+        retriesScheduled: m.retriesScheduled, cacheHitRate: Math.round(this.cacheHitRate() * 10) / 10,
+        throughputPerSec: Math.round(m.last.tput * 100) / 100, p95LatencyMs: m.last.p95,
+        errorRatePct: Math.round(m.last.err * 10) / 10, queueDepth: m.last.depth,
+      },
+      requests: { created: this.reqSeq, tracked: this.requests.size, inFlightPackets: this.transits.length },
+    };
+  }
+}
+
+/* The animation loop drives the sim ONLY through Player.frame(); the
+   self-test exercises this same class to prove pause stops sim time. */
+class Player {
+  constructor(sim) { this.sim = sim; this.playing = false; this.speed = 1; }
+  frame(dtWallMs) {
+    if (!this.playing) return 0;
+    const capped = Math.max(0, Math.min(dtWallMs, 100)); // cap frame delta
+    const adv = capped * this.speed;
+    this.sim.step(adv);
+    return adv;
+  }
+}
+</script>
+<script>
+'use strict';
+/* ================================================================
+   PART 2 — SELF-TEST SUITE
+   Runs isolated Sim/Player instances through the exact same code
+   paths as the live playground. Nothing is hard-coded to pass.
+   ================================================================ */
+function driveUntil(sim, cond, capMs) {
+  let t = 0;
+  while (t < capMs && !cond()) { sim.step(50); t += 50; }
+  return cond();
+}
+function quietSim(seed, scenario) {
+  const s = new Sim(seed, scenario || 'healthy');
+  s.setTraffic(0, 'TEST');
+  s.cfg.writeFailRate = 0; s.cfg.readFailRate = 0;
+  return s;
+}
+function allFinite(obj, path) {
+  path = path || 'snapshot';
+  if (typeof obj === 'number') return Number.isFinite(obj) ? null : path;
+  if (Array.isArray(obj)) { for (let i = 0; i < obj.length; i++) { const r = allFinite(obj[i], path + '[' + i + ']'); if (r) return r; } return null; }
+  if (obj && typeof obj === 'object') { for (const k in obj) { const r = allFinite(obj[k], path + '.' + k); if (r) return r; } return null; }
+  return null;
+}
+
+const SELF_TESTS = [
+  {
+    name: 'Determinism', run() {
+      const mk = () => {
+        const s = new Sim(20260715, 'flash-crowd');
+        s.step(4000);
+        s.sendRequest({ op: 'write', key: 'user-1', tenant: 'acme', idemKey: 'det-1' });
+        s.step(3000);
+        return JSON.stringify(s.snapshot());
+      };
+      const a = mk(), b = mk();
+      return { pass: a === b, detail: a === b ? 'identical seed+actions → byte-identical snapshots after 7 s of flash crowd' : 'snapshots diverged for identical seed and actions' };
+    },
+  },
+  {
+    name: 'Pause stops sim time', run() {
+      const s = new Sim(1, 'healthy'); const p = new Player(s);
+      p.playing = false; p.frame(500); p.frame(16.7);
+      if (s.time !== 0) return { pass: false, detail: `sim advanced to ${s.time} ms while paused` };
+      p.playing = true; p.frame(500);
+      const ok = s.time > 0 && s.time <= 100;
+      return { pass: ok, detail: `paused frames advanced 0 ms; playing frame advanced ${s.time} ms (frame delta capped at 100 ms)` };
+    },
+  },
+  {
+    name: 'Idempotent duplicate commits once', run() {
+      const s = quietSim(7);
+      s.sendRequest({ op: 'write', key: 'user-4', tenant: 'acme', idemKey: 'dup-t3' });
+      s.sendRequest({ op: 'write', key: 'user-4', tenant: 'acme', idemKey: 'dup-t3' });
+      driveUntil(s, () => s.metrics.completed >= 2, 20000);
+      const ok = s.metrics.completed === 2 && s.primary.commits === 1 && s.metrics.duplicatesPrevented === 1;
+      return { pass: ok, detail: `2 writes, same key → commits=${s.primary.commits}, duplicatesPrevented=${s.metrics.duplicatesPrevented}, completed=${s.metrics.completed}` };
+    },
+  },
+  {
+    name: 'Failed primary never fabricates commits', run() {
+      const s = quietSim(11);
+      s.failPrimary('TEST');
+      const id = s.sendRequest({ op: 'write', key: 'user-1', tenant: 'nova' });
+      s.step(3500);
+      const req = s.requests.get(id);
+      const committed = req.history.some(h => h.type === 'committed');
+      const ok = s.primary.commits === 0 && s.metrics.completed === 0 && req.state !== 'done' && !committed;
+      return { pass: ok, detail: `while primary down: commits=${s.primary.commits}, request state="${req.state}", attempts=${req.attempts}` };
+    },
+  },
+  {
+    name: 'Retry backoff is exponential', run() {
+      const s = quietSim(13);
+      s.failPrimary('TEST');
+      const id = s.sendRequest({ op: 'write', key: 'user-2', tenant: 'kite' });
+      const req = s.requests.get(id);
+      driveUntil(s, () => req.state === 'dead', 40000);
+      const delays = req.history.filter(h => h.type === 'retry-scheduled').map(h => h.delay);
+      let increasing = delays.length >= 3;
+      for (let i = 1; i < delays.length; i++) if (delays[i] <= delays[i - 1]) increasing = false;
+      return { pass: increasing, detail: `scheduled backoffs: ${delays.map(d => Math.round(d) + 'ms').join(' → ') || 'none'}` };
+    },
+  },
+  {
+    name: 'Poison reaches the DLQ at attempt limit', run() {
+      const s = quietSim(17);
+      const id = s.sendRequest({ op: 'write', key: 'user-3', tenant: 'acme', idemKey: 'poison-t6', poison: true });
+      const req = s.requests.get(id);
+      driveUntil(s, () => req.state === 'dead', 40000);
+      const item = s.dlq.items.find(d => d.reqId === id);
+      const ok = !!item && req.attempts === s.cfg.maxAttempts && item.reason === 'poison';
+      SELF_TESTS._poisonSim = s; SELF_TESTS._poisonId = id;
+      return { pass: ok, detail: item ? `dead-lettered after ${item.attempts}/${s.cfg.maxAttempts} attempts (reason: ${item.reason})` : 'request never reached the DLQ' };
+    },
+  },
+  {
+    name: 'Repaired dead letter replays to commit', run() {
+      const s = SELF_TESTS._poisonSim, id = SELF_TESTS._poisonId;
+      if (!s || !id) return { pass: false, detail: 'depends on the poison test, which did not run' };
+      const req = s.requests.get(id);
+      s.repairDeadLetter(id);
+      s.replayDeadLetter(id);
+      driveUntil(s, () => req.state === 'done', 20000);
+      const ok = req.state === 'done' && req.outcome === 'ok-write' && s.primary.commits === 1 && s.dlq.items.length === 0;
+      return { pass: ok, detail: `after repair+replay: state="${req.state}", outcome=${req.outcome}, commits=${s.primary.commits}, dlq=${s.dlq.items.length}` };
+    },
+  },
+  {
+    name: 'Expired cache entries are not hits', run() {
+      const s = quietSim(19);
+      const w = s.sendRequest({ op: 'write', key: 'user-5', tenant: 'acme' });
+      driveUntil(s, () => s.requests.get(w).state === 'done' && s.replica.version >= 1, 15000);
+      const r1 = s.sendRequest({ op: 'read', key: 'user-5', tenant: 'acme' });
+      driveUntil(s, () => s.requests.get(r1).state === 'done', 15000);
+      const r2 = s.sendRequest({ op: 'read', key: 'user-5', tenant: 'nova' });
+      driveUntil(s, () => s.requests.get(r2).state === 'done', 15000);
+      const hitsAfterFresh = s.cache.hits;
+      s.step(s.cfg.cacheTTL + 400);
+      const r3 = s.sendRequest({ op: 'read', key: 'user-5', tenant: 'kite' });
+      driveUntil(s, () => s.requests.get(r3).state === 'done', 15000);
+      const ok = hitsAfterFresh === 1 && s.cache.hits === 1 && s.cache.expired === 1 && s.cache.misses === 2;
+      return { pass: ok, detail: `fresh read hit=${hitsAfterFresh}; after TTL: hits=${s.cache.hits}, expired=${s.cache.expired}, misses=${s.cache.misses}` };
+    },
+  },
+  {
+    name: 'Replica converges when lag clears', run() {
+      const s = quietSim(23);
+      s.setReplicaLag(5000, 'TEST');
+      const w = s.sendRequest({ op: 'write', key: 'user-6', tenant: 'umbra' });
+      driveUntil(s, () => s.requests.get(w).state === 'done', 15000);
+      s.step(300);
+      const behindBefore = s.primary.log.length - s.replica.applyIndex;
+      if (s.primary.commits !== 1 || behindBefore < 1) return { pass: false, detail: `expected a lagging replica (commits=${s.primary.commits}, behind=${behindBefore})` };
+      s.setReplicaLag(0, 'TEST');
+      s.step(200);
+      const ok = s.replica.version === s.primary.seq && (s.primary.log.length - s.replica.applyIndex) === 0;
+      return { pass: ok, detail: `behind=${behindBefore} at 5000 ms lag → replica v${s.replica.version} = primary v${s.primary.seq} after clearing lag` };
+    },
+  },
+  {
+    name: 'Metrics stay finite in a flash crowd', run() {
+      const s = new Sim(20260, 'flash-crowd');
+      s.step(16000);
+      const bad = allFinite(s.snapshot());
+      const series = s.metrics.samples;
+      let badSeries = null;
+      for (const k of ['tput', 'p95', 'err', 'depth']) if (series[k].some(v => !Number.isFinite(v))) badSeries = k;
+      const ok = !bad && !badSeries;
+      return { pass: ok, detail: ok ? `all snapshot numbers and ${series.t.length} chart samples finite through the burst` : `non-finite value at ${bad || ('series ' + badSeries)}` };
+    },
+  },
+];
+function runSelfTestCore() {
+  const tests = [];
+  for (const t of SELF_TESTS) {
+    let res;
+    try { res = t.run(); }
+    catch (e) { res = { pass: false, detail: 'threw: ' + (e && e.message ? e.message : String(e)) }; }
+    tests.push({ name: t.name, pass: !!res.pass, detail: String(res.detail || '') });
+  }
+  delete SELF_TESTS._poisonSim; delete SELF_TESTS._poisonId;
+  return { passed: tests.every(t => t.pass), tests };
+}
+if (typeof globalThis !== 'undefined') globalThis.__DSP_CORE__ = { Sim, Player, runSelfTestCore, SCENARIOS, TICK };
+</script>
+<script>
+'use strict';
+/* ================================================================
+   PART 3 — TOPOLOGY BOARD (SVG)
+   ================================================================ */
+(function () {
+if (typeof document === 'undefined') return;
+const NS = 'http://www.w3.org/2000/svg';
+const SVGEl = (tag, attrs, parent) => {
+  const el = document.createElementNS(NS, tag);
+  if (attrs) for (const k in attrs) el.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(el);
+  return el;
+};
+const PAL = {
+  read: '#2B9FD9', readHi: '#6FC4EE', write: '#8B6FE8', writeHi: '#B39DF5',
+  retry: '#BD861F', retryHi: '#E8B45A', ok: '#2EA873', okHi: '#52D19A',
+  fail: '#D95C5C', failHi: '#F08787', dead: '#7E8CA0', deadHi: '#A9B4C6',
+  ink: '#DCE7F2', ink2: '#8FA3B8', ink3: '#5A6F86', line: '#2A3B52',
+};
+const NODES = {
+  clients: { x: 56,   y: 206, w: 134, h: 188, title: 'CLIENTS',        sub: 'traffic source' },
+  gateway: { x: 246,  y: 206, w: 154, h: 188, title: 'API GATEWAY',    sub: 'token bucket' },
+  cache:   { x: 470,  y: 40,  w: 180, h: 112, title: 'TTL CACHE',      sub: 'read-through' },
+  queue:   { x: 470,  y: 240, w: 180, h: 120, title: 'WORK QUEUE',     sub: 'FIFO · bounded' },
+  workers: { x: 714,  y: 186, w: 196, h: 226, title: 'WORKER POOL',    sub: 'at-least-once' },
+  primary: { x: 1034, y: 118, w: 186, h: 146, title: 'PRIMARY DB',     sub: 'idempotent commit log' },
+  replica: { x: 1034, y: 330, w: 186, h: 132, title: 'READ REPLICA',   sub: 'async follower' },
+  retry:   { x: 470,  y: 470, w: 180, h: 112, title: 'RETRY SCHEDULER',sub: 'exponential backoff' },
+  dlq:     { x: 714,  y: 470, w: 196, h: 112, title: 'DEAD LETTERS',   sub: 'poison & exhausted' },
+};
+const EDGES = {
+  client_gw:       { d: 'M 190 268 L 246 268', arrow: true },
+  gw_client:       { d: 'M 246 336 L 190 336', arrow: true },
+  gw_cache:        { d: 'M 400 240 C 436 240 436 96 470 96', arrow: true },
+  cache_gw:        { d: 'M 470 124 C 428 124 428 262 400 262', arrow: true },
+  gw_queue:        { d: 'M 400 300 L 470 300', arrow: true },
+  queue_workers:   { d: 'M 650 300 L 714 300', arrow: true },
+  workers_primary: { d: 'M 910 232 C 958 232 986 178 1034 178', arrow: true },
+  primary_workers: { d: 'M 1034 212 C 988 212 962 262 910 262', arrow: true },
+  workers_replica: { d: 'M 910 352 C 960 352 984 372 1034 372', arrow: true },
+  replica_workers: { d: 'M 1034 404 C 984 404 960 384 910 384', arrow: true },
+  workers_retry:   { d: 'M 790 412 C 790 500 706 512 650 512', arrow: true },
+  retry_queue:     { d: 'M 560 470 L 560 360', arrow: true },
+  retry_dlq:       { d: 'M 650 548 L 714 548', arrow: true },
+  dlq_queue:       { d: 'M 800 470 C 800 424 700 420 654 344', arrow: true },
+  primary_replica: { d: 'M 1126 264 L 1126 330', arrow: true },
+  primary_gw:      { d: 'M 1090 118 C 1090 18 330 14 302 206', bus: true },
+  replica_gw:      { d: 'M 1090 462 C 1090 660 340 660 322 396', bus: true },
+};
+const R = { nodes: {}, edges: {}, stats: {}, wslots: [], qcells: [], breaker: {}, cacheRows: [], packets: new Map(), replPackets: new Map() };
+
+function statRow(g, x, y, w, label) {
+  const k = SVGEl('text', { class: 'stat-k', x, y }, g); k.textContent = label;
+  const v = SVGEl('text', { class: 'stat-v', x: x + w, y: y + 1, 'text-anchor': 'end' }, g);
+  return v;
+}
+function buildBoard(onSelectReq, onShowRecords) {
+  const gEdges = document.getElementById('board-edges');
+  const gNodes = document.getElementById('board-nodes');
+  const gBrk = document.getElementById('board-breaker');
+  // edges
+  for (const id in EDGES) {
+    const e = EDGES[id];
+    const p = SVGEl('path', { class: 'edge' + (e.bus ? ' bus' : ''), d: e.d, id: 'edge-' + id }, gEdges);
+    if (e.arrow) p.setAttribute('marker-end', 'url(#arrow)');
+    R.edges[id] = { el: p, len: p.getTotalLength() };
+  }
+  const lbl = (x, y, text, anchor) => { const t = SVGEl('text', { class: 'edge-label', x, y, 'text-anchor': anchor || 'middle' }, gEdges); t.textContent = text; return t; };
+  lbl(660, 26, 'RESPONSE BUS · WRITES');
+  lbl(660, 672, 'RESPONSE BUS · READS');
+  lbl(1140, 302, 'REPLICATION', 'start');
+  lbl(218, 258, 'IN');
+  lbl(218, 350, 'OUT');
+  lbl(560, 422, 'REDELIVER', 'middle');
+  // nodes
+  for (const key in NODES) {
+    const n = NODES[key];
+    const g = SVGEl('g', { class: 'node', 'data-node': key }, gNodes);
+    SVGEl('rect', { class: 'node-box', x: n.x, y: n.y, width: n.w, height: n.h, rx: 9 }, g);
+    const lamp = SVGEl('circle', { class: 'node-lamp', cx: n.x + 15, cy: n.y + 15, r: 3.5, fill: PAL.ok }, g);
+    const title = SVGEl('text', { class: 'node-title', x: n.x + 26, y: n.y + 19 }, g); title.textContent = n.title;
+    const sub = SVGEl('text', { class: 'node-sub', x: n.x + n.w - 12, y: n.y + 19, 'text-anchor': 'end' }, g); sub.textContent = n.sub;
+    SVGEl('line', { x1: n.x + 10, y1: n.y + 26, x2: n.x + n.w - 10, y2: n.y + 26, stroke: '#1C2A3B' }, g);
+    R.nodes[key] = { g, lamp, def: n };
+    if (key === 'primary' || key === 'replica' || key === 'cache') {
+      g.style.cursor = 'pointer';
+      g.addEventListener('click', () => onShowRecords(key));
+    }
+  }
+  const S = R.stats;
+  // clients
+  { const n = NODES.clients, x = n.x + 14, w = n.w - 28;
+    S.clSent = statRow(R.nodes.clients.g, x, n.y + 52, w, 'SENT');
+    S.clOk = statRow(R.nodes.clients.g, x, n.y + 76, w, 'OK');
+    S.clErr = statRow(R.nodes.clients.g, x, n.y + 100, w, 'FAILED');
+    S.clInflight = statRow(R.nodes.clients.g, x, n.y + 124, w, 'IN FLIGHT');
+    S.clRate = statRow(R.nodes.clients.g, x, n.y + 148, w, 'RATE');
+  }
+  // gateway
+  { const n = NODES.gateway, x = n.x + 14, w = n.w - 28, g = R.nodes.gateway.g;
+    const tk = SVGEl('text', { class: 'stat-k', x, y: n.y + 44 }, g); tk.textContent = 'TOKENS';
+    S.gwTokensTxt = SVGEl('text', { class: 'stat-v', x: x + w, y: n.y + 45, 'text-anchor': 'end' }, g);
+    SVGEl('rect', { class: 'meter-track', x, y: n.y + 52, width: w, height: 6, rx: 2 }, g);
+    S.gwTokensBar = SVGEl('rect', { class: 'meter-fill', x, y: n.y + 52, width: 0, height: 6, rx: 2, fill: PAL.read }, g);
+    S.gwAccepted = statRow(g, x, n.y + 82, w, 'ADMITTED');
+    S.gwRejected = statRow(g, x, n.y + 106, w, 'RATE-LIMITED');
+    S.gwShed = statRow(g, x, n.y + 130, w, 'SHED (QUEUE FULL)');
+    S.gwLimit = statRow(g, x, n.y + 154, w, 'LIMIT');
+  }
+  // cache
+  { const n = NODES.cache, x = n.x + 14, w = n.w - 28, g = R.nodes.cache.g;
+    S.caEntries = statRow(g, x, n.y + 46, w, 'ENTRIES');
+    S.caHitRate = statRow(g, x, n.y + 66, w, 'HIT RATE');
+    S.caHM = statRow(g, x, n.y + 86, w, 'HIT / MISS');
+    S.caExp = statRow(g, x, n.y + 104, w, 'EXPIRED · INVALIDATED');
+  }
+  // queue
+  { const n = NODES.queue, x = n.x + 14, w = n.w - 28, g = R.nodes.queue.g;
+    S.qDepth = statRow(g, x, n.y + 46, w, 'DEPTH');
+    S.qWait = statRow(g, x, n.y + 108, w, 'OLDEST WAIT');
+    for (let i = 0; i < 24; i++) {
+      const cx = n.x + 13 + (i % 12) * 13, cy = n.y + 56 + Math.floor(i / 12) * 20;
+      R.qcells.push(SVGEl('rect', { class: 'qcell', x: cx, y: cy, width: 11, height: 16, rx: 2 }, g));
+    }
+  }
+  // workers
+  { const n = NODES.workers, g = R.nodes.workers.g;
+    for (let i = 0; i < 12; i++) {
+      const col = i % 4, row = Math.floor(i / 4);
+      const sx = n.x + 12 + col * 46, sy = n.y + 36 + row * 60;
+      const sg = SVGEl('g', {}, g);
+      const box = SVGEl('rect', { class: 'wslot', x: sx, y: sy, width: 40, height: 50, rx: 4, fill: '#0B1520', stroke: PAL.line, 'stroke-width': 1 }, sg);
+      const idt = SVGEl('text', { x: sx + 20, y: sy + 16, 'text-anchor': 'middle', 'font-size': 9, fill: PAL.ink3, 'font-weight': 600 }, sg); idt.textContent = 'W' + i;
+      const st = SVGEl('text', { x: sx + 20, y: sy + 31, 'text-anchor': 'middle', 'font-size': 8, fill: PAL.ink2 }, sg);
+      SVGEl('rect', { class: 'meter-track', x: sx + 5, y: sy + 39, width: 30, height: 4, rx: 2 }, sg);
+      const bar = SVGEl('rect', { class: 'meter-fill', x: sx + 5, y: sy + 39, width: 0, height: 4, rx: 2, fill: PAL.write }, sg);
+      const cross = SVGEl('path', { d: `M ${sx + 13} ${sy + 18} L ${sx + 27} ${sy + 32} M ${sx + 27} ${sy + 18} L ${sx + 13} ${sy + 32}`, stroke: PAL.fail, 'stroke-width': 2, 'stroke-linecap': 'round', visibility: 'hidden' }, sg);
+      R.wslots.push({ box, idt, st, bar, cross });
+    }
+  }
+  // primary
+  { const n = NODES.primary, x = n.x + 14, w = n.w - 28, g = R.nodes.primary.g;
+    S.pState = statRow(g, x, n.y + 46, w, 'STATE');
+    S.pVersion = statRow(g, x, n.y + 68, w, 'VERSION');
+    S.pRecords = statRow(g, x, n.y + 90, w, 'RECORDS · COMMITS');
+    S.pDedup = statRow(g, x, n.y + 112, w, 'DUPLICATES BLOCKED');
+    const hint = SVGEl('text', { class: 'node-sub', x: x, y: n.y + 134 }, g); hint.textContent = 'click to inspect records';
+  }
+  // replica
+  { const n = NODES.replica, x = n.x + 14, w = n.w - 28, g = R.nodes.replica.g;
+    S.rVersion = statRow(g, x, n.y + 46, w, 'APPLIED VERSION');
+    S.rBehind = statRow(g, x, n.y + 68, w, 'VERSIONS BEHIND');
+    S.rLag = statRow(g, x, n.y + 90, w, 'CONFIGURED LAG');
+    S.rRecords = statRow(g, x, n.y + 112, w, 'RECORDS');
+  }
+  // retry
+  { const n = NODES.retry, x = n.x + 14, w = n.w - 28, g = R.nodes.retry.g;
+    S.reP = statRow(g, x, n.y + 46, w, 'PENDING');
+    S.reNext = statRow(g, x, n.y + 68, w, 'NEXT DUE');
+    S.reTotal = statRow(g, x, n.y + 90, w, 'SCHEDULED TOTAL');
+  }
+  // dlq
+  { const n = NODES.dlq, x = n.x + 14, w = n.w - 28, g = R.nodes.dlq.g;
+    S.dCount = SVGEl('text', { x: n.x + 20, y: n.y + 76, 'font-size': 30, 'font-weight': 700, fill: PAL.ink3, 'font-family': 'ui-monospace,Menlo,monospace' }, g);
+    S.dCount.textContent = '0';
+    S.dReplayed = statRow(g, x + 80, n.y + 56, w - 80, 'REPLAYED');
+    S.dRepaired = statRow(g, x + 80, n.y + 78, w - 80, 'REPAIRED');
+    const hint = SVGEl('text', { class: 'node-sub', x, y: n.y + 100 }, g); hint.textContent = 'repair & replay from the panel';
+  }
+  // circuit breaker glyph on the workers→primary conduit
+  { const bx = 968, by = 196;
+    const g = SVGEl('g', {}, gBrk);
+    SVGEl('rect', { x: bx - 30, y: by - 20, width: 60, height: 40, rx: 7, fill: '#0C141F', stroke: PAL.line }, g);
+    SVGEl('circle', { cx: bx - 15, cy: by, r: 2.6, fill: PAL.ink2 }, g);
+    SVGEl('circle', { cx: bx + 15, cy: by, r: 2.6, fill: PAL.ink2 }, g);
+    R.breaker.blade = SVGEl('line', { x1: bx - 15, y1: by, x2: bx + 15, y2: by, stroke: PAL.ok, 'stroke-width': 2.5, 'stroke-linecap': 'round' }, g);
+    R.breaker.lamp = SVGEl('circle', { cx: bx + 22, cy: by - 12, r: 3, fill: PAL.ok }, g);
+    const t = SVGEl('text', { x: bx, y: by + 33, 'text-anchor': 'middle', class: 'stat-k' }, g); t.textContent = 'CIRCUIT BREAKER';
+    R.breaker.state = SVGEl('text', { x: bx, y: by - 26, 'text-anchor': 'middle', 'font-size': 9, 'font-weight': 700, fill: PAL.okHi, 'letter-spacing': '.08em', 'font-family': 'ui-monospace,Menlo,monospace' }, g);
+    R.breaker.state.textContent = 'CLOSED';
+    R.breaker.bx = bx; R.breaker.by = by;
+  }
+  document.getElementById('board-packets').addEventListener('click', ev => {
+    const g = ev.target.closest('.packet');
+    if (g && g.dataset.rid) onSelectReq(g.dataset.rid);
+  });
+}
+window.__DSP_BOARD__ = { SVGEl, PAL, NODES, EDGES, R, buildBoard, statRow };
+})();
+</script>
+<script>
+'use strict';
+/* ================================================================
+   PART 4 — BOARD RENDERING (packets, node state, breaker, legend)
+   ================================================================ */
+(function () {
+if (typeof document === 'undefined') return;
+const B = window.__DSP_BOARD__;
+const { SVGEl, PAL, NODES, EDGES, R } = B;
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const setTxt = (el, s) => { if (el.__v !== s) { el.textContent = s; el.__v = s; } };
+const setAttr = (el, k, v) => { const c = '__' + k; if (el[c] !== v) { el.setAttribute(k, v); el[c] = v; } };
+const OCT = (r => { let d = ''; for (let i = 0; i < 8; i++) { const a = (Math.PI / 8) + i * Math.PI / 4; d += (i ? 'L' : 'M') + (r * Math.cos(a)).toFixed(2) + ',' + (r * Math.sin(a)).toFixed(2); } return d + 'Z'; })(6);
+
+function packetGlyph(g, kind) {
+  const add = (tag, attrs) => SVGEl(tag, attrs, g);
+  switch (kind) {
+    case 'read': add('circle', { r: 5, fill: PAL.read, stroke: '#0A1018', 'stroke-width': 1 }); break;
+    case 'write': add('rect', { x: -4.5, y: -4.5, width: 9, height: 9, rx: 1.5, fill: PAL.write, stroke: '#0A1018', 'stroke-width': 1 }); break;
+    case 'retry': add('path', { d: 'M0,-6 L5.8,4.4 L-5.8,4.4 Z', fill: PAL.retryHi, stroke: '#0A1018', 'stroke-width': 1 }); break;
+    case 'hit': add('rect', { x: -4.6, y: -4.6, width: 9.2, height: 9.2, rx: 1, fill: PAL.okHi, transform: 'rotate(45)', stroke: '#0A1018', 'stroke-width': 1 }); break;
+    case 'stale':
+      add('rect', { x: -4.2, y: -4.2, width: 8.4, height: 8.4, rx: 1, fill: PAL.retryHi, transform: 'rotate(45)' });
+      add('circle', { r: 8.5, fill: 'none', stroke: PAL.retryHi, 'stroke-width': 1.2, 'stroke-dasharray': '2.5 2.5' });
+      break;
+    case 'reply-read': add('circle', { r: 4.6, fill: 'none', stroke: PAL.readHi, 'stroke-width': 1.8 }); break;
+    case 'reply-write': add('rect', { x: -4.2, y: -4.2, width: 8.4, height: 8.4, rx: 1.5, fill: 'none', stroke: PAL.writeHi, 'stroke-width': 1.8 }); break;
+    case 'fail': add('path', { d: 'M-4.6,-4.6 L4.6,4.6 M4.6,-4.6 L-4.6,4.6', stroke: PAL.failHi, 'stroke-width': 2.6, 'stroke-linecap': 'round' }); break;
+    case 'dead': add('path', { d: OCT, fill: PAL.dead, stroke: '#0A1018', 'stroke-width': 1 }); break;
+    case 'cachefill': add('rect', { x: -4, y: -4, width: 8, height: 8, rx: 1, fill: 'none', stroke: PAL.okHi, 'stroke-width': 1.6, transform: 'rotate(45)' }); break;
+    case 'invalidate':
+      add('rect', { x: -4, y: -4, width: 8, height: 8, rx: 1, fill: 'none', stroke: PAL.writeHi, 'stroke-width': 1.6, transform: 'rotate(45)' });
+      add('path', { d: 'M-6,6 L6,-6', stroke: PAL.writeHi, 'stroke-width': 1.4 });
+      break;
+    case 'repl': add('rect', { x: -2, y: -5, width: 4, height: 10, rx: 1.4, fill: PAL.writeHi, opacity: .9 }); break;
+    default: add('circle', { r: 4.5, fill: PAL.ink2 });
+  }
+}
+function makePacket(kind, rid) {
+  const g = SVGEl('g', { class: 'packet' });
+  if (rid) g.dataset.rid = rid;
+  SVGEl('circle', { class: 'halo', r: 10 }, g);
+  packetGlyph(g, kind);
+  if (rid) { const t = SVGEl('title', {}, g); t.textContent = rid + ' · ' + kind; }
+  return g;
+}
+function renderPackets(sim, selectedId) {
+  const layer = document.getElementById('board-packets');
+  const seen = new Set();
+  for (const t of sim.transits) {
+    seen.add(t.id);
+    let p = R.packets.get(t.id);
+    if (!p) { p = { g: makePacket(t.kind, t.reqId), kind: t.kind }; R.packets.set(t.id, p); layer.appendChild(p.g); }
+    const e = R.edges[t.edge];
+    if (!e) continue;
+    const dur = Math.max(1, t.end - t.start);
+    const pt = e.el.getPointAtLength(clamp01((sim.time - t.start) / dur) * e.len);
+    setAttr(p.g, 'transform', `translate(${pt.x.toFixed(1)},${pt.y.toFixed(1)})`);
+    const sel = !!selectedId && t.reqId === selectedId;
+    if (p.sel !== sel) { p.g.classList.toggle('selected', sel); p.sel = sel; }
+  }
+  for (const [id, p] of R.packets) if (!seen.has(id)) { p.g.remove(); R.packets.delete(id); }
+  // replication stream: pending commit-log entries in flight primary → replica
+  const e = R.edges.primary_replica, lag = sim.cfg.replicaLag;
+  const pend = sim.primary.log.slice(sim.replica.applyIndex, sim.replica.applyIndex + 8);
+  const seenR = new Set();
+  for (const rec of pend) {
+    seenR.add(rec.version);
+    let p = R.replPackets.get(rec.version);
+    if (!p) { p = { g: makePacket('repl', rec.writerId) }; R.replPackets.set(rec.version, p); layer.appendChild(p.g); }
+    const prog = lag > 0 ? clamp01((sim.time - rec.committedAt) / lag) : 1;
+    const pt = e.el.getPointAtLength(prog * e.len);
+    setAttr(p.g, 'transform', `translate(${pt.x.toFixed(1)},${pt.y.toFixed(1)})`);
+  }
+  for (const [v, p] of R.replPackets) if (!seenR.has(v)) { p.g.remove(); R.replPackets.delete(v); }
+}
+
+const LAMP = { ok: PAL.ok, warn: PAL.retryHi, bad: PAL.fail, off: PAL.ink3 };
+function lampSet(key, tone) {
+  const n = R.nodes[key];
+  setAttr(n.lamp, 'fill', LAMP[tone]);
+  const health = tone === 'ok' ? '' : (tone === 'warn' ? 'warn' : tone === 'bad' ? 'bad' : 'off');
+  if (n.g.dataset.health !== health) { if (health) n.g.dataset.health = health; else delete n.g.dataset.health; }
+}
+function updateBoard(sim) {
+  const S = R.stats, m = sim.metrics, cfg = sim.cfg;
+  // clients
+  setTxt(S.clSent, String(sim.reqSeq));
+  setTxt(S.clOk, String(m.completed));
+  setTxt(S.clErr, String(m.errorsTotal));
+  setTxt(S.clInflight, String(sim.transits.length));
+  setTxt(S.clRate, cfg.trafficRate + '/s');
+  lampSet('clients', 'ok');
+  // gateway
+  const tokens = sim.gateway.tokens;
+  setTxt(S.gwTokensTxt, tokens.toFixed(1) + ' / ' + cfg.gatewayBurst);
+  setAttr(S.gwTokensBar, 'width', (Math.max(0, Math.min(1, tokens / cfg.gatewayBurst)) * (NODES.gateway.w - 28)).toFixed(1));
+  setAttr(S.gwTokensBar, 'fill', tokens < 1 ? PAL.fail : tokens < cfg.gatewayBurst * 0.3 ? PAL.retryHi : PAL.read);
+  setTxt(S.gwAccepted, String(sim.gateway.accepted));
+  setTxt(S.gwRejected, String(sim.gateway.rejected));
+  setTxt(S.gwShed, String(sim.gateway.shed));
+  setTxt(S.gwLimit, cfg.gatewayRate + '/s');
+  lampSet('gateway', tokens < 1 ? 'warn' : 'ok');
+  // cache
+  setTxt(S.caEntries, String(sim.cache.data.size));
+  setTxt(S.caHitRate, (sim.cache.hits + sim.cache.misses) ? sim.cacheHitRate().toFixed(0) + '%' : '—');
+  setTxt(S.caHM, sim.cache.hits + ' / ' + sim.cache.misses);
+  setTxt(S.caExp, sim.cache.expired + ' · ' + sim.cache.invalidations);
+  lampSet('cache', 'ok');
+  // queue
+  const depth = sim.queue.items.length, cap = cfg.queueCapacity;
+  setTxt(S.qDepth, depth + ' / ' + cap + (sim.queue.reserved ? ' (+' + sim.queue.reserved + ' in flight)' : ''));
+  const oldest = sim.queue.items[0];
+  setTxt(S.qWait, oldest && oldest.enqueuedAt != null ? (sim.time - oldest.enqueuedAt) + ' ms' : '—');
+  const filled = Math.ceil(depth * 24 / cap), ratio = depth / cap;
+  const cellFill = ratio > 0.85 ? PAL.fail : ratio > 0.55 ? PAL.retryHi : PAL.read;
+  R.qcells.forEach((c, i) => {
+    setAttr(c, 'fill', i < filled ? cellFill : '#0B1520');
+    setAttr(c, 'stroke', i < filled ? cellFill : '#1C2A3B');
+  });
+  lampSet('queue', ratio > 0.85 ? 'bad' : ratio > 0.55 ? 'warn' : 'ok');
+  // workers
+  let busyN = 0, stoppedN = 0;
+  sim.workers.forEach((w, i) => {
+    const s = R.wslots[i];
+    const off = !w.enabled;
+    let tone, label;
+    if (off) { tone = 'off'; label = 'OFF'; }
+    else if (w.stopped) { tone = 'bad'; label = 'STOP'; stoppedN++; }
+    else if (w.phase === 'busy') { tone = 'busy'; label = 'BUSY'; busyN++; }
+    else { tone = 'idle'; label = 'IDLE'; }
+    setTxt(s.st, label);
+    setAttr(s.st, 'fill', tone === 'bad' ? PAL.failHi : tone === 'busy' ? PAL.writeHi : PAL.ink3);
+    setAttr(s.box, 'stroke', tone === 'bad' ? PAL.fail : tone === 'busy' ? PAL.write : '#1C2A3B');
+    setAttr(s.box, 'stroke-dasharray', off ? '3 3' : 'none');
+    setAttr(s.box, 'opacity', off ? 0.45 : 1);
+    setAttr(s.idt, 'opacity', off ? 0.5 : 1);
+    s.cross.setAttribute('visibility', w.stopped && w.enabled ? 'visible' : 'hidden');
+    let prog = 0;
+    if (w.phase === 'busy' && w.busyUntil > w.busyStart) prog = clamp01((sim.time - w.busyStart) / (w.busyUntil - w.busyStart));
+    setAttr(s.bar, 'width', (prog * 30).toFixed(1));
+  });
+  lampSet('workers', stoppedN ? 'warn' : 'ok');
+  // primary
+  const p = sim.primary;
+  setTxt(S.pState, p.up ? 'ONLINE' : 'OFFLINE');
+  setAttr(S.pState, 'fill', p.up ? PAL.okHi : PAL.failHi);
+  setTxt(S.pVersion, 'v' + p.seq);
+  setTxt(S.pRecords, p.data.size + ' · ' + p.commits);
+  setTxt(S.pDedup, String(m.duplicatesPrevented));
+  lampSet('primary', p.up ? 'ok' : 'bad');
+  // replica
+  const behind = p.log.length - sim.replica.applyIndex;
+  setTxt(S.rVersion, 'v' + sim.replica.version);
+  setTxt(S.rBehind, String(behind));
+  setAttr(S.rBehind, 'fill', behind > 0 ? PAL.retryHi : PAL.ink);
+  setTxt(S.rLag, cfg.replicaLag + ' ms');
+  setTxt(S.rRecords, String(sim.replica.data.size));
+  lampSet('replica', behind > 0 || cfg.replicaLag > 2000 ? 'warn' : 'ok');
+  // retry
+  const rt = sim.retry.items;
+  setTxt(S.reP, String(rt.length));
+  let nextDue = '—';
+  if (rt.length) { let min = Infinity; for (const it of rt) if (it.dueAt < min) min = it.dueAt; nextDue = 'in ' + Math.max(0, min - sim.time) + ' ms'; }
+  setTxt(S.reNext, nextDue);
+  setTxt(S.reTotal, String(sim.retry.scheduled));
+  lampSet('retry', rt.length > 6 ? 'warn' : 'ok');
+  // dlq
+  const dn = sim.dlq.items.length;
+  setTxt(S.dCount, String(dn));
+  setAttr(S.dCount, 'fill', dn ? PAL.failHi : PAL.ink3);
+  setTxt(S.dReplayed, String(sim.dlq.replayed));
+  setTxt(S.dRepaired, String(sim.dlq.items.filter(d => d.repaired).length));
+  lampSet('dlq', dn ? 'bad' : 'ok');
+  // breaker
+  const b = sim.breaker, brk = R.breaker;
+  const st = b.state;
+  if (brk.__st !== st) {
+    brk.__st = st;
+    const bx = brk.bx, by = brk.by;
+    if (st === 'closed') {
+      brk.blade.setAttribute('transform', '');
+      setAttr(brk.blade, 'stroke', PAL.ok);
+      setAttr(brk.blade, 'stroke-dasharray', 'none');
+      setAttr(brk.lamp, 'fill', PAL.ok);
+      setTxt(brk.state, 'CLOSED'); setAttr(brk.state, 'fill', PAL.okHi);
+    } else if (st === 'open') {
+      brk.blade.setAttribute('transform', `rotate(-36 ${bx - 15} ${by})`);
+      setAttr(brk.blade, 'stroke', PAL.fail);
+      setAttr(brk.blade, 'stroke-dasharray', 'none');
+      setAttr(brk.lamp, 'fill', PAL.fail);
+      setTxt(brk.state, 'OPEN'); setAttr(brk.state, 'fill', PAL.failHi);
+    } else {
+      brk.blade.setAttribute('transform', `rotate(-18 ${bx - 15} ${by})`);
+      setAttr(brk.blade, 'stroke', PAL.retryHi);
+      setAttr(brk.blade, 'stroke-dasharray', '4 3');
+      setAttr(brk.lamp, 'fill', PAL.retryHi);
+      setTxt(brk.state, 'HALF-OPEN'); setAttr(brk.state, 'fill', PAL.retryHi);
+    }
+    const wp = R.edges.workers_primary.el;
+    if (st === 'open') { wp.setAttribute('stroke', PAL.fail); wp.setAttribute('stroke-dasharray', '3 5'); }
+    else if (st === 'half-open') { wp.setAttribute('stroke', PAL.retry); wp.setAttribute('stroke-dasharray', '6 4'); }
+    else { wp.setAttribute('stroke', '#2A3B52'); wp.removeAttribute('stroke-dasharray'); }
+  }
+}
+function buildLegend() {
+  const host = document.getElementById('legend');
+  const mini = kind => {
+    const s = SVGEl('svg', { viewBox: '-8 -8 16 16', width: 13, height: 13 });
+    packetGlyph(s, kind);
+    return s.outerHTML;
+  };
+  const items = [
+    ['read', 'read'], ['write', 'write'], ['reply-read', 'response'], ['retry', 'retry'],
+    ['hit', 'cache hit'], ['stale', 'stale read'], ['fail', 'failure'], ['dead', 'dead letter'],
+  ];
+  host.innerHTML = items.map(([k, label]) => `<span class="lg">${mini(k)}${label}</span>`).join('') +
+    `<span class="hint"><kbd>Space</kbd> play/pause · <kbd>.</kbd> step · click a packet to inspect</span>`;
+}
+window.__DSP_RENDER__ = { renderPackets, updateBoard, buildLegend };
+})();
+</script>
+<script>
+'use strict';
+/* ================================================================
+   PART 5 — CHARTS, LOG, INSPECTOR, CONTROLS, BOOT, window.__DSP__
+   ================================================================ */
+(function () {
+if (typeof document === 'undefined') return;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const setTxt = (el, s) => { if (el.__v !== s) { el.textContent = s; el.__v = s; } };
+const RENDER = window.__DSP_RENDER__, BOARD = window.__DSP_BOARD__;
+
+const App = {
+  sim: null, player: null, scenario: 'healthy',
+  sel: null, inspKey: '', logSeq: 0, logFilter: 'all', dlqSig: null, faultSig: '',
+};
+
+/* ---------------- charts ---------------- */
+const CHART_DEFS = [
+  { key: 'tput',  name: 'Throughput',  unit: 'req/s', color: '#2B9FD9', fmt: v => v.toFixed(1), floor: 6 },
+  { key: 'p95',   name: 'P95 latency', unit: 'ms',    color: '#8B6FE8', fmt: v => String(Math.round(v)), floor: 600 },
+  { key: 'err',   name: 'Error rate',  unit: '%',     color: '#D95C5C', fmt: v => v.toFixed(1), floor: 20 },
+  { key: 'depth', name: 'Queue depth', unit: 'req',   color: '#BD861F', fmt: v => String(Math.round(v)), floor: 10 },
+];
+const charts = [];
+function makeCharts() {
+  const host = $('charts');
+  for (const def of CHART_DEFS) {
+    const div = document.createElement('div');
+    div.className = 'chart';
+    div.innerHTML = `<div class="ch-head"><span class="ch-name">${def.name}</span><span class="ch-val">–</span><span class="ch-unit">${def.unit}</span></div><canvas aria-label="${def.name} history" role="img"></canvas><div class="tip"></div>`;
+    host.appendChild(div);
+    const canvas = div.querySelector('canvas');
+    const c = { def, div, canvas, ctx: canvas.getContext('2d'), val: div.querySelector('.ch-val'), tip: div.querySelector('.tip'), w: 0, h: 56, hoverI: -1, stamp: '' };
+    charts.push(c);
+    canvas.addEventListener('mousemove', ev => {
+      const r = canvas.getBoundingClientRect();
+      c.hoverX = ev.clientX - r.left; c.hover = true; c.stamp = '';
+      c.tipY = ev.clientY - r.top;
+    });
+    canvas.addEventListener('mouseleave', () => { c.hover = false; c.hoverI = -1; c.tip.style.display = 'none'; c.stamp = ''; });
+  }
+  const ro = new ResizeObserver(() => sizeCharts());
+  ro.observe(host);
+  sizeCharts();
+}
+function sizeCharts() {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  for (const c of charts) {
+    const w = c.canvas.clientWidth || c.div.clientWidth - 22;
+    if (w <= 0) continue;
+    c.w = w; c.dpr = dpr;
+    c.canvas.width = Math.round(w * dpr);
+    c.canvas.height = Math.round(c.h * dpr);
+    c.stamp = '';
+  }
+}
+function drawChart(c, sim) {
+  const s = sim.metrics.samples, arr = s[c.def.key], n = arr.length;
+  const last = sim.metrics.last[c.def.key];
+  setTxt(c.val, n ? c.def.fmt(last) : '–');
+  const stamp = n + ':' + (n ? s.t[n - 1] : 0) + ':' + c.w + ':' + (c.hover ? Math.round(c.hoverX) : -1);
+  if (stamp === c.stamp) return;
+  c.stamp = stamp;
+  const ctx = c.ctx, w = c.w, h = c.h;
+  ctx.setTransform(c.dpr, 0, 0, c.dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(28,42,59,.8)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, h - 2.5); ctx.lineTo(w, h - 2.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, Math.round(h * 0.28) + .5); ctx.lineTo(w, Math.round(h * 0.28) + .5); ctx.stroke();
+  if (n < 2) return;
+  let mx = 0; for (let i = 0; i < n; i++) if (arr[i] > mx) mx = arr[i];
+  const ymax = Math.max(c.def.floor, mx * 1.12);
+  const stepX = w / 239;
+  const x0 = w - (n - 1) * stepX;
+  const X = i => x0 + i * stepX, Y = v => h - 3 - (v / ymax) * (h - 12);
+  ctx.beginPath();
+  ctx.moveTo(X(0), Y(arr[0]));
+  for (let i = 1; i < n; i++) ctx.lineTo(X(i), Y(arr[i]));
+  ctx.strokeStyle = c.def.color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.lineTo(X(n - 1), h - 2.5); ctx.lineTo(X(0), h - 2.5); ctx.closePath();
+  ctx.globalAlpha = 0.16; ctx.fillStyle = c.def.color; ctx.fill(); ctx.globalAlpha = 1;
+  ctx.beginPath(); ctx.arc(X(n - 1), Y(arr[n - 1]), 2.6, 0, 7); ctx.fillStyle = c.def.color; ctx.fill();
+  if (c.hover) {
+    let i = Math.round((c.hoverX - x0) / stepX);
+    i = Math.max(0, Math.min(n - 1, i));
+    c.hoverI = i;
+    const hx = X(i);
+    ctx.strokeStyle = 'rgba(220,231,242,.4)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(hx + .5, 2); ctx.lineTo(hx + .5, h - 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(hx, Y(arr[i]), 3.4, 0, 7);
+    ctx.fillStyle = '#0B1220'; ctx.fill(); ctx.strokeStyle = c.def.color; ctx.lineWidth = 2; ctx.stroke();
+    c.tip.textContent = 'T+' + fmtT(s.t[i]) + ' · ' + c.def.fmt(arr[i]) + ' ' + c.def.unit;
+    c.tip.style.display = 'block';
+    const tw = c.tip.offsetWidth;
+    c.tip.style.left = Math.max(4, Math.min(c.w - tw - 4, hx - tw / 2)) + 'px';
+    c.tip.style.top = '20px';
+  }
+}
+
+/* ---------------- event log ---------------- */
+const LV_CLASS = { sys: 'sys', ok: 'ok', warn: 'warn', err: 'err', info: '' };
+const passFilter = e => App.logFilter === 'all' ? true : App.logFilter === 'warn' ? (e.level === 'warn' || e.level === 'err') : e.level === 'err';
+function logRow(e) {
+  const li = document.createElement('li');
+  li.className = LV_CLASS[e.level] || '';
+  let m = esc(e.msg);
+  if (e.reqId) m = m.split(e.reqId).join(`<button class="rid" data-rid="${e.reqId}">${e.reqId}</button>`);
+  li.innerHTML = `<span class="t">${fmtT(e.t)}</span><span class="c">${e.comp}</span><span class="m">${m}</span>`;
+  return li;
+}
+function pumpLog(sim) {
+  const list = $('log-list'), scroll = $('log-scroll');
+  const nearBottom = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 40;
+  let appended = false;
+  for (const e of sim.log) {
+    if (e.seq <= App.logSeq) continue;
+    App.logSeq = e.seq;
+    if (!passFilter(e)) continue;
+    list.appendChild(logRow(e));
+    appended = true;
+  }
+  while (list.children.length > 250) list.firstChild.remove();
+  if (appended && nearBottom && !scroll.matches(':hover')) scroll.scrollTop = scroll.scrollHeight;
+}
+function rebuildLog(sim) {
+  const list = $('log-list');
+  list.innerHTML = '';
+  const rows = sim.log.filter(passFilter).slice(-250);
+  for (const e of rows) list.appendChild(logRow(e));
+  $('log-scroll').scrollTop = $('log-scroll').scrollHeight;
+}
+
+/* ---------------- inspector ---------------- */
+function showRequest(id) { if (App.sim.requests.has(id)) { App.sel = { type: 'req', id }; App.inspKey = ''; } }
+function showRecords() { App.sel = { type: 'records' }; App.inspKey = ''; }
+const STATE_BADGE = { done: 'ok', dead: 'err', rejected: 'err', 'retry-wait': 'warn', queued: 'info', processing: 'info', dispatched: 'info', 'in-flight': 'info', replaying: 'warn', created: 'neutral' };
+function renderInspector(sim) {
+  const body = $('insp-body'), head = $('insp-id');
+  if (!App.sel) { setTxt(head, ''); if (App.inspKey !== 'empty') { App.inspKey = 'empty'; body.innerHTML = '<div class="empty">Click a packet on the board, a request ID in the log,<br>or the primary database to inspect stored records.</div>'; } return; }
+  if (App.sel.type === 'req') {
+    const req = sim.requests.get(App.sel.id);
+    if (!req) { App.sel = null; return; }
+    const key = req.id + ':' + req.state + ':' + req.history.length + ':' + req.attempts;
+    if (key === App.inspKey) return;
+    App.inspKey = key;
+    setTxt(head, req.id);
+    const b = STATE_BADGE[req.state] || 'neutral';
+    const rows = [
+      ['op', req.op.toUpperCase() + (req.poison ? ' · POISON' : '') + (req.stale ? ' · SAW STALE' : '')],
+      ['tenant', req.tenant], ['key', req.key], ['idem key', req.idemKey],
+      ['state', `<span class="badge ${b}">${esc(req.state)}</span>${req.outcome ? ' <span class="badge neutral">' + esc(req.outcome) + '</span>' : ''}`],
+      ['attempts', req.attempts + ' / ' + sim.cfg.maxAttempts + (req.redeliveries ? ' · redelivered ×' + req.redeliveries : '')],
+      ['created', 'T+' + fmtT(req.createdAt)],
+      ['latency', req.latency != null ? req.latency + ' ms end-to-end' : '— (in flight)'],
+    ];
+    body.innerHTML = `<dl class="meta-grid">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+      <ul class="life">${req.history.map(h => `<li data-lv="${h.lv}"><span class="lt">${fmtT(h.t)}</span><span class="lm">${esc(h.msg)}</span></li>`).join('')}</ul>`;
+    return;
+  }
+  // stored records view
+  const p = sim.primary, key = 'rec:' + p.seq + ':' + sim.cache.data.size + ':' + sim.replica.version + ':' + Math.floor(sim.time / 500);
+  if (key === App.inspKey) return;
+  App.inspKey = key;
+  setTxt(head, 'stored records');
+  const recs = [...p.data.values()].slice(-8).reverse();
+  const recHtml = recs.length ? recs.map(r => {
+    const rv = sim.replica.data.get(r.key);
+    const fresh = rv && rv.version >= r.version;
+    return `<li><button class="rid" data-rid="${r.writerId}">${r.writerId}</button> ${esc(r.key)} <span class="badge info">v${r.version}</span> <span class="badge ${fresh ? 'ok' : 'warn'}">${fresh ? 'replica ✓' : 'replica v' + (rv ? rv.version : 0)}</span><span class="v">${esc(r.idemKey)}</span></li>`;
+  }).join('') : '<li style="border:0;background:none;color:var(--ink-3)">no committed records yet</li>';
+  const cacheEntries = [...sim.cache.data.entries()];
+  const cacheHtml = cacheEntries.length ? cacheEntries.map(([k, e]) =>
+    `<li>${esc(k)} <span class="badge info">v${e.version}</span><span class="v">ttl ${Math.max(0, e.expiresAt - sim.time)} ms</span></li>`).join('')
+    : '<li style="border:0;background:none;color:var(--ink-3)">cache empty</li>';
+  body.innerHTML = `<dl class="meta-grid">
+      <dt>primary</dt><dd>${p.up ? 'ONLINE' : '<span class="badge err">OFFLINE</span>'} · v${p.seq} · ${p.commits} commits · ${sim.metrics.duplicatesPrevented} duplicates blocked</dd>
+      <dt>replica</dt><dd>v${sim.replica.version} · ${p.log.length - sim.replica.applyIndex} behind · lag ${sim.cfg.replicaLag} ms</dd>
+      <dt>cache</dt><dd>${sim.cache.data.size} entries · ${sim.cache.hits}/${sim.cache.misses} hit/miss · ${sim.cache.expired} expired</dd>
+    </dl>
+    <div class="gk" style="font-size:9.5px;font-weight:700;letter-spacing:.16em;color:var(--ink-3);margin:2px 0 6px">PRIMARY RECORDS (NEWEST FIRST)</div>
+    <ul class="rec-list">${recHtml}</ul>
+    <div class="gk" style="font-size:9.5px;font-weight:700;letter-spacing:.16em;color:var(--ink-3);margin:10px 0 6px">CACHE ENTRIES</div>
+    <ul class="rec-list">${cacheHtml}</ul>`;
+}
+
+/* ---------------- DLQ panel ---------------- */
+function renderDLQ(sim) {
+  const items = sim.dlq.items;
+  const sig = items.map(d => d.reqId + (d.repaired ? 'r' : '')).join(',');
+  if (sig === App.dlqSig) return;
+  App.dlqSig = sig;
+  setTxt($('dlq-count'), String(items.length));
+  const ul = $('dlq-list');
+  if (!items.length) { ul.innerHTML = '<li class="none">No dead letters.</li>'; return; }
+  ul.innerHTML = items.map(d => `<li class="${d.repaired ? 'repaired' : ''}">
+    <button class="did" data-rid="${d.reqId}">${d.reqId}</button>
+    <span class="why">${esc(d.reason)} · ${d.attempts} attempts</span>
+    <button class="act" data-act="repair" data-rid="${d.reqId}" ${d.repaired ? 'disabled' : ''}>${d.repaired ? 'Repaired' : 'Repair'}</button>
+    <button class="act" data-act="replay" data-rid="${d.reqId}">Replay</button></li>`).join('');
+}
+
+/* ---------------- status, fault buttons, sliders ---------------- */
+function updateStatus(sim) {
+  setTxt($('st-time'), fmtT(sim.time));
+  setTxt($('st-done'), String(sim.metrics.completed));
+  setTxt($('st-dupes'), String(sim.metrics.duplicatesPrevented));
+  setTxt($('st-cache'), (sim.cache.hits + sim.cache.misses) ? sim.cacheHitRate().toFixed(0) + '%' : '–');
+  setTxt($('st-scenario'), SCENARIOS[sim.scenario].label);
+  const state = sim.systemState();
+  const chip = $('chip-state');
+  if (chip.__s !== state) {
+    chip.__s = state;
+    chip.className = 'chip ' + state; chip.id = 'chip-state';
+    setTxt($('st-state'), state.toUpperCase());
+  }
+  document.body.dataset.state = state;
+}
+function updateFaultButtons(sim) {
+  const stopped = sim.workers.filter(w => w.enabled && w.stopped).length;
+  const lagged = sim.cfg.replicaLag > 1500;
+  const sig = sim.primary.up + ':' + stopped + ':' + lagged + ':' + App.player.playing + ':' + App.player.speed;
+  if (sig === App.faultSig) return;
+  App.faultSig = sig;
+  const db = $('btn-db');
+  db.textContent = sim.primary.up ? 'Fail primary' : 'Recover primary';
+  db.classList.toggle('armed', !sim.primary.up);
+  const wk = $('btn-worker');
+  wk.textContent = stopped ? `Restore worker (${stopped} down)` : 'Stop worker';
+  wk.classList.toggle('warn-armed', stopped > 0);
+  const lg = $('btn-lag');
+  lg.textContent = lagged ? `Clear replica lag (${sim.cfg.replicaLag} ms)` : 'Add replica lag';
+  lg.classList.toggle('warn-armed', lagged);
+  const play = $('btn-play');
+  play.classList.toggle('playing', App.player.playing);
+  setTxt($('play-label'), App.player.playing ? 'Pause' : 'Play');
+  $('play-icon').setAttribute('d', App.player.playing
+    ? 'M2 1.5 h2.7 v9 h-2.7 Z M7.3 1.5 h2.7 v9 h-2.7 Z'
+    : 'M2 1.5 L10.5 6 L2 10.5 Z');
+  document.querySelectorAll('#speed-seg button').forEach(b =>
+    b.setAttribute('aria-pressed', String(+b.dataset.speed === App.player.speed)));
+}
+const SLIDERS = [
+  { id: 'sl-traffic', out: 'out-traffic', get: s => s.cfg.trafficRate, fmt: v => v + '/s' },
+  { id: 'sl-workers', out: 'out-workers', get: s => s.cfg.workerCount, fmt: v => String(v) },
+  { id: 'sl-gateway', out: 'out-gateway', get: s => s.cfg.gatewayRate, fmt: v => v + '/s' },
+  { id: 'sl-service', out: 'out-service', get: s => s.cfg.serviceMean, fmt: v => v + 'ms' },
+];
+function syncSliders(sim, force) {
+  for (const d of SLIDERS) {
+    const el = $(d.id);
+    const v = d.get(sim);
+    if (force || document.activeElement !== el) {
+      if (+el.value !== v) el.value = v;
+      const p = (v - +el.min) / (+el.max - +el.min) * 100;
+      el.style.setProperty('--fill', p.toFixed(1) + '%');
+      setTxt($(d.out), d.fmt(v));
+    }
+  }
+}
+
+/* ---------------- run management ---------------- */
+function newRun(scenario, seed) {
+  App.scenario = SCENARIOS[scenario] ? scenario : 'healthy';
+  const scn = SCENARIOS[App.scenario];
+  const s = Number.isFinite(+seed) ? Math.abs(Math.floor(+seed)) : scn.seed;
+  App.sim = new Sim(s, App.scenario);
+  App.player.sim = App.sim;
+  App.logSeq = 0; App.sel = null; App.inspKey = ''; App.dlqSig = null; App.faultSig = '';
+  $('log-list').innerHTML = '';
+  $('inp-seed').value = App.sim.seed;
+  charts.forEach(c => { c.stamp = ''; });
+  BOARD.R.packets.forEach(p => p.g.remove()); BOARD.R.packets.clear();
+  BOARD.R.replPackets.forEach(p => p.g.remove()); BOARD.R.replPackets.clear();
+  BOARD.R.breaker.__st = null;
+  document.querySelectorAll('.scn').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scn === App.scenario)));
+  syncSliders(App.sim, true);
+  return App.sim.seed;
+}
+
+/* ---------------- self-test drawer ---------------- */
+function runSelfTestUI() {
+  const res = runSelfTestCore();
+  const v = $('diag-verdict');
+  const n = res.tests.filter(t => t.pass).length;
+  v.textContent = `${n}/${res.tests.length} invariants passed${res.passed ? '' : ' — ' + (res.tests.length - n) + ' FAILING'} · run at T+${fmtT(App.sim ? App.sim.time : 0)}`;
+  v.className = 'verdict ' + (res.passed ? 'pass' : 'fail');
+  $('diag-tests').innerHTML = res.tests.map((t, i) =>
+    `<div class="tcase ${t.pass ? 'pass' : 'fail'}"><span class="tmark">${t.pass ? '✓' : '✕'}</span><span class="tname">${i + 1}. ${esc(t.name)}</span><span class="tdetail">${esc(t.detail)}</span></div>`).join('');
+  return res;
+}
+
+/* ---------------- bindings ---------------- */
+function bind() {
+  const sim = () => App.sim;
+  $('btn-play').addEventListener('click', () => { App.player.playing = !App.player.playing; });
+  $('btn-step').addEventListener('click', () => { App.player.playing = false; sim().step(50); });
+  $('btn-reset').addEventListener('click', () => newRun(App.scenario, parseInt($('inp-seed').value, 10)));
+  $('inp-seed').addEventListener('keydown', e => { if (e.key === 'Enter') newRun(App.scenario, parseInt($('inp-seed').value, 10)); });
+  document.querySelectorAll('#speed-seg button').forEach(b =>
+    b.addEventListener('click', () => { App.player.speed = +b.dataset.speed; App.faultSig = ''; }));
+  const scnRow = $('scenario-row');
+  for (const key in SCENARIOS) {
+    const b = document.createElement('button');
+    b.className = 'scn'; b.dataset.scn = key;
+    b.setAttribute('aria-pressed', 'false');
+    b.textContent = SCENARIOS[key].label;
+    b.addEventListener('click', () => newRun(key, SCENARIOS[key].seed));
+    scnRow.appendChild(b);
+  }
+  $('sl-traffic').addEventListener('input', e => sim().setTraffic(+e.target.value, 'CONTROL'));
+  $('sl-workers').addEventListener('input', e => sim().setWorkers(+e.target.value, 'CONTROL'));
+  $('sl-gateway').addEventListener('input', e => sim().setGatewayRate(+e.target.value, 'CONTROL'));
+  $('sl-service').addEventListener('input', e => sim().setServiceTime(+e.target.value, 'CONTROL'));
+  $('btn-one').addEventListener('click', () => { const id = sim().sendRequest({}); sim().ev('sys', 'CLIENT', `operator sent ${id}`, id); });
+  $('btn-burst').addEventListener('click', () => sim().sendBurst(20));
+  $('btn-dupes').addEventListener('click', () => sim().sendDuplicateBurst());
+  $('btn-db').addEventListener('click', () => sim().togglePrimary('operator'));
+  $('btn-worker').addEventListener('click', () => {
+    const stopped = sim().workers.some(w => w.enabled && w.stopped);
+    stopped ? sim().restoreWorker('operator') : sim().stopWorker('operator');
+  });
+  $('btn-lag').addEventListener('click', () => {
+    sim().cfg.replicaLag > 1500 ? sim().setReplicaLag(0, 'operator') : sim().setReplicaLag(4000, 'operator');
+  });
+  document.querySelectorAll('.lf').forEach(b => b.addEventListener('click', () => {
+    App.logFilter = b.dataset.lf;
+    document.querySelectorAll('.lf').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    rebuildLog(App.sim);
+  }));
+  $('log-list').addEventListener('click', e => { const b = e.target.closest('.rid'); if (b) showRequest(b.dataset.rid); });
+  $('insp-body').addEventListener('click', e => { const b = e.target.closest('.rid'); if (b) showRequest(b.dataset.rid); });
+  $('dlq-list').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.classList.contains('did')) return showRequest(b.dataset.rid);
+    if (b.dataset.act === 'repair') sim().repairDeadLetter(b.dataset.rid);
+    if (b.dataset.act === 'replay') { sim().replayDeadLetter(b.dataset.rid); App.dlqSig = null; }
+  });
+  $('btn-selftest').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); runSelfTestUI(); $('diag').open = true; });
+  document.addEventListener('keydown', e => {
+    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === ' ') { e.preventDefault(); App.player.playing = !App.player.playing; }
+    else if (e.key === '.') { App.player.playing = false; App.sim.step(50); }
+    else if (e.key === 'r' || e.key === 'R') { newRun(App.scenario, parseInt($('inp-seed').value, 10)); }
+  });
+  document.addEventListener('visibilitychange', () => { lastTs = null; });
+}
+
+/* ---------------- main loop ---------------- */
+let lastTs = null;
+function frame(ts) {
+  if (lastTs == null) lastTs = ts;
+  const dt = ts - lastTs;
+  lastTs = ts;
+  App.player.frame(dt);
+  const sim = App.sim;
+  updateStatus(sim);
+  RENDER.updateBoard(sim);
+  RENDER.renderPackets(sim, App.sel && App.sel.type === 'req' ? App.sel.id : null);
+  for (const c of charts) drawChart(c, sim);
+  pumpLog(sim);
+  renderInspector(sim);
+  renderDLQ(sim);
+  updateFaultButtons(sim);
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- boot ---------------- */
+BOARD.buildBoard(showRequest, showRecords);
+RENDER.buildLegend();
+makeCharts();
+App.player = new Player(null);
+App.player.playing = true;
+bind();
+newRun('healthy', SCENARIOS.healthy.seed);
+
+/* Deterministic engineering interface.
+   reset(seed)        → reset current scenario with an integer seed; returns the seed used
+   setScenario(name)  → 'healthy' | 'flash-crowd' | 'database-outage' | 'poison-message' | 'stale-replica'
+   step(ms)           → pause playback and advance simulated time deterministically
+   sendRequest(opts)  → inject {op,key,tenant,idemKey,poison}; returns the request id
+   snapshot()         → JSON-safe summary of every component
+   runSelfTest()      → { passed, tests:[{name,pass,detail}] } — real runs, never hard-coded */
+window.__DSP__ = {
+  reset(seed) { return newRun(App.scenario, seed); },
+  setScenario(name) {
+    if (!SCENARIOS[name]) throw new Error('unknown scenario "' + name + '" — use: ' + Object.keys(SCENARIOS).join(', '));
+    newRun(name, SCENARIOS[name].seed);
+    return name;
+  },
+  step(ms) { App.player.playing = false; App.sim.step(Math.max(0, Number(ms) || 0)); return App.sim.time; },
+  sendRequest(opts) { return App.sim.sendRequest(opts || {}); },
+  snapshot() { return App.sim.snapshot(); },
+  runSelfTest() { const r = runSelfTestUI(); return r; },
+  pause() { App.player.playing = false; return false; },
+  play() { App.player.playing = true; return true; },
+  setSpeed(x) { if ([0.5, 1, 2, 4].includes(+x)) { App.player.speed = +x; App.faultSig = ''; } return App.player.speed; },
+  scenarios: Object.keys(SCENARIOS),
+};
+requestAnimationFrame(frame);
+setTimeout(runSelfTestUI, 500);
+})();
+</script>
+
+</div>
+</body>
+</html>

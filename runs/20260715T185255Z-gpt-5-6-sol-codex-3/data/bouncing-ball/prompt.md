@@ -1,0 +1,58 @@
+<instructions>
+Generate a single, self-contained HTML file. No Python, no separate JS files, no frameworks, no libraries. One `.html` file that works when opened directly in a browser.
+
+Build a physics simulation: a single red ball bouncing inside a slowly rotating regular heptagon (7-sided polygon).
+</instructions>
+
+<constraints>
+- Output ONLY a complete HTML file — nothing else
+- The ball must NEVER escape or pass through the polygon walls
+- Collision detection must operate in the rotated coordinate frame of the polygon
+- No shadows, no gradients, no glow, no trail effects, no text on the ball, no timer, no UI elements
+- Keep it minimal — only the ball and the polygon on a black canvas
+</constraints>
+
+<physics>
+- Gravity: 500 px/s², pulling downward constantly
+- Restitution coefficient: 0.8 (energy loss on bounce)
+- Friction coefficient: 0.98 (applied on each bounce)
+- Reflect velocity vector across the wall's outward normal on collision
+- Compute wall positions from current rotation angle each frame
+</physics>
+
+<visual>
+- Background: black (#000000)
+- Polygon: thin white stroke (#FFFFFF), no fill
+- Ball: solid red (#FF0000), no decoration
+- Canvas: fullscreen
+- Animation: 60fps via requestAnimationFrame
+</visual>
+
+<parameters>
+- Ball radius: 15px
+- Polygon radius: 250px
+- Polygon sides: 7
+- Rotation speed: 0.5 rad/s
+- Ball spawn position: center of the polygon
+</parameters>
+
+<thinking>
+Before coding, reason through:
+1. How to represent the heptagon vertices and rotate them each frame
+2. How to detect collision between the ball and each rotating wall segment
+3. How to compute the outward normal of each wall for velocity reflection
+4. How to prevent the ball from escaping when moving fast (tunneling prevention)
+5. How to handle the coordinate transform between world space and rotating polygon space
+</thinking>
+
+<important>
+* You MUST write the result directly into a file named "index.html" on the user's computer. The user should not have to see or handle the code — just write the file and finish your task.
+* Title of the page is you're model name. For example "GPT 5" or "Opus 5"
+* Title inside the page show you're model name.
+</important>
+
+Work only inside the current working directory.
+
+Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.
+Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title.
+Run the relevant checks yourself. Do not edit files outside the current working directory.

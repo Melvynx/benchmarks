@@ -1,0 +1,1623 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>GPT-5.6 Sol</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #050914;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="GPT-5.6 Sol"></canvas>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("scene");
+      const ctx = canvas.getContext("2d", { alpha: false });
+      const TAU = Math.PI * 2;
+      const CYCLE = 16;
+      const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      let W = 1;
+      let H = 1;
+      let DPR = 1;
+      let horizonY = 1;
+      let deckY = 1;
+      let rocketX = 1;
+      let rocketHeight = 360;
+      let islandX = 1;
+      let islandW = 1;
+      let skyGradient;
+      let oceanGradient;
+      let vignetteGradient;
+      let grainCanvas;
+      let smokeSprites = [];
+      let particleDensity = 1;
+
+      const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+      const lerp = (a, b, amount) => a + (b - a) * amount;
+      const inverseLerp = (a, b, value) => clamp((value - a) / (b - a), 0, 1);
+      const smoothstep = (amount) => {
+        const n = clamp(amount, 0, 1);
+        return n * n * (3 - 2 * n);
+      };
+      const smootherstep = (amount) => {
+        const n = clamp(amount, 0, 1);
+        return n * n * n * (n * (n * 6 - 15) + 10);
+      };
+      const rangeStep = (start, end, value) => smoothstep(inverseLerp(start, end, value));
+
+      function makeRng(seed) {
+        let state = seed >>> 0;
+        return () => {
+          state += 0x6d2b79f5;
+          let value = state;
+          value = Math.imul(value ^ (value >>> 15), value | 1);
+          value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+          return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      let random = makeRng(0x51a7c0de);
+
+      const starRandom = makeRng(0x57a25e11);
+      const stars = Array.from({ length: 132 }, (_, index) => ({
+        x: starRandom(),
+        y: Math.pow(starRandom(), 1.18) * 0.57,
+        radius: 0.45 + starRandom() * (index % 13 === 0 ? 1.7 : 0.9),
+        alpha: 0.28 + starRandom() * 0.62,
+        phase: starRandom() * TAU,
+        speed: 0.45 + starRandom() * 1.45,
+        flare: index % 17 === 0
+      }));
+
+      const clouds = [
+        { x: 0.08, y: 0.28, size: 0.82, speed: 2.6, alpha: 0.28, phase: 0.3 },
+        { x: 0.77, y: 0.22, size: 0.64, speed: 1.8, alpha: 0.22, phase: 1.7 },
+        { x: 0.84, y: 0.48, size: 1.06, speed: 3.1, alpha: 0.34, phase: 2.9 },
+        { x: 0.24, y: 0.52, size: 0.72, speed: 2.2, alpha: 0.26, phase: 4.1 },
+        { x: 0.56, y: 0.39, size: 0.45, speed: 1.5, alpha: 0.13, phase: 5.4 }
+      ];
+
+      const bushRandom = makeRng(0xb05b57a1);
+      const bushes = Array.from({ length: 34 }, (_, index) => ({
+        x: 0.08 + bushRandom() * 0.84,
+        y: 0.03 + bushRandom() * 0.16,
+        radius: 7 + bushRandom() * 17,
+        hue: index % 4,
+        phase: bushRandom() * TAU
+      }));
+
+      const SMOKE_CAPACITY = REDUCED_MOTION ? 260 : 560;
+      const EMBER_CAPACITY = REDUCED_MOTION ? 24 : 140;
+      const smokePool = Array.from({ length: SMOKE_CAPACITY }, () => ({}));
+      const emberPool = Array.from({ length: EMBER_CAPACITY }, () => ({}));
+      const activeSmoke = [];
+      const freeSmoke = [];
+      const activeEmbers = [];
+      const freeEmbers = [];
+
+      let baseAccumulator = 0;
+      let trailAccumulator = 0;
+      let emberAccumulator = 0;
+      let baseSide = -1;
+      let previousEngine = null;
+
+      function resetEffects() {
+        activeSmoke.length = 0;
+        freeSmoke.length = 0;
+        for (let index = SMOKE_CAPACITY - 1; index >= 0; index -= 1) {
+          freeSmoke.push(index);
+        }
+
+        activeEmbers.length = 0;
+        freeEmbers.length = 0;
+        for (let index = EMBER_CAPACITY - 1; index >= 0; index -= 1) {
+          freeEmbers.push(index);
+        }
+
+        baseAccumulator = 0;
+        trailAccumulator = 0;
+        emberAccumulator = 0;
+        baseSide = -1;
+        previousEngine = null;
+        random = makeRng(0x51a7c0de);
+      }
+
+      function releaseSmoke(activeIndex) {
+        const poolIndex = activeSmoke[activeIndex];
+        const last = activeSmoke.pop();
+        if (activeIndex < activeSmoke.length) {
+          activeSmoke[activeIndex] = last;
+        }
+        freeSmoke.push(poolIndex);
+      }
+
+      function releaseEmber(activeIndex) {
+        const poolIndex = activeEmbers[activeIndex];
+        const last = activeEmbers.pop();
+        if (activeIndex < activeEmbers.length) {
+          activeEmbers[activeIndex] = last;
+        }
+        freeEmbers.push(poolIndex);
+      }
+
+      function createSmokeParticle(
+        x,
+        y,
+        vx,
+        vy,
+        radius,
+        endRadius,
+        life,
+        alpha,
+        layer,
+        buoyancy
+      ) {
+        if (!freeSmoke.length) return;
+        const poolIndex = freeSmoke.pop();
+        const particle = smokePool[poolIndex];
+        particle.x = x;
+        particle.y = y;
+        particle.vx = vx;
+        particle.vy = vy;
+        particle.radius = radius;
+        particle.endRadius = endRadius;
+        particle.life = life;
+        particle.age = 0;
+        particle.alpha = alpha;
+        particle.layer = layer;
+        particle.buoyancy = buoyancy;
+        particle.rotation = random() * TAU;
+        particle.spin = (random() - 0.5) * 0.35;
+        particle.phase = random() * TAU;
+        particle.frequency = 0.65 + random() * 1.15;
+        particle.drift = 2.5 + random() * 8;
+        particle.variant = Math.floor(random() * 4);
+        activeSmoke.push(poolIndex);
+      }
+
+      function spawnBaseSmoke(intensity) {
+        const unit = rocketHeight / 360;
+        baseSide *= -1;
+        const side = random() > 0.18 ? baseSide : -baseSide;
+        const spread = (18 + random() * 58) * unit;
+        const radius = (11 + random() * 12) * unit;
+        const layer = random() > 0.48 ? 2 : 1;
+        createSmokeParticle(
+          rocketX + side * spread + (random() - 0.5) * 18 * unit,
+          deckY + (3 + random() * 18) * unit,
+          side * (30 + random() * 82) * (0.7 + intensity * 0.45),
+          -8 - random() * 22,
+          radius,
+          radius * (3.5 + random() * 2.6),
+          3.2 + random() * 2,
+          0.5 + random() * 0.32,
+          layer,
+          -3 - random() * 7
+        );
+      }
+
+      function spawnTrailSmoke(x, y, altitude) {
+        const unit = rocketHeight / 360;
+        const radius = (7 + random() * 10) * unit * lerp(1.08, 0.55, altitude);
+        const thinning = lerp(1, 0.55, altitude);
+        createSmokeParticle(
+          x + (random() - 0.5) * 16 * unit,
+          y + random() * 8 * unit,
+          (random() - 0.5) * 30 + 6,
+          22 + random() * 52,
+          radius,
+          radius * (3 + random() * 2.2),
+          lerp(3.8, 2.2, altitude) + random() * 0.8,
+          (0.54 + random() * 0.25) * thinning,
+          0,
+          -12 - random() * 13
+        );
+      }
+
+      function spawnEmber(x, y, intensity) {
+        if (!freeEmbers.length) return;
+        const poolIndex = freeEmbers.pop();
+        const particle = emberPool[poolIndex];
+        const direction = random() * TAU;
+        const speed = (35 + random() * 120) * (0.65 + intensity * 0.5);
+        particle.x = x + (random() - 0.5) * 10;
+        particle.y = y;
+        particle.vx = Math.cos(direction) * speed;
+        particle.vy = Math.abs(Math.sin(direction)) * speed * 0.7 + 15;
+        particle.life = 0.28 + random() * 0.68;
+        particle.age = 0;
+        particle.size = 0.7 + random() * 1.7;
+        particle.warm = random() > 0.35;
+        activeEmbers.push(poolIndex);
+      }
+
+      function buildSmokeSprites() {
+        smokeSprites = [];
+        const spriteRandom = makeRng(0x5a0ce77e);
+        const tones = [
+          [242, 241, 229],
+          [220, 224, 220],
+          [190, 200, 202],
+          [151, 164, 171]
+        ];
+
+        for (let toneIndex = 0; toneIndex < tones.length; toneIndex += 1) {
+          for (let variant = 0; variant < 4; variant += 1) {
+            const sprite = document.createElement("canvas");
+            sprite.width = 128;
+            sprite.height = 128;
+            const spriteCtx = sprite.getContext("2d");
+            const tone = tones[toneIndex];
+            const lobes = 8 + variant;
+
+            for (let lobe = 0; lobe < lobes; lobe += 1) {
+              const angle = spriteRandom() * TAU;
+              const distance = lobe === 0 ? 0 : 5 + spriteRandom() * 24;
+              const x = 64 + Math.cos(angle) * distance;
+              const y = 64 + Math.sin(angle) * distance * 0.78;
+              const radius = lobe === 0 ? 40 : 20 + spriteRandom() * 25;
+              const gradient = spriteCtx.createRadialGradient(
+                x - radius * 0.14,
+                y - radius * 0.17,
+                radius * 0.08,
+                x,
+                y,
+                radius
+              );
+              gradient.addColorStop(0, "rgba(" + tone[0] + "," + tone[1] + "," + tone[2] + ",0.2)");
+              gradient.addColorStop(0.32, "rgba(" + tone[0] + "," + tone[1] + "," + tone[2] + ",0.14)");
+              gradient.addColorStop(0.72, "rgba(" + tone[0] + "," + tone[1] + "," + tone[2] + ",0.045)");
+              gradient.addColorStop(1, "rgba(" + tone[0] + "," + tone[1] + "," + tone[2] + ",0)");
+              spriteCtx.fillStyle = gradient;
+              spriteCtx.beginPath();
+              spriteCtx.arc(x, y, radius, 0, TAU);
+              spriteCtx.fill();
+            }
+            smokeSprites.push(sprite);
+          }
+        }
+      }
+
+      function buildGrain() {
+        grainCanvas = document.createElement("canvas");
+        grainCanvas.width = 192;
+        grainCanvas.height = 108;
+        const grainCtx = grainCanvas.getContext("2d");
+        const image = grainCtx.createImageData(grainCanvas.width, grainCanvas.height);
+        const grainRandom = makeRng(0xc1e3a71c);
+        for (let index = 0; index < image.data.length; index += 4) {
+          const value = 95 + Math.floor(grainRandom() * 160);
+          image.data[index] = value;
+          image.data[index + 1] = value;
+          image.data[index + 2] = value;
+          image.data[index + 3] = 85;
+        }
+        grainCtx.putImageData(image, 0, 0);
+      }
+
+      function resize() {
+        W = Math.max(1, window.innerWidth);
+        H = Math.max(1, window.innerHeight);
+        DPR = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(W * DPR);
+        canvas.height = Math.round(H * DPR);
+        canvas.style.width = W + "px";
+        canvas.style.height = H + "px";
+
+        horizonY = H * 0.64;
+        deckY = H * 0.77;
+        rocketX = W * (W < 620 ? 0.56 : 0.55);
+        rocketHeight = clamp(Math.min(W * 0.47, H * 0.43), 210, 382);
+        islandX = W * 0.5;
+        islandW = Math.min(W * (W < 620 ? 1.02 : 0.79), 1120);
+        particleDensity = clamp(
+          Math.sqrt((W * H) / (900 * 700)),
+          0.58,
+          1
+        ) * (REDUCED_MOTION ? 0.36 : 1);
+
+        skyGradient = ctx.createLinearGradient(0, -8, 0, horizonY + 28);
+        skyGradient.addColorStop(0, "#04091b");
+        skyGradient.addColorStop(0.23, "#091c3b");
+        skyGradient.addColorStop(0.52, "#214d72");
+        skyGradient.addColorStop(0.76, "#8f536d");
+        skyGradient.addColorStop(0.93, "#ee8a72");
+        skyGradient.addColorStop(1, "#ffc17e");
+
+        oceanGradient = ctx.createLinearGradient(0, horizonY, 0, H);
+        oceanGradient.addColorStop(0, "#18536b");
+        oceanGradient.addColorStop(0.35, "#0a3c57");
+        oceanGradient.addColorStop(1, "#031927");
+
+        vignetteGradient = ctx.createRadialGradient(
+          W * 0.51,
+          H * 0.44,
+          Math.min(W, H) * 0.2,
+          W * 0.51,
+          H * 0.44,
+          Math.max(W, H) * 0.72
+        );
+        vignetteGradient.addColorStop(0, "rgba(0,0,0,0)");
+        vignetteGradient.addColorStop(0.62, "rgba(0,4,16,0.03)");
+        vignetteGradient.addColorStop(1, "rgba(0,3,13,0.58)");
+
+        resetEffects();
+      }
+
+      function engineIntensity(time) {
+        if (time < 0.18 || time >= 7) return 0;
+        if (time < 1.45) return rangeStep(0.18, 1.45, time);
+        if (time < 4.8) return 1;
+        return lerp(1, 0.6, rangeStep(4.8, 7, time));
+      }
+
+      function getRocketState(time) {
+        const baseY = deckY - 7 * (rocketHeight / 360);
+        const state = {
+          x: rocketX,
+          y: baseY,
+          scale: 1,
+          visible: true,
+          engine: false,
+          altitude: 0,
+          returning: false
+        };
+
+        if (time < 1.5) {
+          state.engine = time > 0.18;
+          return state;
+        }
+
+        if (time < 7) {
+          const amount = inverseLerp(1.5, 7, time);
+          const acceleration = Math.pow(amount, 2.58);
+          const exitDistance = baseY + H * 0.22;
+          state.y = baseY - exitDistance * acceleration;
+          state.x += Math.sin(amount * Math.PI * 0.72) * W * 0.006;
+          state.scale = 1 - 0.34 * smoothstep(amount);
+          state.engine = true;
+          state.altitude = amount;
+          return state;
+        }
+
+        if (time < 12) {
+          state.visible = false;
+          return state;
+        }
+
+        if (time < 15.4) {
+          const amount = inverseLerp(12, 15.4, time);
+          const eased = smootherstep(amount);
+          state.scale = lerp(0.66, 1, eased);
+          const startY = -14 * (rocketHeight / 360);
+          const floatingEnvelope = Math.sin(Math.PI * amount);
+          state.x += Math.sin(amount * Math.PI * 4.2) * floatingEnvelope * Math.min(8, W * 0.012);
+          state.y = lerp(startY, baseY, eased)
+            + Math.sin(amount * Math.PI * 5) * floatingEnvelope * 3;
+          state.returning = true;
+          return state;
+        }
+
+        return state;
+      }
+
+      function updateEffects(delta, time) {
+        for (let index = activeSmoke.length - 1; index >= 0; index -= 1) {
+          const particle = smokePool[activeSmoke[index]];
+          particle.age += delta;
+          if (particle.age >= particle.life) {
+            releaseSmoke(index);
+            continue;
+          }
+          particle.vx += 1.7 * delta;
+          particle.vy += particle.buoyancy * delta;
+          particle.x += (
+            particle.vx
+            + Math.sin(particle.phase + particle.age * particle.frequency) * particle.drift
+          ) * delta;
+          particle.y += particle.vy * delta;
+          particle.rotation += particle.spin * delta;
+        }
+
+        for (let index = activeEmbers.length - 1; index >= 0; index -= 1) {
+          const particle = emberPool[activeEmbers[index]];
+          particle.age += delta;
+          if (particle.age >= particle.life) {
+            releaseEmber(index);
+            continue;
+          }
+          particle.vy += 92 * delta;
+          particle.x += particle.vx * delta;
+          particle.y += particle.vy * delta;
+        }
+
+        const density = particleDensity;
+        const state = getRocketState(time);
+        const intensity = engineIntensity(time);
+
+        let baseRate = 0;
+        if (time >= 0.18 && time < 1.5) {
+          baseRate = lerp(8, 88, rangeStep(0.18, 1.5, time));
+        } else if (time < 4) {
+          baseRate = lerp(108, 42, inverseLerp(1.5, 4, time));
+        } else if (time < 5.35) {
+          baseRate = lerp(34, 0, inverseLerp(4, 5.35, time));
+        }
+
+        baseAccumulator += baseRate * density * delta;
+        while (baseAccumulator >= 1) {
+          spawnBaseSmoke(intensity);
+          baseAccumulator -= 1;
+        }
+
+        if (state.visible && state.engine && intensity > 0) {
+          const unit = (rocketHeight / 360) * state.scale;
+          const engineX = state.x;
+          const engineY = state.y + 11 * unit;
+          const altitude = state.altitude;
+          let trailRate = time < 1.5
+            ? lerp(12, 58, intensity)
+            : lerp(76, 22, Math.pow(altitude, 1.4));
+          trailRate *= density;
+
+          if (!previousEngine) {
+            previousEngine = { x: engineX, y: engineY };
+          }
+
+          const distance = Math.hypot(
+            engineX - previousEngine.x,
+            engineY - previousEngine.y
+          );
+          trailAccumulator += trailRate * delta;
+          let count = Math.floor(trailAccumulator);
+          trailAccumulator -= count;
+          count += Math.min(8, Math.floor(distance / Math.max(10, 18 * unit)));
+
+          for (let index = 0; index < count; index += 1) {
+            const amount = count === 1
+              ? random()
+              : (index + random() * 0.8) / count;
+            spawnTrailSmoke(
+              lerp(previousEngine.x, engineX, amount),
+              lerp(previousEngine.y, engineY, amount),
+              altitude
+            );
+          }
+
+          const emberRate = (time < 1.5 ? 32 : lerp(72, 22, altitude)) * density;
+          emberAccumulator += emberRate * delta;
+          while (emberAccumulator >= 1) {
+            spawnEmber(engineX, engineY + 12 * unit, intensity);
+            emberAccumulator -= 1;
+          }
+
+          previousEngine.x = engineX;
+          previousEngine.y = engineY;
+        } else {
+          previousEngine = null;
+          trailAccumulator = 0;
+          emberAccumulator = 0;
+        }
+      }
+
+      function drawSky(sceneTime) {
+        ctx.fillStyle = skyGradient;
+        ctx.fillRect(-8, -8, W + 16, horizonY + 44);
+
+        const horizonGlow = ctx.createRadialGradient(
+          W * 0.24,
+          horizonY * 0.96,
+          0,
+          W * 0.24,
+          horizonY * 0.96,
+          Math.max(W, H) * 0.44
+        );
+        horizonGlow.addColorStop(0, "rgba(255,189,115,0.2)");
+        horizonGlow.addColorStop(0.4, "rgba(237,105,106,0.08)");
+        horizonGlow.addColorStop(1, "rgba(25,34,77,0)");
+        ctx.fillStyle = horizonGlow;
+        ctx.fillRect(0, 0, W, horizonY + 20);
+
+        for (const star of stars) {
+          const visibility = clamp(1 - star.y / 0.65, 0.1, 1);
+          const twinkle = 0.7 + Math.sin(sceneTime * star.speed + star.phase) * 0.3;
+          const alpha = star.alpha * visibility * (REDUCED_MOTION ? 0.82 : twinkle);
+          const x = star.x * W;
+          const y = star.y * H;
+          ctx.fillStyle = "rgba(235,245,255," + alpha + ")";
+          ctx.beginPath();
+          ctx.arc(x, y, star.radius, 0, TAU);
+          ctx.fill();
+
+          if (star.flare && alpha > 0.48) {
+            ctx.strokeStyle = "rgba(220,239,255," + (alpha * 0.35) + ")";
+            ctx.lineWidth = 0.55;
+            ctx.beginPath();
+            ctx.moveTo(x - star.radius * 3.4, y);
+            ctx.lineTo(x + star.radius * 3.4, y);
+            ctx.moveTo(x, y - star.radius * 3.4);
+            ctx.lineTo(x, y + star.radius * 3.4);
+            ctx.stroke();
+          }
+        }
+      }
+
+      function drawCloud(x, y, size, alpha) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(size, size);
+        ctx.globalAlpha = alpha;
+
+        const underside = ctx.createLinearGradient(0, -24, 0, 36);
+        underside.addColorStop(0, "rgba(224,229,236,0.92)");
+        underside.addColorStop(0.58, "rgba(208,204,216,0.75)");
+        underside.addColorStop(1, "rgba(255,171,154,0.42)");
+        ctx.fillStyle = underside;
+        ctx.beginPath();
+        ctx.ellipse(-45, 7, 48, 20, -0.04, 0, TAU);
+        ctx.ellipse(-12, -6, 44, 31, 0, 0, TAU);
+        ctx.ellipse(29, 2, 53, 25, 0.05, 0, TAU);
+        ctx.ellipse(64, 10, 34, 16, 0, 0, TAU);
+        ctx.fill();
+
+        ctx.globalAlpha *= 0.38;
+        ctx.fillStyle = "#b36f83";
+        ctx.beginPath();
+        ctx.ellipse(10, 17, 72, 13, 0, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawClouds(sceneTime) {
+        const baseSize = clamp(Math.min(W, H) / 720, 0.62, 1.45);
+        for (const cloud of clouds) {
+          const size = cloud.size * baseSize;
+          const width = 150 * size;
+          const rawX = cloud.x * W + sceneTime * cloud.speed;
+          const x = ((rawX + width) % (W + width * 2)) - width;
+          const float = REDUCED_MOTION
+            ? 0
+            : Math.sin(sceneTime * 0.18 + cloud.phase) * 2.5;
+          drawCloud(x, cloud.y * H + float, size, cloud.alpha);
+        }
+      }
+
+      function drawOcean(sceneTime, launchTime) {
+        ctx.fillStyle = oceanGradient;
+        ctx.fillRect(-8, horizonY, W + 16, H - horizonY + 12);
+
+        const reflection = ctx.createLinearGradient(0, horizonY, 0, H);
+        reflection.addColorStop(0, "rgba(255,181,126,0.22)");
+        reflection.addColorStop(0.42, "rgba(223,111,108,0.06)");
+        reflection.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = reflection;
+        ctx.beginPath();
+        ctx.moveTo(W * 0.14, horizonY);
+        ctx.lineTo(W * 0.39, horizonY);
+        ctx.lineTo(W * 0.58, H);
+        ctx.lineTo(W * 0.06, H);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, horizonY, W, H - horizonY);
+        ctx.clip();
+        const waveBands = 14;
+        for (let band = 0; band < waveBands; band += 1) {
+          const depth = band / (waveBands - 1);
+          const y = horizonY + 6 + depth * depth * (H - horizonY + 12);
+          const amplitude = 0.8 + depth * 3.8;
+          const frequency = lerp(0.023, 0.011, depth);
+          ctx.strokeStyle = band % 3 === 0
+            ? "rgba(122,210,219," + (0.13 + depth * 0.09) + ")"
+            : "rgba(224,232,216," + (0.055 + depth * 0.045) + ")";
+          ctx.lineWidth = 0.7 + depth * 0.85;
+          ctx.beginPath();
+          for (let x = -12; x <= W + 12; x += 13) {
+            const offset = Math.sin(
+              x * frequency
+              + sceneTime * (0.6 + band * 0.035)
+              + band * 0.91
+            ) * amplitude;
+            if (x === -12) ctx.moveTo(x, y + offset);
+            else ctx.lineTo(x, y + offset);
+          }
+          ctx.stroke();
+        }
+
+        let rippleStrength = 0;
+        if (launchTime < 4.8) {
+          rippleStrength = rangeStep(0.3, 1.2, launchTime)
+            * (1 - rangeStep(3.3, 4.8, launchTime));
+        }
+        if (rippleStrength > 0.01) {
+          ctx.lineWidth = 1.1;
+          for (let ring = 0; ring < 6; ring += 1) {
+            const age = (sceneTime * 0.62 + ring / 6) % 1;
+            const radius = lerp(34, islandW * 0.47, age);
+            ctx.strokeStyle = "rgba(163,230,230,"
+              + ((1 - age) * rippleStrength * 0.2) + ")";
+            ctx.beginPath();
+            ctx.ellipse(
+              rocketX,
+              deckY + H * 0.105,
+              radius,
+              radius * 0.09,
+              0,
+              Math.PI * 1.06,
+              Math.PI * 1.94
+            );
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+
+      function drawLaunchGlow(time) {
+        const intensity = engineIntensity(time);
+        if (intensity <= 0) return;
+        const unit = rocketHeight / 360;
+        const glow = ctx.createRadialGradient(
+          rocketX,
+          deckY + 12 * unit,
+          0,
+          rocketX,
+          deckY + 12 * unit,
+          230 * unit * (0.65 + intensity * 0.5)
+        );
+        glow.addColorStop(0, "rgba(255,244,177," + (0.5 * intensity) + ")");
+        glow.addColorStop(0.16, "rgba(255,157,52," + (0.3 * intensity) + ")");
+        glow.addColorStop(0.55, "rgba(234,73,28," + (0.09 * intensity) + ")");
+        glow.addColorStop(1, "rgba(222,59,20,0)");
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = glow;
+        ctx.fillRect(
+          rocketX - 250 * unit,
+          deckY - 170 * unit,
+          500 * unit,
+          340 * unit
+        );
+        ctx.restore();
+      }
+
+      function drawIsland(sceneTime) {
+        const sandY = H * 0.765;
+        const left = islandX - islandW * 0.5;
+        const right = islandX + islandW * 0.5;
+
+        ctx.fillStyle = "rgba(0,17,28,0.42)";
+        ctx.beginPath();
+        ctx.ellipse(islandX, H * 0.91, islandW * 0.5, H * 0.075, 0, 0, TAU);
+        ctx.fill();
+
+        const reef = ctx.createRadialGradient(
+          islandX,
+          H * 0.86,
+          islandW * 0.08,
+          islandX,
+          H * 0.86,
+          islandW * 0.55
+        );
+        reef.addColorStop(0, "rgba(70,174,159,0.18)");
+        reef.addColorStop(0.72, "rgba(29,118,126,0.1)");
+        reef.addColorStop(1, "rgba(20,88,99,0)");
+        ctx.fillStyle = reef;
+        ctx.beginPath();
+        ctx.ellipse(islandX, H * 0.87, islandW * 0.56, H * 0.105, 0, 0, TAU);
+        ctx.fill();
+
+        const sand = ctx.createLinearGradient(0, sandY, 0, H * 0.94);
+        sand.addColorStop(0, "#f4c982");
+        sand.addColorStop(0.48, "#c99152");
+        sand.addColorStop(1, "#75513d");
+        ctx.fillStyle = sand;
+        ctx.beginPath();
+        ctx.moveTo(left, H * 0.86);
+        ctx.bezierCurveTo(left + islandW * 0.08, H * 0.79, left + islandW * 0.17, sandY, left + islandW * 0.29, H * 0.76);
+        ctx.bezierCurveTo(islandX - islandW * 0.1, H * 0.73, islandX + islandW * 0.15, H * 0.74, right - islandW * 0.22, H * 0.765);
+        ctx.bezierCurveTo(right - islandW * 0.08, H * 0.78, right, H * 0.83, right, H * 0.87);
+        ctx.bezierCurveTo(right - islandW * 0.1, H * 0.93, left + islandW * 0.11, H * 0.95, left, H * 0.86);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(255,239,197,0.7)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(left + islandW * 0.02, H * 0.86);
+        ctx.bezierCurveTo(islandX - islandW * 0.25, H * 0.92, islandX + islandW * 0.27, H * 0.925, right - islandW * 0.02, H * 0.87);
+        ctx.stroke();
+
+        const green = ctx.createLinearGradient(0, H * 0.72, 0, H * 0.84);
+        green.addColorStop(0, "#4f8e46");
+        green.addColorStop(0.52, "#265c35");
+        green.addColorStop(1, "#123627");
+        ctx.fillStyle = green;
+        ctx.beginPath();
+        ctx.moveTo(left + islandW * 0.12, H * 0.82);
+        ctx.bezierCurveTo(left + islandW * 0.18, H * 0.735, islandX - islandW * 0.22, H * 0.72, islandX - islandW * 0.03, H * 0.745);
+        ctx.bezierCurveTo(islandX + islandW * 0.18, H * 0.71, right - islandW * 0.12, H * 0.75, right - islandW * 0.08, H * 0.82);
+        ctx.bezierCurveTo(islandX + islandW * 0.19, H * 0.845, islandX - islandW * 0.18, H * 0.845, left + islandW * 0.12, H * 0.82);
+        ctx.closePath();
+        ctx.fill();
+
+        for (const bush of bushes) {
+          const x = left + bush.x * islandW;
+          const y = H * (0.754 + bush.y * 0.32);
+          const sway = REDUCED_MOTION
+            ? 0
+            : Math.sin(sceneTime * 0.52 + bush.phase) * 1.2;
+          const radius = bush.radius * clamp(islandW / 820, 0.62, 1.25);
+          const colors = ["#326f3b", "#245932", "#3f7c40", "#1a482f"];
+          ctx.fillStyle = colors[bush.hue];
+          ctx.beginPath();
+          ctx.ellipse(x + sway, y, radius * 1.35, radius, 0, 0, TAU);
+          ctx.fill();
+          ctx.fillStyle = "rgba(115,151,65,0.24)";
+          ctx.beginPath();
+          ctx.ellipse(
+            x - radius * 0.28 + sway,
+            y - radius * 0.28,
+            radius * 0.48,
+            radius * 0.26,
+            -0.4,
+            0,
+            TAU
+          );
+          ctx.fill();
+        }
+
+        ctx.fillStyle = "rgba(50,38,39,0.68)";
+        ctx.beginPath();
+        ctx.ellipse(left + islandW * 0.11, H * 0.865, 22, 11, -0.15, 0, TAU);
+        ctx.ellipse(right - islandW * 0.15, H * 0.88, 29, 13, 0.12, 0, TAU);
+        ctx.fill();
+      }
+
+      function drawPalm(x, groundY, size, phase, sceneTime, foreground) {
+        const sway = REDUCED_MOTION
+          ? 0
+          : Math.sin(sceneTime * 0.44 + phase) * 4.5;
+        const topX = x + sway + size * 0.14;
+        const topY = groundY - size;
+
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.strokeStyle = foreground ? "#2c201d" : "#4e3225";
+        ctx.lineWidth = Math.max(4, size * 0.055);
+        ctx.beginPath();
+        ctx.moveTo(x, groundY);
+        ctx.bezierCurveTo(
+          x - size * 0.08,
+          groundY - size * 0.34,
+          x + size * 0.04,
+          groundY - size * 0.7,
+          topX,
+          topY
+        );
+        ctx.stroke();
+
+        ctx.strokeStyle = foreground ? "#8c5a32" : "#a16a3b";
+        ctx.lineWidth = Math.max(1.5, size * 0.018);
+        for (let segment = 1; segment < 8; segment += 1) {
+          const amount = segment / 8;
+          const y = lerp(groundY, topY, amount);
+          const trunkX = lerp(x, topX, amount) + Math.sin(amount * Math.PI) * -size * 0.02;
+          ctx.beginPath();
+          ctx.moveTo(trunkX - size * 0.025, y);
+          ctx.lineTo(trunkX + size * 0.025, y - size * 0.012);
+          ctx.stroke();
+        }
+
+        const frondColors = foreground
+          ? ["#0e3826", "#174a2c", "#225e32"]
+          : ["#1e5b35", "#2b7040", "#357943"];
+        const angles = [-2.9, -2.48, -2.08, -1.62, -1.08, -0.58, -0.16, 0.2];
+        for (let index = 0; index < angles.length; index += 1) {
+          const angle = angles[index] + sway * 0.0025;
+          const length = size * (0.45 + (index % 3) * 0.035);
+          const endX = topX + Math.cos(angle) * length;
+          const endY = topY + Math.sin(angle) * length * 0.47 + size * 0.07;
+          const controlX = topX + Math.cos(angle) * length * 0.5;
+          const controlY = topY + Math.sin(angle) * length * 0.2 - size * 0.09;
+          ctx.strokeStyle = frondColors[index % frondColors.length];
+          ctx.lineWidth = Math.max(2, size * 0.022);
+          ctx.beginPath();
+          ctx.moveTo(topX, topY);
+          ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+          ctx.stroke();
+
+          ctx.strokeStyle = "rgba(99,143,65,0.75)";
+          ctx.lineWidth = Math.max(0.65, size * 0.006);
+          for (let leaflet = 2; leaflet < 8; leaflet += 1) {
+            const amount = leaflet / 9;
+            const leafX = lerp(topX, endX, amount);
+            const leafY = lerp(topY, endY, amount)
+              - Math.sin(amount * Math.PI) * size * 0.05;
+            const normalX = -Math.sin(angle) * size * 0.055 * (1 - amount * 0.45);
+            const normalY = Math.cos(angle) * size * 0.032 * (1 - amount * 0.45);
+            ctx.beginPath();
+            ctx.moveTo(leafX - normalX, leafY - normalY);
+            ctx.lineTo(leafX + normalX, leafY + normalY);
+            ctx.stroke();
+          }
+        }
+
+        ctx.fillStyle = "#61452b";
+        for (let coconut = 0; coconut < 3; coconut += 1) {
+          ctx.beginPath();
+          ctx.arc(
+            topX + (coconut - 1) * size * 0.026,
+            topY + size * (0.02 + coconut * 0.012),
+            Math.max(2.2, size * 0.025),
+            0,
+            TAU
+          );
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawRearPalms(sceneTime) {
+        const left = islandX - islandW * 0.5;
+        const scale = clamp(Math.min(W, H) / 780, 0.68, 1.2);
+        drawPalm(left + islandW * 0.21, H * 0.81, 136 * scale, 0.7, sceneTime, false);
+        drawPalm(left + islandW * 0.79, H * 0.815, 112 * scale, 2.4, sceneTime, false);
+      }
+
+      function drawForegroundPalm(sceneTime) {
+        const left = islandX - islandW * 0.5;
+        const scale = clamp(Math.min(W, H) / 780, 0.68, 1.25);
+        drawPalm(left + islandW * 0.08, H * 0.875, 166 * scale, 4.2, sceneTime, true);
+      }
+
+      function towerReach(time) {
+        if (time < 1.18) return 1;
+        if (time < 1.82) return 1 - smootherstep(inverseLerp(1.18, 1.82, time));
+        if (time < 15.18) return 0;
+        return smootherstep(inverseLerp(15.18, 15.85, time));
+      }
+
+      function drawTowerBack(time) {
+        const unit = rocketHeight / 360;
+        const towerX = rocketX - 64 * unit;
+        const towerWidth = 42 * unit;
+        const top = deckY - rocketHeight * 0.77;
+        const base = deckY + 5 * unit;
+
+        ctx.save();
+        ctx.strokeStyle = "#25343d";
+        ctx.fillStyle = "#19262d";
+        ctx.lineWidth = Math.max(1.2, 2.2 * unit);
+        ctx.fillRect(towerX - 7 * unit, top, 8 * unit, base - top);
+        ctx.fillRect(towerX + towerWidth - unit, top, 8 * unit, base - top);
+
+        ctx.strokeStyle = "#65737a";
+        ctx.lineWidth = Math.max(0.75, 1.15 * unit);
+        const levels = 8;
+        for (let level = 0; level < levels; level += 1) {
+          const y1 = lerp(top, base, level / levels);
+          const y2 = lerp(top, base, (level + 1) / levels);
+          ctx.beginPath();
+          ctx.moveTo(towerX, y1);
+          ctx.lineTo(towerX + towerWidth, y2);
+          ctx.moveTo(towerX + towerWidth, y1);
+          ctx.lineTo(towerX, y2);
+          ctx.stroke();
+        }
+
+        for (let level = 1; level < 5; level += 1) {
+          const y = lerp(top, base, level / 5);
+          ctx.fillStyle = "#303d43";
+          ctx.fillRect(towerX - 15 * unit, y, towerWidth + 24 * unit, 5 * unit);
+          ctx.strokeStyle = "rgba(188,198,193,0.55)";
+          ctx.lineWidth = Math.max(0.6, 0.8 * unit);
+          for (let rail = 0; rail < 5; rail += 1) {
+            const railX = towerX - 10 * unit + rail * 13 * unit;
+            ctx.beginPath();
+            ctx.moveTo(railX, y);
+            ctx.lineTo(railX, y - 8 * unit);
+            ctx.stroke();
+          }
+          ctx.beginPath();
+          ctx.moveTo(towerX - 11 * unit, y - 8 * unit);
+          ctx.lineTo(towerX + towerWidth + 12 * unit, y - 8 * unit);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = "#6c252c";
+        ctx.beginPath();
+        ctx.arc(towerX + towerWidth * 0.5, top - 4 * unit, 3.2 * unit, 0, TAU);
+        ctx.fill();
+        const blink = 0.35 + Math.max(0, Math.sin(time * 4.2)) * 0.65;
+        ctx.fillStyle = "rgba(255,91,73," + blink + ")";
+        ctx.beginPath();
+        ctx.arc(towerX + towerWidth * 0.5, top - 4 * unit, 1.4 * unit, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawTowerArms(time) {
+        const reach = towerReach(time);
+        if (reach <= 0.01) return;
+        const unit = rocketHeight / 360;
+        const towerX = rocketX - 64 * unit;
+        const towerRight = towerX + 42 * unit;
+        const heights = [0.31, 0.57];
+
+        ctx.save();
+        ctx.strokeStyle = "#77858a";
+        ctx.fillStyle = "#344249";
+        ctx.lineCap = "square";
+        for (let index = 0; index < heights.length; index += 1) {
+          const y = deckY - rocketHeight * heights[index];
+          const endX = lerp(towerRight + 8 * unit, rocketX - 28 * unit, reach);
+          ctx.lineWidth = Math.max(2, 4.5 * unit);
+          ctx.beginPath();
+          ctx.moveTo(towerRight, y);
+          ctx.lineTo(endX, y + index * 4 * unit);
+          ctx.stroke();
+          ctx.lineWidth = Math.max(0.7, 1 * unit);
+          ctx.strokeStyle = "rgba(196,205,201,0.7)";
+          ctx.beginPath();
+          ctx.moveTo(towerRight, y - 5 * unit);
+          ctx.lineTo(endX, y + index * 4 * unit - 5 * unit);
+          ctx.lineTo(endX, y + index * 4 * unit + 5 * unit);
+          ctx.lineTo(towerRight, y + 5 * unit);
+          ctx.stroke();
+          ctx.strokeStyle = "#77858a";
+        }
+        ctx.restore();
+      }
+
+      function drawPadForeground() {
+        const unit = rocketHeight / 360;
+        const width = 138 * unit;
+        const left = rocketX - width * 0.5;
+
+        const concrete = ctx.createLinearGradient(0, deckY - 5 * unit, 0, deckY + 30 * unit);
+        concrete.addColorStop(0, "#697176");
+        concrete.addColorStop(0.25, "#3e494f");
+        concrete.addColorStop(1, "#18262d");
+        ctx.fillStyle = concrete;
+        ctx.fillRect(left, deckY - 5 * unit, width, 26 * unit);
+        ctx.fillStyle = "#121d22";
+        ctx.fillRect(rocketX - 32 * unit, deckY - 8 * unit, 64 * unit, 18 * unit);
+        ctx.fillStyle = "#0a1216";
+        ctx.beginPath();
+        ctx.ellipse(rocketX, deckY + 4 * unit, 25 * unit, 7 * unit, 0, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = "#26343a";
+        ctx.fillRect(left + 9 * unit, deckY + 20 * unit, 19 * unit, 27 * unit);
+        ctx.fillRect(left + width - 28 * unit, deckY + 20 * unit, 19 * unit, 27 * unit);
+        ctx.strokeStyle = "rgba(188,198,194,0.4)";
+        ctx.lineWidth = Math.max(0.65, unit);
+        for (let line = 0; line < 8; line += 1) {
+          const x = left + 5 * unit + line * 18 * unit;
+          ctx.beginPath();
+          ctx.moveTo(x, deckY);
+          ctx.lineTo(x, deckY + 20 * unit);
+          ctx.stroke();
+        }
+      }
+
+      function drawSmokeLayer(layer, time) {
+        const calmFade = time > 9.4 ? 1 - rangeStep(9.4, 11.75, time) : 1;
+        if (calmFade <= 0) return;
+
+        for (let activeIndex = 0; activeIndex < activeSmoke.length; activeIndex += 1) {
+          const particle = smokePool[activeSmoke[activeIndex]];
+          if (particle.layer !== layer) continue;
+          const age = particle.age / particle.life;
+          const fadeIn = clamp(age / 0.1, 0, 1);
+          const alpha = particle.alpha
+            * fadeIn
+            * Math.pow(1 - age, 1.42)
+            * calmFade;
+          if (alpha < 0.003) continue;
+          const growth = 1 - Math.pow(1 - age, 2.15);
+          const radius = lerp(particle.radius, particle.endRadius, growth);
+          const tone = Math.min(3, Math.floor(age * 4));
+          const sprite = smokeSprites[tone * 4 + particle.variant];
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.translate(particle.x, particle.y);
+          ctx.rotate(particle.rotation);
+          ctx.drawImage(sprite, -radius, -radius, radius * 2, radius * 2);
+          ctx.restore();
+        }
+      }
+
+      function drawEmbers() {
+        if (!activeEmbers.length || REDUCED_MOTION) return;
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.lineCap = "round";
+        for (const poolIndex of activeEmbers) {
+          const particle = emberPool[poolIndex];
+          const age = particle.age / particle.life;
+          const alpha = Math.pow(1 - age, 2);
+          ctx.strokeStyle = particle.warm
+            ? "rgba(255,174,62," + alpha + ")"
+            : "rgba(255,239,176," + alpha + ")";
+          ctx.lineWidth = particle.size * (1 - age * 0.55);
+          ctx.beginPath();
+          ctx.moveTo(particle.x, particle.y);
+          ctx.lineTo(
+            particle.x - particle.vx * 0.045,
+            particle.y - particle.vy * 0.045
+          );
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawHeatHaze(state, time, intensity) {
+        if (intensity < 0.08 || REDUCED_MOTION) return;
+        const unit = (rocketHeight / 360) * state.scale;
+        const engineY = state.y + 10 * unit;
+        const length = (38 + intensity * 100 + state.altitude * 38) * unit;
+
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.lineWidth = Math.max(0.7, 1.25 * unit);
+        for (let line = 0; line < 4; line += 1) {
+          const phase = time * (10.5 + line * 1.8) + line;
+          const width = (12 + line * 8) * unit;
+          ctx.strokeStyle = "rgba(255,210,153," + (0.045 * intensity) + ")";
+          ctx.beginPath();
+          ctx.moveTo(state.x - width, engineY + line * 13 * unit);
+          ctx.bezierCurveTo(
+            state.x + Math.sin(phase) * width,
+            engineY + length * 0.35,
+            state.x + Math.cos(phase * 0.8) * width,
+            engineY + length * 0.72,
+            state.x + Math.sin(phase * 1.2) * width * 0.35,
+            engineY + length
+          );
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawFlame(state, time, intensity) {
+        if (intensity <= 0.01) return;
+        const unit = (rocketHeight / 360) * state.scale;
+        const flicker = 1
+          + Math.sin(time * 37.1) * 0.055
+          + Math.sin(time * 63.7 + 1.2) * 0.035
+          + Math.sin(time * 19.3 + 2.1) * 0.028;
+        const length = (30 + 112 * intensity + 54 * state.altitude) * flicker;
+        const width = 21 + intensity * 9;
+
+        ctx.save();
+        ctx.translate(state.x, state.y + 7 * unit);
+        ctx.scale(unit, unit);
+        ctx.globalCompositeOperation = "lighter";
+
+        const bloom = ctx.createRadialGradient(0, length * 0.28, 0, 0, length * 0.28, length * 0.7);
+        bloom.addColorStop(0, "rgba(255,224,112," + (0.36 * intensity) + ")");
+        bloom.addColorStop(0.28, "rgba(255,112,28," + (0.18 * intensity) + ")");
+        bloom.addColorStop(1, "rgba(237,52,16,0)");
+        ctx.fillStyle = bloom;
+        ctx.beginPath();
+        ctx.ellipse(0, length * 0.38, length * 0.4, length * 0.7, 0, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(238,62,17,0.42)";
+        ctx.beginPath();
+        ctx.moveTo(-width, 0);
+        ctx.bezierCurveTo(
+          -width * 1.05,
+          length * 0.35,
+          -width * 0.38 + Math.sin(time * 29) * 5,
+          length * 0.78,
+          Math.sin(time * 41) * 4,
+          length
+        );
+        ctx.bezierCurveTo(
+          width * 0.35 + Math.cos(time * 31) * 4,
+          length * 0.75,
+          width,
+          length * 0.32,
+          width,
+          0
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#ff9d26";
+        ctx.beginPath();
+        ctx.moveTo(-width * 0.68, 0);
+        ctx.bezierCurveTo(
+          -width * 0.62,
+          length * 0.32,
+          -width * 0.25,
+          length * 0.65,
+          Math.sin(time * 52) * 3,
+          length * 0.82
+        );
+        ctx.bezierCurveTo(
+          width * 0.23,
+          length * 0.62,
+          width * 0.68,
+          length * 0.28,
+          width * 0.68,
+          0
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#fffbd4";
+        ctx.beginPath();
+        ctx.moveTo(-width * 0.34, 0);
+        ctx.bezierCurveTo(
+          -width * 0.3,
+          length * 0.2,
+          -width * 0.08,
+          length * 0.46,
+          Math.sin(time * 73) * 1.8,
+          length * 0.58
+        );
+        ctx.bezierCurveTo(
+          width * 0.12,
+          length * 0.42,
+          width * 0.35,
+          length * 0.18,
+          width * 0.34,
+          0
+        );
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function roundedRectPath(context, x, y, width, height, radius) {
+        const r = Math.min(radius, width * 0.5, height * 0.5);
+        context.beginPath();
+        context.moveTo(x + r, y);
+        context.lineTo(x + width - r, y);
+        context.quadraticCurveTo(x + width, y, x + width, y + r);
+        context.lineTo(x + width, y + height - r);
+        context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        context.lineTo(x + r, y + height);
+        context.quadraticCurveTo(x, y + height, x, y + height - r);
+        context.lineTo(x, y + r);
+        context.quadraticCurveTo(x, y, x + r, y);
+        context.closePath();
+      }
+
+      function drawRocket(state) {
+        if (!state.visible) return;
+        const unit = (rocketHeight / 360) * state.scale;
+
+        ctx.save();
+        ctx.translate(state.x, state.y);
+        ctx.scale(unit, unit);
+
+        ctx.fillStyle = "#17232e";
+        ctx.beginPath();
+        ctx.moveTo(-24, -65);
+        ctx.lineTo(-47, -8);
+        ctx.lineTo(-47, 4);
+        ctx.lineTo(-20, -5);
+        ctx.lineTo(-15, -47);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(24, -65);
+        ctx.lineTo(47, -8);
+        ctx.lineTo(47, 4);
+        ctx.lineTo(20, -5);
+        ctx.lineTo(15, -47);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#b94643";
+        ctx.beginPath();
+        ctx.moveTo(-27, -58);
+        ctx.lineTo(-42, -6);
+        ctx.lineTo(-22, -11);
+        ctx.lineTo(-17, -48);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(27, -58);
+        ctx.lineTo(42, -6);
+        ctx.lineTo(22, -11);
+        ctx.lineTo(17, -48);
+        ctx.closePath();
+        ctx.fill();
+
+        const firstStage = ctx.createLinearGradient(-31, 0, 31, 0);
+        firstStage.addColorStop(0, "#aeb9c1");
+        firstStage.addColorStop(0.13, "#e8ece8");
+        firstStage.addColorStop(0.48, "#fffdf2");
+        firstStage.addColorStop(0.78, "#e8e1d8");
+        firstStage.addColorStop(1, "#a76f68");
+        ctx.fillStyle = firstStage;
+        ctx.beginPath();
+        ctx.moveTo(-25, -178);
+        ctx.lineTo(-30, -163);
+        ctx.lineTo(-30, -27);
+        ctx.quadraticCurveTo(-29, -12, -23, -2);
+        ctx.lineTo(23, -2);
+        ctx.quadraticCurveTo(29, -12, 30, -27);
+        ctx.lineTo(30, -163);
+        ctx.lineTo(25, -178);
+        ctx.closePath();
+        ctx.fill();
+
+        const secondStage = ctx.createLinearGradient(-27, 0, 27, 0);
+        secondStage.addColorStop(0, "#9eaab5");
+        secondStage.addColorStop(0.17, "#ecf0ec");
+        secondStage.addColorStop(0.52, "#fffef5");
+        secondStage.addColorStop(0.84, "#e0d6cd");
+        secondStage.addColorStop(1, "#9c6663");
+        ctx.fillStyle = secondStage;
+        ctx.fillRect(-25, -257, 50, 68);
+
+        ctx.fillStyle = "#17212b";
+        ctx.fillRect(-27, -190, 54, 13);
+        ctx.fillStyle = "#34434c";
+        ctx.fillRect(-26, -189, 52, 3);
+        ctx.strokeStyle = "rgba(182,196,200,0.46)";
+        ctx.lineWidth = 0.8;
+        for (let brace = -21; brace <= 21; brace += 7) {
+          ctx.beginPath();
+          ctx.moveTo(brace, -188);
+          ctx.lineTo(brace + 5, -178);
+          ctx.stroke();
+        }
+
+        const fairing = ctx.createLinearGradient(-28, 0, 28, 0);
+        fairing.addColorStop(0, "#9ca9b5");
+        fairing.addColorStop(0.18, "#e7ecea");
+        fairing.addColorStop(0.5, "#fffdf1");
+        fairing.addColorStop(0.83, "#e6d7ce");
+        fairing.addColorStop(1, "#996565");
+        ctx.fillStyle = fairing;
+        ctx.beginPath();
+        ctx.moveTo(-25, -257);
+        ctx.bezierCurveTo(-25, -282, -16, -315, 0, -342);
+        ctx.bezierCurveTo(16, -315, 25, -282, 25, -257);
+        ctx.closePath();
+        ctx.fill();
+
+        const nose = ctx.createLinearGradient(-13, 0, 13, 0);
+        nose.addColorStop(0, "#111a28");
+        nose.addColorStop(0.5, "#304052");
+        nose.addColorStop(1, "#111725");
+        ctx.fillStyle = nose;
+        ctx.beginPath();
+        ctx.moveTo(-7.5, -329);
+        ctx.quadraticCurveTo(-3, -352, 0, -360);
+        ctx.quadraticCurveTo(3, -352, 7.5, -329);
+        ctx.quadraticCurveTo(0, -325, -7.5, -329);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#1c2730";
+        ctx.fillRect(-29, -31, 58, 13);
+        ctx.fillStyle = "#0a1118";
+        ctx.fillRect(-24, -18, 48, 16);
+
+        const bellPositions = [-17, -8.5, 0, 8.5, 17];
+        for (let index = 0; index < bellPositions.length; index += 1) {
+          const x = bellPositions[index];
+          const bellSize = index === 2 ? 6.2 : 5.2;
+          ctx.fillStyle = "#2f3b43";
+          ctx.beginPath();
+          ctx.moveTo(x - bellSize * 0.55, -5);
+          ctx.lineTo(x - bellSize, 7);
+          ctx.lineTo(x + bellSize, 7);
+          ctx.lineTo(x + bellSize * 0.55, -5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = "#070b0e";
+          ctx.beginPath();
+          ctx.ellipse(x, 7, bellSize, 2.5, 0, 0, TAU);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(198,132,94,0.52)";
+          ctx.lineWidth = 0.75;
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = "#d35b4e";
+        ctx.fillRect(-30, -122, 60, 18);
+        ctx.fillStyle = "#f2bd57";
+        ctx.fillRect(-30, -108, 60, 4);
+        ctx.fillStyle = "rgba(255,252,233,0.92)";
+        ctx.beginPath();
+        ctx.arc(-5, -113, 5.2, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = "#243344";
+        ctx.beginPath();
+        ctx.moveTo(-8, -113);
+        ctx.quadraticCurveTo(-2, -120, 5, -116);
+        ctx.quadraticCurveTo(0, -115, -4, -108);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#212e38";
+        ctx.fillRect(-25, -247, 50, 5);
+        ctx.fillRect(-25, -266, 50, 4);
+        ctx.fillStyle = "#be4d4b";
+        ctx.fillRect(-25, -233, 50, 3);
+
+        ctx.fillStyle = "#e6e7df";
+        roundedRectPath(ctx, 8, -235, 11, 16, 3);
+        ctx.fill();
+        ctx.strokeStyle = "#495968";
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.fillStyle = "#233343";
+        roundedRectPath(ctx, 10, -233, 7, 8, 1.8);
+        ctx.fill();
+        ctx.fillStyle = "#db6e55";
+        ctx.beginPath();
+        ctx.arc(13.5, -222, 1.2, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = "#f5eee2";
+        ctx.fillRect(-20, -151, 12, 8);
+        ctx.fillStyle = "#315b91";
+        ctx.fillRect(-20, -151, 4, 8);
+        ctx.fillStyle = "#f2e8da";
+        ctx.fillRect(-16, -151, 4, 8);
+        ctx.fillStyle = "#d05c55";
+        ctx.fillRect(-12, -151, 4, 8);
+
+        ctx.strokeStyle = "rgba(55,73,83,0.45)";
+        ctx.lineWidth = 0.7;
+        const seams = [-47, -76, -139, -163, -216, -250, -282];
+        for (const seam of seams) {
+          const halfWidth = seam < -190 ? 24.5 : 29.5;
+          ctx.beginPath();
+          ctx.moveTo(-halfWidth, seam);
+          ctx.lineTo(halfWidth, seam);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = "rgba(93,107,111,0.28)";
+        ctx.beginPath();
+        ctx.moveTo(-11, -171);
+        ctx.lineTo(-11, -34);
+        ctx.moveTo(12, -171);
+        ctx.lineTo(12, -34);
+        ctx.moveTo(0, -256);
+        ctx.lineTo(0, -194);
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(42,57,65,0.55)";
+        const rivetRows = [-46, -76, -139, -163, -216, -250];
+        for (const row of rivetRows) {
+          const edge = row < -190 ? 21 : 26;
+          for (let side = -1; side <= 1; side += 2) {
+            ctx.beginPath();
+            ctx.arc(side * edge, row - 2, 0.75, 0, TAU);
+            ctx.arc(side * edge, row + 2, 0.75, 0, TAU);
+            ctx.fill();
+          }
+        }
+
+        const highlight = ctx.createLinearGradient(-12, 0, 16, 0);
+        highlight.addColorStop(0, "rgba(255,255,255,0)");
+        highlight.addColorStop(0.5, "rgba(255,255,247,0.4)");
+        highlight.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = highlight;
+        ctx.fillRect(-11, -323, 22, 289);
+
+        ctx.strokeStyle = "rgba(23,34,44,0.7)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-25, -257);
+        ctx.bezierCurveTo(-25, -282, -16, -315, 0, -342);
+        ctx.bezierCurveTo(16, -315, 25, -282, 25, -257);
+        ctx.lineTo(25, -190);
+        ctx.moveTo(-25, -190);
+        ctx.lineTo(-25, -257);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      function drawForegroundFoliage(sceneTime) {
+        const left = islandX - islandW * 0.5;
+        ctx.save();
+        ctx.translate(left + islandW * 0.84, H * 0.84);
+        ctx.rotate(-0.1);
+        for (let leaf = 0; leaf < 11; leaf += 1) {
+          const angle = -2.8 + leaf * 0.29
+            + (REDUCED_MOTION ? 0 : Math.sin(sceneTime * 0.48 + leaf) * 0.014);
+          const length = 38 + (leaf % 4) * 11;
+          ctx.strokeStyle = leaf % 2 ? "#123e2c" : "#0a3025";
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(
+            Math.cos(angle) * length * 0.45,
+            Math.sin(angle) * length * 0.2 - 12,
+            Math.cos(angle) * length,
+            Math.sin(angle) * length
+          );
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function cameraShake(time) {
+        if (REDUCED_MOTION) return { x: 0, y: 0 };
+        let amount = 0;
+        if (time >= 0.25 && time < 1.5) {
+          amount = lerp(0, 2.8, rangeStep(0.25, 1.5, time));
+        } else if (time < 3.7) {
+          amount = lerp(2.8, 0, rangeStep(1.5, 3.7, time));
+        }
+        return {
+          x: (
+            Math.sin(time * 67)
+            + Math.sin(time * 113 + 0.7) * 0.45
+          ) * amount * 0.55,
+          y: (
+            Math.sin(time * 83 + 1.3)
+            + Math.sin(time * 137) * 0.35
+          ) * amount * 0.42
+        };
+      }
+
+      function drawFinish(sceneTime) {
+        ctx.save();
+        ctx.fillStyle = vignetteGradient;
+        ctx.fillRect(0, 0, W, H);
+        if (grainCanvas) {
+          ctx.globalAlpha = 0.032;
+          ctx.globalCompositeOperation = "soft-light";
+          const offsetX = REDUCED_MOTION ? 0 : (Math.floor(sceneTime * 11) % 3) - 1;
+          const offsetY = REDUCED_MOTION ? 0 : (Math.floor(sceneTime * 7) % 3) - 1;
+          ctx.drawImage(grainCanvas, offsetX, offsetY, W + 2, H + 2);
+        }
+        ctx.restore();
+      }
+
+      function drawTitle() {
+        const size = clamp(Math.min(W, H) * 0.024, 15, 20);
+        const x = clamp(W * 0.032, 18, 42);
+        const y = clamp(H * 0.055, 31, 52);
+        ctx.save();
+        ctx.font = "600 " + size + "px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "rgba(238,245,247,0.9)";
+        ctx.shadowColor = "rgba(0,0,0,0.28)";
+        ctx.shadowBlur = 8;
+        ctx.fillText("GPT-5.6 Sol", x, y);
+        ctx.restore();
+      }
+
+      function render(time, sceneTime) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+        drawSky(sceneTime);
+        const shake = cameraShake(time);
+
+        ctx.save();
+        ctx.translate(shake.x, shake.y);
+        drawClouds(sceneTime);
+        drawOcean(sceneTime, time);
+        drawLaunchGlow(time);
+        drawSmokeLayer(0, time);
+        drawIsland(sceneTime);
+        drawRearPalms(sceneTime);
+        drawTowerBack(time);
+        drawSmokeLayer(1, time);
+
+        const rocketState = getRocketState(time);
+        const intensity = engineIntensity(time);
+        if (rocketState.visible && rocketState.engine) {
+          drawHeatHaze(rocketState, time, intensity);
+          drawFlame(rocketState, time, intensity);
+        }
+        drawRocket(rocketState);
+        drawTowerArms(time);
+        drawPadForeground();
+        drawForegroundPalm(sceneTime);
+        drawForegroundFoliage(sceneTime);
+        drawSmokeLayer(2, time);
+        drawEmbers();
+        ctx.restore();
+
+        drawFinish(sceneTime);
+        drawTitle();
+      }
+
+      buildSmokeSprites();
+      buildGrain();
+      resetEffects();
+      resize();
+
+      const captureParameter = new URLSearchParams(window.location.search).get("t");
+      const requestedCaptureTime = captureParameter === null
+        ? null
+        : Number(captureParameter);
+      let visualTime = 0;
+      let previousCycleTime = 0;
+      let lastFrame = performance.now();
+
+      function simulateTo(time) {
+        resetEffects();
+        let simulated = 0;
+        const target = clamp(time, 0, CYCLE - 0.001);
+        while (simulated < target) {
+          const delta = Math.min(1 / 60, target - simulated);
+          simulated += delta;
+          updateEffects(delta, simulated);
+        }
+        visualTime = target;
+        previousCycleTime = target;
+        render(target, target);
+      }
+
+      function frame(now) {
+        const rawDelta = Math.min((now - lastFrame) / 1000, 0.05);
+        lastFrame = now;
+        if (!document.hidden) {
+          visualTime += rawDelta;
+        }
+
+        const cycleTime = visualTime % CYCLE;
+        if (cycleTime < previousCycleTime) {
+          resetEffects();
+        }
+        updateEffects(rawDelta, cycleTime);
+        render(cycleTime, visualTime);
+        previousCycleTime = cycleTime;
+        window.requestAnimationFrame(frame);
+      }
+
+      window.__rocketScene = {
+        cycle: CYCLE,
+        getState: () => getRocketState(visualTime % CYCLE),
+        getTime: () => visualTime % CYCLE,
+        renderAt: (time) => simulateTo(Number(time) || 0)
+      };
+
+      window.addEventListener("resize", () => {
+        resize();
+        if (Number.isFinite(requestedCaptureTime)) {
+          simulateTo(requestedCaptureTime);
+        }
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        lastFrame = performance.now();
+      });
+
+      if (Number.isFinite(requestedCaptureTime)) {
+        simulateTo(requestedCaptureTime);
+      } else {
+        window.requestAnimationFrame(frame);
+      }
+    })();
+  </script>
+</body>
+</html>

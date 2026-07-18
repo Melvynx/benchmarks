@@ -1,0 +1,2425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claude Sonnet 5</title>
+<style>
+  :root{
+    --ink:#1b120d;
+    --paper:#f4e9d8;
+    --accent:#b0202a;
+    --accent-dim:#7a1620;
+    --line:rgba(244,233,216,0.28);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:#000;
+    overflow:hidden;
+    font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;
+  }
+  #stage-wrap{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    background:#050301;
+  }
+  canvas#film{
+    display:block;
+    background:#000;
+    width:100%; height:100%;
+  }
+  /* ---------- Controls ---------- */
+  #hud{
+    position:fixed;
+    left:0; right:0; bottom:0;
+    z-index:20;
+    padding:14px 18px 16px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    background:linear-gradient(to top, rgba(5,3,1,0.86) 0%, rgba(5,3,1,0.55) 55%, rgba(5,3,1,0) 100%);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.5s ease;
+    font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+  }
+  #hud.visible{ opacity:1; pointer-events:auto; }
+  #scrubber-row{
+    position:relative;
+    width:100%;
+    height:22px;
+    display:flex;
+    align-items:center;
+    cursor:pointer;
+    touch-action:none;
+  }
+  #scrubber-track{
+    position:relative;
+    width:100%;
+    height:4px;
+    border-radius:2px;
+    background:rgba(244,233,216,0.22);
+    overflow:visible;
+  }
+  #scrubber-fill{
+    position:absolute; left:0; top:0; bottom:0;
+    width:0%;
+    background:var(--accent);
+    border-radius:2px;
+  }
+  .marker{
+    position:absolute;
+    top:50%;
+    width:7px; height:7px;
+    border-radius:50%;
+    background:var(--paper);
+    border:1px solid var(--accent-dim);
+    transform:translate(-50%,-50%);
+    cursor:pointer;
+  }
+  .marker:hover{ background:var(--accent); }
+  #scrub-handle{
+    position:absolute; top:50%;
+    width:13px; height:13px;
+    border-radius:50%;
+    background:var(--paper);
+    border:2px solid var(--accent);
+    transform:translate(-50%,-50%);
+    left:0%;
+    pointer-events:none;
+  }
+  #controls-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+    color:var(--paper);
+  }
+  .btn{
+    appearance:none;
+    border:1px solid var(--line);
+    background:rgba(27,18,13,0.55);
+    color:var(--paper);
+    font-family:inherit;
+    font-size:12.5px;
+    letter-spacing:0.03em;
+    padding:6px 11px;
+    border-radius:5px;
+    cursor:pointer;
+    line-height:1.2;
+    transition:background 0.2s, border-color 0.2s;
+  }
+  .btn:hover{ background:rgba(176,32,42,0.35); border-color:var(--accent); }
+  .btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .btn[aria-pressed="true"]{ background:var(--accent-dim); border-color:var(--accent); }
+  #speed-group{ display:flex; gap:4px; }
+  #seq-label{
+    margin-left:auto;
+    font-size:11.5px;
+    opacity:0.85;
+    white-space:nowrap;
+    letter-spacing:0.04em;
+  }
+  #caption-layer{
+    position:fixed;
+    left:0; right:0;
+    bottom:9%;
+    z-index:15;
+    display:flex;
+    justify-content:center;
+    pointer-events:none;
+    padding:0 6%;
+  }
+  #caption-text{
+    color:#fbf3e4;
+    font-size:clamp(15px, 2.6vw, 27px);
+    text-align:center;
+    text-shadow:0 2px 10px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9);
+    max-width:900px;
+    font-style:italic;
+    letter-spacing:0.01em;
+    opacity:0;
+    transition:opacity 0.35s ease;
+    font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+  }
+  #caption-text.show{ opacity:1; }
+  #sr-status{
+    position:absolute; width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);
+  }
+  @media (max-width:640px){
+    #controls-row{ gap:6px; }
+    .btn{ padding:5px 8px; font-size:11px; }
+    #seq-label{ width:100%; margin-left:0; order:10; text-align:center; }
+    #caption-layer{ bottom:12%; }
+  }
+</style>
+</head>
+<body>
+<div id="stage-wrap">
+  <canvas id="film" width="1600" height="900" role="img" aria-label="Little Red Riding Hood, an illustrated film"></canvas>
+</div>
+
+<div id="caption-layer" aria-hidden="false">
+  <div id="caption-text"></div>
+</div>
+
+<div id="hud" id="hud">
+  <div id="scrubber-row" role="slider" aria-label="Film position" aria-valuemin="0" aria-valuemax="112000" aria-valuenow="0" tabindex="0">
+    <div id="scrubber-track">
+      <div id="scrubber-fill"></div>
+      <div id="scrub-handle"></div>
+    </div>
+  </div>
+  <div id="controls-row">
+    <button class="btn" id="btn-play" aria-pressed="false" title="Play / Pause (Space)">Pause</button>
+    <button class="btn" id="btn-replay" title="Replay (Home)">Replay</button>
+    <div id="speed-group" role="group" aria-label="Playback speed">
+      <button class="btn" data-speed="0.5" title="0.5x speed">0.5×</button>
+      <button class="btn" data-speed="1" aria-pressed="true" title="1x speed">1×</button>
+      <button class="btn" data-speed="2" title="2x speed">2×</button>
+    </div>
+    <button class="btn" id="btn-captions" aria-pressed="true" title="Toggle captions">Captions</button>
+    <span id="seq-label">01 · The Basket</span>
+  </div>
+</div>
+
+<div id="sr-status" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* =========================================================================
+   DETERMINISTIC RNG
+   ========================================================================= */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashSeed(seed, salt){
+  let h = (seed ^ 0x9E3779B9) >>> 0;
+  for(let i=0;i<salt.length;i++){
+    h = Math.imul(h ^ salt.charCodeAt(i), 0x85EBCA6B) >>> 0;
+    h = (h ^ (h>>>13)) >>> 0;
+  }
+  return h >>> 0;
+}
+/* stable RNG stream keyed to a name; always reproducible for given seed */
+function streamRng(seed, name){
+  return mulberry32(hashSeed(seed, name));
+}
+/* deterministic pseudo-random value for a given (seed, name, t) - not time accumulating */
+function rand01(seed, name, n){
+  const r = streamRng(seed, name + ":" + n);
+  return r();
+}
+
+/* =========================================================================
+   FILM CONSTANTS
+   ========================================================================= */
+const DURATION = 112000;
+const DEFAULT_SEED = 1812;
+
+const SEQUENCES = [
+  { name: "The Basket",           start: 0,      end: 9000  },
+  { name: "The Red Departure",    start: 9000,   end: 18000 },
+  { name: "The Forest Threshold", start: 18000,  end: 27000 },
+  { name: "The Wolf Appears",     start: 27000,  end: 38000 },
+  { name: "The Question",         start: 38000,  end: 47000 },
+  { name: "The Race",             start: 47000,  end: 57000 },
+  { name: "At Grandmother's Door",start: 57000,  end: 66000 },
+  { name: "The Disguise",         start: 66000,  end: 75000 },
+  { name: "Red Arrives",          start: 75000,  end: 84000 },
+  { name: "What Big…",            start: 84000,  end: 95000 },
+  { name: "The Rescue",           start: 95000,  end: 104000},
+  { name: "The Path Home",        start: 104000, end: 112000}
+];
+
+const CAPTIONS = [
+  { start: 2600, end: 8200, text: "Stay on the path, and do not linger." },
+  { start: 28600, end: 34500, text: "Good morning, little traveler. Where does this path take you?" },
+  { start: 85200, end: 87600, text: "Grandmother, what big eyes you have." },
+  { start: 87700, end: 90000, text: "All the better to see you with." },
+  { start: 90200, end: 92200, text: "Grandmother, what big ears you have." },
+  { start: 92300, end: 94200, text: "All the better to hear you with." },
+  { start: 94300, end: 96200, text: "Grandmother, what big teeth you have." },
+  { start: 96300, end: 98600, text: "All the better to eat you with!" }
+];
+
+/* =========================================================================
+   CANVAS / RESPONSIVE SETUP
+   ========================================================================= */
+const canvas = document.getElementById('film');
+const ctx = canvas.getContext('2d');
+const BASE_W = 1600, BASE_H = 900;
+let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize(){
+  const wrap = document.getElementById('stage-wrap');
+  const vw = wrap.clientWidth, vh = wrap.clientHeight;
+  const targetAspect = BASE_W / BASE_H;
+  let w, h;
+  if (vw / vh > targetAspect) {
+    h = vh; w = h * targetAspect;
+  } else {
+    w = vw; h = w / targetAspect;
+  }
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  canvas.width = Math.round(BASE_W * dpr);
+  canvas.height = Math.round(BASE_H * dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* =========================================================================
+   FILM STATE
+   ========================================================================= */
+const state = {
+  seed: DEFAULT_SEED,
+  time: 0,
+  playing: true,
+  speed: 1,
+  captionsOn: true,
+  completed: false,
+  lastFrameWall: null,
+  rafId: null
+};
+
+function currentSequenceIndex(t){
+  for (let i=0;i<SEQUENCES.length;i++){
+    if (t < SEQUENCES[i].end || i === SEQUENCES.length-1) return i;
+  }
+  return SEQUENCES.length-1;
+}
+
+/* =========================================================================
+   COLOR / PALETTE HELPERS
+   ========================================================================= */
+function lerp(a,b,t){ return a+(b-a)*t; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+function easeOut(t){ return 1-Math.pow(1-t,3); }
+function easeIn(t){ return t*t*t; }
+function smooth01(t){ t=clamp(t,0,1); return t*t*(3-2*t); }
+
+function mixColor(c1, c2, t){
+  return [
+    Math.round(lerp(c1[0],c2[0],t)),
+    Math.round(lerp(c1[1],c2[1],t)),
+    Math.round(lerp(c1[2],c2[2],t))
+  ];
+}
+function rgb(c, a){
+  if (a===undefined) return `rgb(${c[0]},${c[1]},${c[2]})`;
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+
+/* Light arc across whole film: 0=warm village morn, ~0.16-0.66 forest/cottage danger, 1=changed dawn */
+function lightArcColor(tGlobal){
+  const p = tGlobal / DURATION;
+  const stops = [
+    {p:0.00, sky:[247,197,120], fog:[255,224,168], amb:[255,214,150]}, // warm morning
+    {p:0.16, sky:[214,176,132], fog:[224,196,158], amb:[224,190,140]}, // departure, still warm
+    {p:0.24, sky:[142,138,150], fog:[168,164,176], amb:[150,146,158]}, // forest threshold, cooling
+    {p:0.50, sky:[74,70,96],    fog:[104,98,124],  amb:[92,86,112]},   // deep forest / race, cold blue
+    {p:0.59, sky:[46,40,58],    fog:[70,62,84],    amb:[62,54,76]},    // cottage danger, darkest
+    {p:0.85, sky:[58,58,86],    fog:[86,84,112],   amb:[78,76,104]},   // rescue, breaking
+    {p:1.00, sky:[255,205,140], fog:[255,226,178], amb:[255,214,160]}  // changed dawn, warm again but softer
+  ];
+  let i=0;
+  while(i<stops.length-2 && p > stops[i+1].p) i++;
+  const a = stops[i], b = stops[i+1];
+  const span = (b.p - a.p) || 1;
+  const t = smooth01((p - a.p) / span);
+  return {
+    sky: mixColor(a.sky,b.sky,t),
+    fog: mixColor(a.fog,b.fog,t),
+    amb: mixColor(a.amb,b.amb,t)
+  };
+}
+
+/* scalar 0(bright day)..1(deep night) derived from a lightArcColor() result,
+   used to color-grade foliage/trees so they always harmonize with the sky */
+function moodFromColors(colors){
+  const lum = colors.sky[0]*0.3 + colors.sky[1]*0.59 + colors.sky[2]*0.11;
+  return clamp(1 - (lum-40)/150, 0, 1);
+}
+
+/* =========================================================================
+   RECURRING MOTIF: the red thread — a curving path/thread that evolves
+   ========================================================================= */
+function drawMotifThread(tGlobal, seed, intensity){
+  // A stylized red ribbon-thread that curls somewhere unobtrusive each scene,
+  // its knot count and curl amplitude slowly changing across the film.
+  const p = tGlobal / DURATION;
+  const knot = 2 + Math.floor(p*5); // grows across film 2..6
+  ctx.save();
+  ctx.globalAlpha = 0.5 * intensity;
+  ctx.strokeStyle = "#b0202a";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  const baseX = BASE_W - 90, baseY = 70;
+  ctx.beginPath();
+  const rr = streamRng(seed, "motif");
+  let x = baseX, y = baseY;
+  ctx.moveTo(x,y);
+  for(let i=0;i<knot;i++){
+    const amp = 14 + 8*Math.sin(p*Math.PI*2 + i);
+    const cx1 = x + (rr()-0.5)*amp*2;
+    const cy1 = y + 16 + (rr()-0.5)*10;
+    const cx2 = x + (rr()-0.5)*amp*2;
+    const cy2 = y + 32 + (rr()-0.5)*10;
+    const ex = x + (rr()-0.5)*amp;
+    const ey = y + 46;
+    ctx.bezierCurveTo(cx1,cy1,cx2,cy2,ex,ey);
+    x = ex; y = ey;
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* =========================================================================
+   GENERIC ENVIRONMENT: sky gradient, ground
+   ========================================================================= */
+function drawSky(colors, horizon){
+  const g = ctx.createLinearGradient(0,0,0,horizon);
+  g.addColorStop(0, rgb(mixColor(colors.sky,[10,8,14],0.18)));
+  g.addColorStop(0.6, rgb(colors.sky));
+  g.addColorStop(1, rgb(mixColor(colors.sky,[255,255,255],0.18)));
+  ctx.fillStyle = g;
+  // overlap well past the horizon — drawGround's top edge wobbles by up to ~10px,
+  // so this must exceed that or a seam gap shows through on the downward swings
+  ctx.fillRect(0,0,BASE_W,horizon+20);
+}
+
+function drawSun(cx, cy, r, colors, alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(cx,cy,0,cx,cy,r*3.4);
+  g.addColorStop(0, "rgba(255,244,214,0.9)");
+  g.addColorStop(0.35, "rgba(255,224,168,0.45)");
+  g.addColorStop(1, "rgba(255,224,168,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(cx,cy,r*3.4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = "#fff6e2";
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+/* Rolling hills / ground plane with soft painterly bands */
+function drawGround(horizon, colors, tone){
+  const bands = 4;
+  for(let i=0;i<bands;i++){
+    const t = i/(bands-1);
+    const y = horizon + (BASE_H-horizon)*t*0.72;
+    const h = (BASE_H-horizon) - (BASE_H-horizon)*t*0.6;
+    const c = mixColor(tone.near, tone.far, t);
+    ctx.fillStyle = rgb(c);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    for(let x=0;x<=BASE_W;x+=80){
+      const wob = Math.sin(x*0.01 + i*2.1)*10*(1-t);
+      ctx.lineTo(x, y+wob);
+    }
+    ctx.lineTo(BASE_W, BASE_H); ctx.lineTo(0,BASE_H); ctx.closePath();
+    ctx.fill();
+  }
+}
+
+/* =========================================================================
+   VIGNETTE / GRAIN / FILM TEXTURE
+   ========================================================================= */
+function drawVignette(strength){
+  const g = ctx.createRadialGradient(BASE_W/2,BASE_H/2, BASE_H*0.25, BASE_W/2,BASE_H/2, BASE_H*0.82);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, `rgba(0,0,0,${strength})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,BASE_W,BASE_H);
+}
+
+let grainCanvas = null;
+function getGrain(seed){
+  if (grainCanvas) return grainCanvas;
+  const gc = document.createElement('canvas');
+  gc.width = 220; gc.height = 124;
+  const gctx = gc.getContext('2d');
+  const img = gctx.createImageData(220,124);
+  const rr = streamRng(seed, "grain");
+  for(let i=0;i<img.data.length;i+=4){
+    const v = 255 * rr();
+    img.data[i]=v; img.data[i+1]=v; img.data[i+2]=v; img.data[i+3]=14;
+  }
+  gctx.putImageData(img,0,0);
+  grainCanvas = gc;
+  return gc;
+}
+function drawGrain(seed, alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(getGrain(seed), 0,0, BASE_W, BASE_H);
+  ctx.restore();
+}
+
+/* =========================================================================
+   FIGURE DRAWING — Red, Wolf, Grandmother, Mother, Woodsman
+   Each figure is drawn procedurally at (x,y) as ground-contact point,
+   with scale, facing, and a "phase" for cyclical animation (walk/breathe).
+   ========================================================================= */
+
+function walkCycle(phase){
+  // returns leg/arm swing offsets
+  const s = Math.sin(phase*Math.PI*2);
+  const s2 = Math.sin(phase*Math.PI*2 + Math.PI);
+  return { legA: s*10, legB: s2*10, armA: s2*8, armB: s*8, bob: Math.abs(Math.cos(phase*Math.PI*2))*4 };
+}
+
+function drawRed(x, y, scale, facing, phase, opts){
+  opts = opts || {};
+  const walk = opts.static ? {legA:0,legB:0,armA:0,armB:0,bob:0} : walkCycle(phase);
+  ctx.save();
+  ctx.translate(x, y - walk.bob*scale);
+  ctx.scale(facing*scale, scale);
+
+  // shadow
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.ellipse(0, walk.bob+4, 22, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // legs (dark charcoal)
+  ctx.strokeStyle = "#2b2530";
+  ctx.lineWidth = 7;
+  ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(-4,26); ctx.lineTo(-4+walk.legA*0.3, 46); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(4,26); ctx.lineTo(4+walk.legB*0.3, 46); ctx.stroke();
+  // shoes
+  ctx.fillStyle = "#181418";
+  ctx.beginPath(); ctx.ellipse(-4+walk.legA*0.3, 47, 6,3,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(4+walk.legB*0.3, 47, 6,3,0,0,Math.PI*2); ctx.fill();
+
+  // cape (red triangular, flows behind)
+  const sway = Math.sin(phase*Math.PI*2)*6;
+  ctx.fillStyle = "#b0202a";
+  ctx.beginPath();
+  ctx.moveTo(-14,-10);
+  ctx.quadraticCurveTo(-20+sway, 20, -10+sway*0.6, 40);
+  ctx.lineTo(10+sway*0.6, 40);
+  ctx.quadraticCurveTo(20+sway, 20, 14,-10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.save();
+  ctx.globalAlpha=0.18; ctx.fillStyle="#5c0f16";
+  ctx.beginPath();
+  ctx.moveTo(2,-8); ctx.quadraticCurveTo(6+sway*0.5,18, 4+sway*0.4, 38); ctx.lineTo(10+sway*0.6,40);
+  ctx.quadraticCurveTo(20+sway,20,14,-10); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // body (charcoal dress underneath, visible at hem)
+  ctx.fillStyle = "#2f2a3a";
+  ctx.beginPath();
+  ctx.moveTo(-9,10); ctx.lineTo(9,10); ctx.lineTo(11,36); ctx.lineTo(-11,36); ctx.closePath();
+  ctx.fill();
+
+  // arms
+  ctx.strokeStyle = "#2f2a3a";
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(-9,14); ctx.lineTo(-14+walk.armA*0.4, 30); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(9,14); ctx.lineTo(14+walk.armB*0.4, 30); ctx.stroke();
+  // hands
+  ctx.fillStyle = "#e8c9a6";
+  ctx.beginPath(); ctx.arc(-14+walk.armA*0.4, 31, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(14+walk.armB*0.4, 31, 3, 0, Math.PI*2); ctx.fill();
+
+  // basket (oval woven) hangs from forward arm
+  if (!opts.hideBasket){
+    const bx = 14+walk.armB*0.4, by = 34;
+    ctx.save();
+    ctx.translate(bx,by);
+    ctx.fillStyle = "#8a5a34";
+    ctx.beginPath(); ctx.ellipse(0,4,9,6,0,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "#6b431f"; ctx.lineWidth = 1;
+    for(let i=-7;i<=7;i+=3.5){ ctx.beginPath(); ctx.moveTo(i,-1); ctx.lineTo(i,9); ctx.stroke(); }
+    ctx.strokeStyle="#5a3618"; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.ellipse(0,-2,8,3.2,0,Math.PI,Math.PI*2); ctx.stroke();
+    if (opts.basketFull !== false){
+      ctx.fillStyle = "#e8dcc0";
+      ctx.beginPath(); ctx.moveTo(-6,-2); ctx.lineTo(6,-2); ctx.lineTo(4,-8); ctx.lineTo(-4,-8); ctx.closePath(); ctx.fill();
+      if (opts.basketFlowers){
+        ["#e6dfe8","#f0c94a","#e88fae"].forEach((c,i)=>{
+          ctx.fillStyle=c;
+          ctx.beginPath(); ctx.arc(-4+i*4,-9,2.3,0,Math.PI*2); ctx.fill();
+        });
+      }
+    }
+    ctx.restore();
+  }
+
+  // neck + head
+  ctx.fillStyle = "#e8c9a6";
+  ctx.beginPath(); ctx.arc(0,4,7,0,Math.PI*2); ctx.fill();
+
+  // hood (red triangular, unmistakable)
+  ctx.fillStyle = "#b0202a";
+  ctx.beginPath();
+  ctx.moveTo(-11,4);
+  ctx.quadraticCurveTo(-13,-16,0,-19);
+  ctx.quadraticCurveTo(13,-16,11,4);
+  ctx.quadraticCurveTo(6,-2,0,-2);
+  ctx.quadraticCurveTo(-6,-2,-11,4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.save();
+  ctx.globalAlpha=0.2; ctx.fillStyle="#5c0f16";
+  ctx.beginPath(); ctx.moveTo(2,-2); ctx.quadraticCurveTo(9,-10,7,2); ctx.quadraticCurveTo(4,-1,2,-2); ctx.fill();
+  ctx.restore();
+
+  // face hint (small, childlike — features minimal, expressive via posture)
+  if (opts.face !== false){
+    ctx.fillStyle = "#3a2a20";
+    const eyeY = 3, look = opts.lookX || 0;
+    ctx.beginPath(); ctx.arc(-2.6+look, eyeY, 0.9, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(2.6+look, eyeY, 0.9, 0, Math.PI*2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawWolf(x, y, scale, facing, phase, opts){
+  opts = opts || {};
+  const walk = opts.static ? {legA:0,legB:0,armA:0,armB:0,bob:0} : walkCycle(phase*1.3);
+  const crouch = opts.crouch || 0;
+  ctx.save();
+  ctx.translate(x, y - walk.bob*scale*0.5 + crouch*scale*6);
+  ctx.scale(facing*scale, scale);
+
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = "#000";
+  ctx.beginPath(); ctx.ellipse(4, 30+crouch*6, 32,7,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  const coat = "#5a5866";
+  const coatDark = "#3c3a48";
+  const belly = "#c9c3bb";
+
+  // hind legs
+  ctx.strokeStyle = coatDark; ctx.lineWidth = 8; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(-14,10+crouch*4); ctx.lineTo(-16+walk.legA*0.3, 30+crouch*6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(20,8+crouch*4); ctx.lineTo(22+walk.legB*0.3, 30+crouch*6); ctx.stroke();
+  // paws
+  ctx.fillStyle = "#232128";
+  ctx.beginPath(); ctx.ellipse(-16+walk.legA*0.3,31+crouch*6,5,2.6,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(22+walk.legB*0.3,31+crouch*6,5,2.6,0,0,Math.PI*2); ctx.fill();
+
+  // body — elongated, larger than Red, dark silver coat
+  ctx.fillStyle = coat;
+  ctx.beginPath();
+  ctx.moveTo(-20,6+crouch*4);
+  ctx.quadraticCurveTo(-4,-8-crouch*2,22,-2-crouch*3);
+  ctx.quadraticCurveTo(30,4,24,16+crouch*4);
+  ctx.quadraticCurveTo(0,22+crouch*3,-20,14+crouch*3);
+  ctx.closePath();
+  ctx.fill();
+  // belly patch
+  ctx.fillStyle = belly;
+  ctx.beginPath();
+  ctx.ellipse(2,12+crouch*3, 15,6, 0.15, 0, Math.PI*2);
+  ctx.fill();
+
+  // tail
+  const tailSway = Math.sin(phase*Math.PI*2)*8;
+  ctx.strokeStyle = coatDark; ctx.lineWidth=6; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(-19,8+crouch*4);
+  ctx.quadraticCurveTo(-32,4+tailSway*0.4, -30+tailSway, -6+tailSway*0.3);
+  ctx.stroke();
+
+  // front legs
+  ctx.strokeStyle = coatDark; ctx.lineWidth=7;
+  ctx.beginPath(); ctx.moveTo(16,10+crouch*3); ctx.lineTo(16+walk.armA*0.3, 30+crouch*5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(23,8+crouch*3); ctx.lineTo(24+walk.armB*0.3, 30+crouch*5); ctx.stroke();
+  ctx.fillStyle="#232128";
+  ctx.beginPath(); ctx.ellipse(16+walk.armA*0.3,31+crouch*5,4.6,2.4,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(24+walk.armB*0.3,31+crouch*5,4.6,2.4,0,0,Math.PI*2); ctx.fill();
+
+  // neck ruff
+  ctx.fillStyle = coat;
+  ctx.beginPath(); ctx.ellipse(22,-2-crouch*2, 9,8,0,0,Math.PI*2); ctx.fill();
+
+  // head — long narrow muzzle
+  ctx.save();
+  ctx.translate(30, -6-crouch*3);
+  ctx.rotate((opts.headTurn||0));
+  ctx.fillStyle = coat;
+  ctx.beginPath();
+  ctx.moveTo(-8,-6);
+  ctx.quadraticCurveTo(4,-10,16,-3);
+  ctx.quadraticCurveTo(19,0,15,3);
+  ctx.quadraticCurveTo(2,2,-9,4);
+  ctx.closePath();
+  ctx.fill();
+  // muzzle underside
+  ctx.fillStyle = belly;
+  ctx.beginPath();
+  ctx.moveTo(-4,2); ctx.quadraticCurveTo(6,3,15,2); ctx.quadraticCurveTo(10,6,-2,6); ctx.closePath(); ctx.fill();
+  // nose
+  ctx.fillStyle = "#1c1a20";
+  ctx.beginPath(); ctx.ellipse(15.5,0,2,1.6,0,0,Math.PI*2); ctx.fill();
+  // ears — one notch in left ear (screen-left when facing right = far ear)
+  ctx.fillStyle = coatDark;
+  ctx.beginPath(); ctx.moveTo(-6,-6); ctx.lineTo(-9,-16); ctx.lineTo(-1,-8); ctx.closePath(); ctx.fill(); // right ear (near)
+  ctx.beginPath();
+  ctx.moveTo(-1,-7); ctx.lineTo(-3,-17); ctx.lineTo(-1,-13); ctx.lineTo(2,-16); ctx.lineTo(5,-8); ctx.closePath(); ctx.fill(); // left ear w/ notch
+  // amber eye
+  if (opts.eyesGlow){
+    ctx.save();
+    ctx.shadowColor = "rgba(230,160,30,0.9)";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = "#e6a020";
+    ctx.beginPath(); ctx.ellipse(2,-3,2.6,1.9,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#e6a020";
+    ctx.beginPath(); ctx.ellipse(2,-3,2.2,1.6,0,0,Math.PI*2); ctx.fill();
+  }
+  ctx.fillStyle="#1c1a20";
+  ctx.beginPath(); ctx.ellipse(2.6,-3,0.9,1.3,0,0,Math.PI*2); ctx.fill();
+
+  if (opts.grin){
+    ctx.strokeStyle = "#1c1a20";
+    ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.moveTo(-6,4); ctx.quadraticCurveTo(6,7,15,2); ctx.stroke();
+    if (opts.teeth){
+      ctx.fillStyle = "#f5f0e6";
+      for(let i=0;i<5;i++){
+        ctx.beginPath();
+        ctx.moveTo(-4+i*3.6,3.6);
+        ctx.lineTo(-2.6+i*3.6,3.6);
+        ctx.lineTo(-3.3+i*3.6, 6.4);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  }
+  ctx.restore(); // head
+
+  ctx.restore();
+}
+
+function drawGrandmother(x,y,scale,facing,opts){
+  opts = opts || {};
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(facing*scale, scale);
+
+  // seated/standing figure, silver hair high, round spectacles, quilt motif nearby handled by caller
+  ctx.fillStyle = "#efe6d8";
+  ctx.beginPath();
+  ctx.moveTo(-13,8); ctx.quadraticCurveTo(-15,34,-10,40); ctx.lineTo(10,40);
+  ctx.quadraticCurveTo(15,34,13,8); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle="#d8c9a6"; ctx.lineWidth=1;
+  for(let i=-9;i<=9;i+=6){ ctx.beginPath(); ctx.moveTo(i,10); ctx.lineTo(i*1.15,38); ctx.stroke(); }
+
+  // arms
+  ctx.strokeStyle = "#efe6d8"; ctx.lineWidth=6; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(-11,14); ctx.lineTo(-17,26); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(11,14); ctx.lineTo(17,26); ctx.stroke();
+  ctx.fillStyle="#e8c9a6";
+  ctx.beginPath(); ctx.arc(-17,27,3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(17,27,3,0,Math.PI*2); ctx.fill();
+
+  // neck+head
+  ctx.fillStyle = "#e8c9a6";
+  ctx.beginPath(); ctx.arc(0,3,7.5,0,Math.PI*2); ctx.fill();
+  // silver hair gathered high
+  ctx.fillStyle = "#d8d6de";
+  ctx.beginPath(); ctx.ellipse(0,-8,7,6,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0,-13,4,4,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-9,2,3.6,5,0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(9,2,3.6,5,-0.3,0,Math.PI*2); ctx.fill();
+
+  // spectacles
+  ctx.strokeStyle = "#3a3a3a"; ctx.lineWidth=1.1;
+  ctx.beginPath(); ctx.arc(-3,3,2.6,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(3,3,2.6,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-0.4,3); ctx.lineTo(0.4,3); ctx.stroke();
+
+  if (opts.expression === "worried"){
+    ctx.strokeStyle="#5c4632"; ctx.lineWidth=0.8;
+    ctx.beginPath(); ctx.arc(0,8,3,0.15*Math.PI,0.85*Math.PI); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawMother(x,y,scale,facing){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(facing*scale, scale);
+  ctx.fillStyle = "#7a5a48";
+  ctx.beginPath();
+  ctx.moveTo(-12,8); ctx.quadraticCurveTo(-15,36,-10,44); ctx.lineTo(10,44);
+  ctx.quadraticCurveTo(15,36,12,8); ctx.closePath(); ctx.fill();
+  // white apron
+  ctx.fillStyle = "#f4ede0";
+  ctx.beginPath();
+  ctx.moveTo(-8,14); ctx.lineTo(8,14); ctx.lineTo(10,40); ctx.lineTo(-10,40); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle="#e0d6c0"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(-8,14); ctx.lineTo(-4,8); ctx.lineTo(4,8); ctx.lineTo(8,14); ctx.stroke();
+
+  ctx.strokeStyle = "#7a5a48"; ctx.lineWidth=5; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(-10,14); ctx.lineTo(-16,28); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(10,14); ctx.lineTo(16,26); ctx.stroke();
+
+  ctx.fillStyle = "#e8c9a6";
+  ctx.beginPath(); ctx.arc(0,3,7,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = "#4a3324";
+  ctx.beginPath(); ctx.arc(0,-3,7.4,Math.PI,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-7,3,2.6,5,0.2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(7,3,2.6,5,-0.2,0,Math.PI*2); ctx.fill();
+  // small red ribbon echoing Red's hood
+  ctx.fillStyle = "#b0202a";
+  ctx.beginPath(); ctx.ellipse(0,-8,2.6,2,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawWoodsman(x,y,scale,facing,phase,opts){
+  opts = opts || {};
+  const walk = opts.static ? {legA:0,legB:0,armA:0,armB:0,bob:0} : walkCycle(phase);
+  ctx.save();
+  ctx.translate(x,y-walk.bob*scale);
+  ctx.scale(facing*scale, scale);
+
+  ctx.save(); ctx.globalAlpha=0.28; ctx.fillStyle="#000";
+  ctx.beginPath(); ctx.ellipse(0,walk.bob+4,24,6,0,0,Math.PI*2); ctx.fill(); ctx.restore();
+
+  // legs
+  ctx.strokeStyle = "#3a2c22"; ctx.lineWidth=9; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(-5,28); ctx.lineTo(-5+walk.legA*0.3,52); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(5,28); ctx.lineTo(5+walk.legB*0.3,52); ctx.stroke();
+  ctx.fillStyle="#201812";
+  ctx.beginPath(); ctx.ellipse(-5+walk.legA*0.3,53,6.5,3,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(5+walk.legB*0.3,53,6.5,3,0,0,Math.PI*2); ctx.fill();
+
+  // broad ochre outerwear
+  ctx.fillStyle = "#b9782f";
+  ctx.beginPath();
+  ctx.moveTo(-16,10); ctx.lineTo(16,10); ctx.lineTo(19,40); ctx.lineTo(-19,40); ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle="#8a5620"; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(0,10); ctx.lineTo(0,40); ctx.stroke();
+
+  // arms
+  ctx.strokeStyle = "#b9782f"; ctx.lineWidth=7; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(-15,14); ctx.lineTo(-20+walk.armA*0.3,32); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(15,14); ctx.lineTo(20+walk.armB*0.3,32); ctx.stroke();
+  ctx.fillStyle="#e8c9a6";
+  ctx.beginPath(); ctx.arc(-20+walk.armA*0.3,33,3.4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(20+walk.armB*0.3,33,3.4,0,Math.PI*2); ctx.fill();
+
+  // recognizable axe silhouette (protective, not graphic) carried on shoulder
+  if (opts.axe !== false){
+    ctx.save();
+    ctx.translate(18,4);
+    ctx.rotate(-0.5);
+    ctx.strokeStyle = "#5c3d1c"; ctx.lineWidth=3; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(0,-4); ctx.lineTo(0,24); ctx.stroke();
+    ctx.fillStyle = "#8c8c96";
+    ctx.beginPath();
+    ctx.moveTo(-2,-4); ctx.lineTo(-13,-10); ctx.lineTo(-13,2); ctx.lineTo(-2,4); ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle="#5a5a62"; ctx.lineWidth=0.8; ctx.stroke();
+    ctx.restore();
+  }
+
+  // neck + head
+  ctx.fillStyle = "#e0b088";
+  ctx.beginPath(); ctx.arc(0,4,8,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = "#4a3324";
+  ctx.beginPath(); ctx.arc(0,-2,8.4,Math.PI,Math.PI*2); ctx.fill();
+  // beard
+  ctx.fillStyle="#5c4632";
+  ctx.beginPath(); ctx.ellipse(0,9,6,5,0,0,Math.PI); ctx.fill();
+
+  ctx.restore();
+}
+
+/* =========================================================================
+   ENVIRONMENT PIECES
+   ========================================================================= */
+function drawCottage(x,y,scale,opts){
+  opts = opts || {};
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(scale,scale);
+
+  // shadow
+  ctx.save(); ctx.globalAlpha=0.25; ctx.fillStyle="#000";
+  ctx.beginPath(); ctx.ellipse(0,4,110,16,0,0,Math.PI*2); ctx.fill(); ctx.restore();
+
+  // main structure
+  ctx.fillStyle = opts.dark ? "#3a3428" : "#8a6a44";
+  ctx.beginPath();
+  ctx.moveTo(-90,0); ctx.lineTo(-90,-70); ctx.lineTo(90,-70); ctx.lineTo(90,0); ctx.closePath();
+  ctx.fill();
+  // roof
+  ctx.fillStyle = opts.dark ? "#26221c" : "#5c4020";
+  ctx.beginPath();
+  ctx.moveTo(-102,-70); ctx.lineTo(0,-128); ctx.lineTo(102,-70); ctx.closePath();
+  ctx.fill();
+  // roof shadow line
+  ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(-102,-70); ctx.lineTo(0,-128); ctx.stroke();
+
+  // door
+  const doorGlow = opts.doorGlow || 0;
+  ctx.fillStyle = opts.doorOpen ? (opts.dark ? "#0c0a08" : "#241a10") : "#4a3018";
+  ctx.beginPath();
+  ctx.moveTo(-18,0); ctx.lineTo(-18,-46); ctx.quadraticCurveTo(0,-56,18,-46); ctx.lineTo(18,0); ctx.closePath();
+  ctx.fill();
+  if (doorGlow>0){
+    ctx.save(); ctx.globalAlpha = doorGlow*0.5;
+    const g = ctx.createRadialGradient(0,-20,4,0,-20,50);
+    g.addColorStop(0,"rgba(255,190,90,0.9)"); g.addColorStop(1,"rgba(255,190,90,0)");
+    ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,-20,40,50,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  // window with warm/cold light
+  const winColor = opts.windowLit ? "rgba(255,196,110,0.92)" : "rgba(40,40,54,0.85)";
+  [[-52,-46],[52,-46]].forEach(([wx,wy])=>{
+    ctx.fillStyle = winColor;
+    ctx.fillRect(wx-14,wy-14,28,28);
+    ctx.strokeStyle = "#2a1c10"; ctx.lineWidth=2;
+    ctx.strokeRect(wx-14,wy-14,28,28);
+    ctx.beginPath(); ctx.moveTo(wx-14,wy); ctx.lineTo(wx+14,wy); ctx.moveTo(wx,wy-14); ctx.lineTo(wx,wy+14); ctx.stroke();
+    if (opts.silhouette){
+      ctx.save();
+      ctx.fillStyle = "rgba(20,14,10,0.85)";
+      ctx.beginPath(); ctx.ellipse(wx,wy+3,7,9,0,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  });
+
+  // three old oak trees behind, per fixed geography
+  if (opts.oaks !== false){
+    const mood = opts.mood===undefined ? (opts.dark?1:0) : opts.mood;
+    [[-150,-40,1.1],[0,-150,1.35],[150,-30,1.05]].forEach(([ox,oy,os])=>{
+      drawOak(ox,oy,os, mood);
+    });
+  }
+
+  ctx.restore();
+}
+
+/* mood: 0 = warm daylight green, 1 = deep cold night — foliage always harmonizes with the sky */
+function drawOak(x,y,scale,mood){
+  mood = mood===undefined ? 0 : clamp(mood,0,1);
+  const trunkColor = mixColor([104,78,54],[36,30,34],mood);
+  const foliageBack = mixColor([54,84,46],[42,42,64],mood);
+  const foliageMain = mixColor([70,104,58],[54,54,80],mood);
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(scale,scale);
+  ctx.strokeStyle = rgb(trunkColor);
+  ctx.lineWidth = 10;
+  ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(0,20); ctx.lineTo(0,-30); ctx.stroke();
+  ctx.lineWidth=6;
+  ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(-22,-38); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-20); ctx.lineTo(20,-42); ctx.stroke();
+  ctx.fillStyle = rgb(foliageBack);
+  ctx.beginPath(); ctx.arc(-4,-52,42,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(24,-56,30,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-30,-58,28,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = rgb(foliageMain);
+  ctx.beginPath(); ctx.arc(-8,-60,26,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(14,-64,20,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawVillageHouse(x,y,scale){
+  ctx.save();
+  ctx.translate(x,y); ctx.scale(scale,scale);
+  ctx.fillStyle = "#d8b884";
+  ctx.beginPath(); ctx.rect(-40,-46,80,46); ctx.fill();
+  ctx.fillStyle = "#8a3c2c";
+  ctx.beginPath(); ctx.moveTo(-48,-46); ctx.lineTo(0,-82); ctx.lineTo(48,-46); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#5c3018";
+  ctx.beginPath(); ctx.moveTo(-8,0); ctx.lineTo(-8,-26); ctx.lineTo(8,-26); ctx.lineTo(8,0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "rgba(255,200,120,0.85)";
+  ctx.fillRect(-30,-34,14,14);
+  ctx.fillRect(16,-34,14,14);
+  // chimney with smoke
+  ctx.fillStyle="#7a4a34"; ctx.fillRect(24,-78,10,20);
+  ctx.restore();
+}
+
+/* =========================================================================
+   COTTAGE INTERIOR — a single furnished room reused across The Disguise,
+   What Big..., and The Rescue so the geography stays consistent: window
+   stage-right (forest glimpsed through glass), wardrobe stage-left (where
+   Grandmother is hidden), bed center-right.
+   ========================================================================= */
+const INTERIOR_WINDOW = { x: 1210, y: 230 };
+const INTERIOR_WARDROBE = { x: 500, y: 600 };
+const INTERIOR_BED = { x: 1080, y: 560 };
+
+function drawCottageInterior(seed, opts){
+  opts = opts || {};
+  const floorY = 706;
+
+  // back wall — rough plaster with vertical timber seams
+  const wallTop = [52,42,40], wallBottom = [34,27,30];
+  const wg2 = ctx.createLinearGradient(0,0,0,floorY);
+  wg2.addColorStop(0, rgb(wallTop));
+  wg2.addColorStop(1, rgb(wallBottom));
+  ctx.fillStyle = wg2;
+  ctx.fillRect(0,0,BASE_W,floorY+4);
+  ctx.save();
+  ctx.globalAlpha = 0.14;
+  ctx.strokeStyle = "#0a0806";
+  ctx.lineWidth = 3;
+  for(let x=-20; x<BASE_W; x+=128){
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,floorY); ctx.stroke();
+  }
+  ctx.restore();
+  // ceiling beam shadow
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = "#0a0806";
+  ctx.fillRect(0,0,BASE_W,26);
+  ctx.restore();
+
+  // floor — warm boards receding
+  const floorNear = [70,50,36], floorFar = [46,36,32];
+  const fg = ctx.createLinearGradient(0,floorY,0,BASE_H);
+  fg.addColorStop(0, rgb(floorFar));
+  fg.addColorStop(1, rgb(floorNear));
+  ctx.fillStyle = fg;
+  ctx.fillRect(0,floorY-4,BASE_W,BASE_H-floorY+4);
+  ctx.save();
+  ctx.strokeStyle = "rgba(0,0,0,0.22)";
+  ctx.lineWidth = 2;
+  for(let i=-2;i<10;i++){
+    const xTop = i*190+40;
+    ctx.beginPath(); ctx.moveTo(xTop, floorY); ctx.lineTo(xTop-60, BASE_H); ctx.stroke();
+  }
+  ctx.restore();
+
+  // rug — warm accent, grounds the bed
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = "rgb(96,50,50)";
+  ctx.beginPath(); ctx.ellipse(900,790,230,46,0,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 0.3;
+  ctx.strokeStyle = "rgb(150,90,70)"; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.ellipse(900,790,190,36,0,0,Math.PI*2); ctx.stroke();
+  ctx.restore();
+
+  // window — cold moonlight, faint distant trees glimpsed through glass
+  const wx = INTERIOR_WINDOW.x, wy = INTERIOR_WINDOW.y;
+  ctx.save();
+  const glow = ctx.createRadialGradient(wx,wy,10,wx,wy,440);
+  glow.addColorStop(0, opts.windowWarm ? "rgba(255,196,130,0.24)" : "rgba(150,150,198,0.22)");
+  glow.addColorStop(1, "rgba(150,150,198,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(600,0,1000,floorY);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(wx,wy);
+  ctx.fillStyle = "#1c1712";
+  ctx.fillRect(-94,-112,188,224);
+  ctx.fillStyle = opts.windowWarm ? "#7a5230" : "#3c4256";
+  ctx.fillRect(-78,-96,156,192);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(-78,-96,156,192); ctx.clip();
+  ctx.fillStyle = opts.windowWarm ? "rgba(255,205,140,0.6)" : "rgba(120,126,164,0.55)";
+  ctx.fillRect(-78,-96,156,192);
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = "#151009";
+  [[-42,50,0.55],[6,40,0.7],[52,56,0.5]].forEach(([tx,ty,ts])=>{
+    ctx.beginPath(); ctx.ellipse(tx, ty-24*ts, 24*ts, 30*ts, 0,0,Math.PI*2); ctx.fill();
+    ctx.fillRect(tx-2.4*ts, ty-2*ts, 4.8*ts, 34*ts);
+  });
+  ctx.restore();
+  ctx.strokeStyle = "#1c1712"; ctx.lineWidth=6;
+  ctx.beginPath(); ctx.moveTo(-78,0); ctx.lineTo(78,0); ctx.moveTo(0,-96); ctx.lineTo(0,96); ctx.stroke();
+  ctx.strokeRect(-78,-96,156,192);
+  ctx.restore();
+
+  // wardrobe — where Grandmother is hidden, stage-left, fixed geography
+  if (opts.wardrobe !== false){
+    const ajar = opts.wardrobeAjar || 0;
+    const wax = INTERIOR_WARDROBE.x, way = INTERIOR_WARDROBE.y;
+    ctx.save();
+    ctx.translate(wax,way);
+    ctx.fillStyle = "#2e2318";
+    ctx.fillRect(-64,-156,128,236);
+    ctx.strokeStyle="#17110a"; ctx.lineWidth=3;
+    ctx.strokeRect(-64,-156,128,236);
+    // two doors, left one opens
+    ctx.fillStyle = "#241b12";
+    ctx.fillRect(2,-150,56,224);
+    ctx.strokeStyle="rgba(0,0,0,0.4)"; ctx.lineWidth=1.5; ctx.strokeRect(2,-150,56,224);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(-58,-150,56,224); ctx.clip();
+    ctx.fillStyle = "#241b12";
+    ctx.fillRect(-58,-150,56,224);
+    if (ajar>0.02){
+      ctx.fillStyle = "rgba(4,3,2,0.94)";
+      ctx.fillRect(-58,-150,56*ajar,224);
+    }
+    ctx.restore();
+    ctx.strokeStyle="rgba(0,0,0,0.4)"; ctx.lineWidth=1.5; ctx.strokeRect(-58,-150,56,224);
+    ctx.fillStyle="#b0202a";
+    ctx.beginPath(); ctx.arc(-10,-38,3,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(10,-38,3,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  // bedside table with a small jar — echoes the basket's jar
+  ctx.save();
+  ctx.translate(830,660);
+  ctx.fillStyle = "#3a2c22";
+  ctx.fillRect(-22,-8,44,54);
+  ctx.fillStyle = "rgba(220,190,150,0.55)";
+  ctx.beginPath(); ctx.ellipse(0,-16,9,11,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = "#8a6a34"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.ellipse(0,-16,9,11,0,0,Math.PI*2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawBedFrame(seed, showQuilt){
+  const x = INTERIOR_BED.x, y = INTERIOR_BED.y;
+  ctx.save();
+  ctx.translate(x,y);
+  // headboard posts
+  ctx.fillStyle = "#2e2117";
+  ctx.beginPath(); ctx.roundRect(-234,-76,36,156,6); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(198,-76,36,156,6); ctx.fill();
+  ctx.fillStyle = "#241a12";
+  ctx.beginPath(); ctx.roundRect(-226,-70,20,30,4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(206,-70,20,30,4); ctx.fill();
+  // frame
+  ctx.fillStyle = "#3a2c22";
+  ctx.fillRect(-220,20,440,60);
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.fillRect(-220,74,440,8);
+  if (showQuilt !== false){
+    ctx.fillStyle = "#8a9868";
+    ctx.beginPath(); ctx.roundRect(-210,-40,420,90,14); ctx.fill();
+    const rr = streamRng(seed,"quilt");
+    ctx.fillStyle = "rgba(60,80,40,0.5)";
+    for(let i=0;i<24;i++){
+      const lx = -200+rr()*400, ly = -30+rr()*70;
+      ctx.save(); ctx.translate(lx,ly); ctx.rotate(rr()*Math.PI);
+      ctx.beginPath(); ctx.ellipse(0,0,6,3,0,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+function drawSmoke(x,y,seed,tGlobal,scale){
+  const rr = streamRng(seed,"smoke");
+  ctx.save();
+  ctx.translate(x,y); ctx.scale(scale,scale);
+  ctx.globalAlpha=0.35;
+  ctx.fillStyle="#e8e0d4";
+  for(let i=0;i<4;i++){
+    const t = ((tGlobal/1600) + i*0.7) % 4;
+    const yy = -t*22;
+    const xx = Math.sin(t*1.6 + i*2 + rr()*0.001)*6;
+    ctx.beginPath();
+    ctx.arc(xx, yy, 4+t*2.4, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawTreeSilhouette(x,y,scale,dark,alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha===undefined?1:alpha;
+  ctx.translate(x,y); ctx.scale(scale,scale);
+  ctx.fillStyle = dark ? "#181310" : "#2c3c26";
+  ctx.beginPath(); ctx.moveTo(-3,0); ctx.lineTo(-2,-38); ctx.lineTo(2,-38); ctx.lineTo(3,0); ctx.closePath(); ctx.fill();
+  // layered lobes instead of one flat ellipse — a softer, more organic canopy silhouette
+  ctx.beginPath(); ctx.ellipse(-14,-46,17,22,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(15,-50,15,20,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0,-40,16,18,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0,-58,20,22,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+/* forest with watchful patterned light — trees resembling forms via patterned shadow */
+function drawForest(seed, depthLayers, colors, watchful, parallax){
+  parallax = parallax || 0;
+  for(let layer=0; layer<depthLayers; layer++){
+    const t = layer/(depthLayers-1);
+    const scale = lerp(2.6, 0.7, t);
+    const alphaBase = lerp(1, 0.55, t);
+    const baseColor = mixColor(colors.fog, [10,8,10], t*0.55);
+    const backColor = mixColor(baseColor, [0,0,0], 0.22);
+    const trunkColor = mixColor(baseColor, [0,0,0], 0.4);
+    const rr = streamRng(seed, "forest-layer-"+layer);
+    const count = Math.round(lerp(4,9,t));
+    const yBase = lerp(BASE_H*0.86, BASE_H*0.52, t);
+    for(let i=0;i<count;i++){
+      const spread = rr();
+      let x = spread*(BASE_W+240) - 120 + parallax*(1-t)*40;
+      const y = yBase + (rr()-0.5)*18;
+      const mainColor = mixColor(baseColor, [255,255,255], 0.05+rr()*0.05);
+      ctx.save();
+      ctx.globalAlpha = alphaBase;
+      ctx.translate(x,y);
+      ctx.scale(scale,scale);
+      // trunk
+      ctx.fillStyle = rgb(trunkColor);
+      ctx.beginPath(); ctx.moveTo(-3,0); ctx.lineTo(-2.4,-40); ctx.lineTo(2.4,-40); ctx.lineTo(3,0); ctx.closePath(); ctx.fill();
+      // canopy — layered soft overlapping lobes for a painterly, organic silhouette
+      const lobes = watchful ? 4 : 3;
+      ctx.fillStyle = rgb(backColor);
+      for(let L=0; L<lobes; L++){
+        const ang = (L/lobes)*Math.PI*2 + rr()*0.6;
+        const dist = 7+rr()*8;
+        const lx = Math.cos(ang)*dist, ly = -46+Math.sin(ang)*dist*0.6;
+        const lr = 19+rr()*8;
+        ctx.beginPath(); ctx.ellipse(lx,ly,lr,lr*0.86,0,0,Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = rgb(mainColor);
+      ctx.beginPath(); ctx.ellipse(-2+rr()*4, -52, 21+rr()*6, 19+rr()*5, 0,0,Math.PI*2); ctx.fill();
+
+      if (watchful && rr() > 0.62){
+        // suggestion of an eye-like glint in canopy — subtle, not literal
+        ctx.save();
+        ctx.globalAlpha *= 0.45;
+        ctx.fillStyle = "rgba(255,224,168,0.5)";
+        ctx.beginPath(); ctx.ellipse(6,-54,3,1.6,0.3,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+/* patterned dappled light shafts through canopy */
+function drawLightShafts(seed, tGlobal, colors, count, alpha){
+  const rr = streamRng(seed,"shafts");
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  if (!prefersReducedMotion) ctx.filter = "blur(20px)";
+  for(let i=0;i<count;i++){
+    const baseX = rr()*BASE_W;
+    const sway = Math.sin(tGlobal*0.0004 + i*3)*24;
+    const w = 46+rr()*54;
+    const g = ctx.createLinearGradient(baseX,0,baseX+sway,BASE_H);
+    g.addColorStop(0, rgb(colors.amb, alpha));
+    g.addColorStop(0.65, rgb(colors.amb, alpha*0.35));
+    g.addColorStop(1, rgb(colors.amb, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(baseX-w*0.16,0);
+    ctx.lineTo(baseX+w*0.16,0);
+    ctx.lineTo(baseX+sway+w*0.5,BASE_H);
+    ctx.lineTo(baseX+sway-w*0.5,BASE_H);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPath(x1,y1,x2,y2,width,color,seed,name){
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  const rr = streamRng(seed,name||"path");
+  ctx.beginPath();
+  ctx.moveTo(x1,y1);
+  const midx = (x1+x2)/2 + (rr()-0.5)*60;
+  const midy = (y1+y2)/2 + (rr()-0.5)*20;
+  ctx.quadraticCurveTo(midx,midy,x2,y2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawRain(seed, tGlobal, alpha){
+  const rr = streamRng(seed,"rain");
+  ctx.save();
+  ctx.strokeStyle = `rgba(200,210,230,${alpha})`;
+  ctx.lineWidth = 1.4;
+  for(let i=0;i<70;i++){
+    const rx = rr()*BASE_W;
+    const speed = 900 + rr()*400;
+    const ry = ((tGlobal*speed/1000) + rr()*BASE_H*2) % (BASE_H+40) - 20;
+    ctx.beginPath();
+    ctx.moveTo(rx,ry);
+    ctx.lineTo(rx-8,ry+22);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* =========================================================================
+   PARTICLES — dust motes / falling leaves, deterministic from seed+time
+   ========================================================================= */
+function drawMotes(seed, tGlobal, colors, count, name){
+  const rr = streamRng(seed,name||"motes");
+  ctx.save();
+  for(let i=0;i<count;i++){
+    const speed = 14+rr()*10;
+    const xBase = rr()*BASE_W;
+    const yOff = rr()*BASE_H;
+    const y = (yOff + tGlobal*0.02*speed*0.05) % BASE_H;
+    const x = xBase + Math.sin(tGlobal*0.0006 + i)*18;
+    ctx.globalAlpha = 0.18 + 0.12*Math.sin(tGlobal*0.001+i);
+    ctx.fillStyle = rgb(colors.amb);
+    ctx.beginPath(); ctx.arc(x,y,1.6,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* =========================================================================
+   CAMERA — a simple virtual camera applying translate/scale to the whole
+   frame to simulate push-in / pan / tracking / handheld.
+   ========================================================================= */
+function applyCamera(cam){
+  ctx.translate(BASE_W/2, BASE_H/2);
+  ctx.scale(cam.zoom||1, cam.zoom||1);
+  ctx.translate(-(BASE_W/2)+(cam.px||0), -(BASE_H/2)+(cam.py||0));
+}
+
+function handheldJitter(seed, tGlobal, amount){
+  if (prefersReducedMotion) return {x:0,y:0};
+  const rr1 = streamRng(seed, "hh-x-"+Math.floor(tGlobal/220));
+  const rr2 = streamRng(seed, "hh-y-"+Math.floor(tGlobal/260));
+  return { x:(rr1()-0.5)*amount, y:(rr2()-0.5)*amount };
+}
+
+/* =========================================================================
+   CAPTION / TYPOGRAPHY integrated into frame (chapter titles use canvas text
+   for opening beat of each sequence, echoing the ribbon motif)
+   ========================================================================= */
+function drawChapterTitle(seed, seqIndex, localT, seqDuration){
+  const showWindow = 1400;
+  if (localT > showWindow) return;
+  const a = 1 - smooth01(localT/showWindow);
+  const seq = SEQUENCES[seqIndex];
+  ctx.save();
+  ctx.globalAlpha = a*0.92;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#f4e9d8";
+  ctx.font = "300 15px 'Iowan Old Style', Palatino, Georgia, serif";
+  ctx.fillText((seqIndex+1).toString().padStart(2,"0") + " — " + seq.name.toUpperCase(), 40, BASE_H-40);
+  ctx.strokeStyle = "rgba(176,32,42,0.8)";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(40, BASE_H-30); ctx.lineTo(40+120*a, BASE_H-30); ctx.stroke();
+  ctx.restore();
+}
+
+/* =========================================================================
+   SEQUENCE RENDERERS
+   Each takes (seed, tGlobal, localT, duration) and draws a complete frame.
+   ========================================================================= */
+
+function seq0_basket(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const horizon = 560;
+  // interior — walls/floor reuse the sky/ground gradients as warm wall & floor tone;
+  // no literal sun disc indoors, morning light instead sells through the window glow below
+  drawSky(colors, horizon);
+  drawGround(horizon, colors, {near:[120,92,58], far:[168,132,84]});
+
+  // camera: gentle push-in on the kitchen scene
+  const p = t/dur;
+  ctx.save();
+  applyCamera({zoom: lerp(1.0,1.06,smooth01(p)), px:0, py:-10*p});
+
+  // kitchen interior suggestion — warm wooden counter, window with morning light
+  ctx.fillStyle = "#6b4a2c";
+  ctx.fillRect(0, horizon-40, BASE_W, 260);
+  ctx.fillStyle = "#82603a";
+  ctx.fillRect(0, horizon-50, BASE_W, 14);
+
+  // window behind with warm glow
+  ctx.save();
+  const wg = ctx.createRadialGradient(420,300,20,420,300,260);
+  wg.addColorStop(0,"rgba(255,224,168,0.55)");
+  wg.addColorStop(1,"rgba(255,224,168,0)");
+  ctx.fillStyle = wg;
+  ctx.fillRect(200,120,440,400);
+  ctx.restore();
+  ctx.fillStyle = "#d8b884";
+  ctx.fillRect(260,160,320,260);
+  ctx.strokeStyle="#5c3018"; ctx.lineWidth=10;
+  ctx.strokeRect(260,160,320,260);
+  ctx.beginPath(); ctx.moveTo(420,160); ctx.lineTo(420,420); ctx.moveTo(260,290); ctx.lineTo(580,290); ctx.stroke();
+
+  // basket on table (center-left), mother closing it
+  const basketX = 640, basketY = horizon+30;
+  const lidT = clamp(t/2600,0,1);
+  ctx.save();
+  ctx.translate(basketX,basketY);
+  ctx.fillStyle = "#8a5a34";
+  ctx.beginPath(); ctx.ellipse(0,10,44,20,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle="#6b431f"; ctx.lineWidth=2;
+  for(let i=-34;i<=34;i+=8){ ctx.beginPath(); ctx.moveTo(i,-6); ctx.lineTo(i,24); ctx.stroke(); }
+  // contents visible until lid closes
+  if (lidT < 1){
+    ctx.fillStyle = "#e8dcc0";
+    ctx.beginPath(); ctx.ellipse(-14,-2,10,7,0,0,Math.PI*2); ctx.fill(); // bread
+    ctx.fillStyle = "#f0d878";
+    ctx.beginPath(); ctx.rect(4,-4,14,8); ctx.fill(); // butter
+    ctx.fillStyle = "rgba(220,190,120,0.8)";
+    ctx.beginPath(); ctx.ellipse(24,0,7,9,0,0,Math.PI*2); ctx.fill(); // jar
+    ctx.strokeStyle="#8a6a34"; ctx.beginPath(); ctx.ellipse(24,0,7,9,0,0,Math.PI*2); ctx.stroke();
+  }
+  // lid closing arc
+  ctx.save();
+  ctx.globalAlpha = 0.96;
+  ctx.fillStyle = "#7a4c28";
+  ctx.beginPath();
+  const lidAngle = lerp(Math.PI*0.9, 0, easeOut(lidT));
+  ctx.ellipse(0,-6-Math.sin(lidAngle)*18,42,10+Math.sin(lidAngle)*8,0,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  ctx.restore();
+
+  // mother figure fastening Red's hood (Red is small, foreground-right)
+  const motherX = 760, motherY = horizon+70;
+  drawMother(motherX, motherY, 1.55, -1);
+
+  const redX = 880, redY = horizon+92;
+  const armLift = clamp((t-2600)/2400,0,1);
+  drawRed(redX, redY, 1.35, 1, 0, { static:true, hideBasket:true, lookX: -1.4 });
+  // mother's hands at Red's hood — small gesture accent
+  if (armLift>0){
+    ctx.save();
+    ctx.strokeStyle = "#7a5a48"; ctx.lineWidth=4; ctx.lineCap="round";
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(motherX-30, motherY-70);
+    ctx.lineTo(redX-16, redY-64 - armLift*3);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawMotifThread(tGlobal, seed, 0.7);
+  ctx.restore();
+
+  drawLightShafts(seed, tGlobal, colors, 3, 0.05);
+  drawMotes(seed, tGlobal, colors, 26, "kitchen-motes");
+  drawChapterTitle(seed, 0, t, dur);
+  drawVignette(0.38);
+}
+
+function seq1_departure(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const horizon = 520;
+  drawSky(colors, horizon);
+  drawSun(1360,110,46,colors,0.85);
+  drawGround(horizon, colors, {near:[132,150,78], far:[176,186,120]});
+
+  const p = t/dur;
+  ctx.save();
+  const jitter = handheldJitter(seed, tGlobal, 1.2);
+  applyCamera({zoom: lerp(1.0,1.02,p), px: -p*70 + jitter.x, py: jitter.y});
+
+  // village houses left, receding
+  drawVillageHouse(150, horizon+40, 1.1);
+  drawSmoke(174, horizon-32, seed, tGlobal, 1.1);
+  drawVillageHouse(40, horizon+56, 0.8);
+
+  // path connecting home (left) to forest tree line (right, distant)
+  drawPath(180, horizon+70, 1480, horizon+30, 26, "rgba(196,166,110,0.9)", seed, "departure-path");
+  drawPath(180, horizon+70, 1480, horizon+30, 14, "rgba(216,190,140,0.9)", seed, "departure-path2");
+
+  // distant tree line marking the unknown forest
+  for(let i=0;i<9;i++){
+    const rr = streamRng(seed,"treeline-"+i);
+    drawTreeSilhouette(1180 + i*46 + rr()*20, horizon+18-rr()*10, 0.6+rr()*0.3, false, 0.75);
+  }
+
+  // Red walking away from home, along the path, small figure growing distant
+  const walkX = lerp(260, 900, easeInOut(p));
+  const walkY = lerp(horizon+86, horizon+46, p);
+  const walkScale = lerp(1.5, 1.0, p);
+  drawRed(walkX, walkY, walkScale, 1, (tGlobal/560)%1, { basketFull:true });
+
+  // mother waving from doorway, receding
+  ctx.save(); ctx.globalAlpha = clamp(1-p*1.4,0,1);
+  drawMother(120, horizon+58, 1.2, 1);
+  ctx.restore();
+
+  drawMotifThread(tGlobal, seed, 0.6);
+  ctx.restore();
+
+  drawLightShafts(seed, tGlobal, colors, 2, 0.04);
+  drawMotes(seed, tGlobal, colors, 18, "field-motes");
+  drawChapterTitle(seed, 1, t, dur);
+  drawVignette(0.34);
+}
+
+function seq2_threshold(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const horizon = 480;
+  drawSky(colors, horizon);
+  drawGround(horizon, colors, {near:[70,86,58], far:[110,116,96]});
+
+  const p = t/dur;
+  ctx.save();
+  const jitter = handheldJitter(seed, tGlobal, 1.6);
+  applyCamera({zoom: lerp(1.0,1.14,easeIn(p)), px: jitter.x, py: -20*p+jitter.y});
+
+  drawForest(seed, 5, colors, true, Math.sin(tGlobal*0.0003)*10);
+  drawLightShafts(seed, tGlobal, colors, 5, 0.08*(1-p*0.4));
+
+  // path narrows as it recedes
+  drawPath(-40, BASE_H-40, 820, horizon+60, lerp(40,16,p), "rgba(150,130,96,0.85)", seed, "threshold-path");
+
+  const walkX = lerp(260, 760, easeInOut(p));
+  const walkY = lerp(BASE_H-160, horizon+90, p);
+  const walkScale = lerp(1.3, 0.85, p);
+  drawRed(walkX, walkY, walkScale, 1, (tGlobal/560)%1, {});
+
+  // watchful branch-forms closer to camera, foreground silhouettes
+  for(let i=0;i<3;i++){
+    const rr = streamRng(seed,"watch-"+i);
+    const fx = 120+i*520+rr()*80, fy = BASE_H-40-rr()*60;
+    drawTreeSilhouette(fx,fy,2.2+rr()*0.6, true, 0.9);
+  }
+
+  drawMotifThread(tGlobal, seed, 0.7);
+  ctx.restore();
+
+  drawMotes(seed, tGlobal, colors, 22, "threshold-motes");
+  drawChapterTitle(seed, 2, t, dur);
+  drawVignette(0.46);
+}
+
+function seq3_wolfAppears(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const horizon = 470;
+  drawSky(colors, horizon);
+  drawGround(horizon, colors, {near:[62,74,54], far:[104,108,92]});
+
+  const p = t/dur;
+
+  // camera look-at is computed per-beat so the forest (drawn inside the transform,
+  // at the same depth as the characters) always tracks the push-in with them
+  let cam;
+  if (p < 0.42){
+    cam = { zoom: 1.0, px: 0, py: 0 };
+  } else if (p < 0.72){
+    const local = (p-0.42)/0.3;
+    cam = { zoom: lerp(1.0,1.5,smooth01(local)), px: -200, py: -70 };
+  } else {
+    cam = { zoom: lerp(1.0,1.6,smooth01((p-0.72)/0.28)), px: 350, py: -135 };
+  }
+
+  ctx.save();
+  applyCamera(cam);
+  drawForest(seed, 4, colors, true, 0);
+  drawLightShafts(seed, tGlobal, colors, 4, 0.07);
+  drawPath(-40, BASE_H-60, 900, horizon+70, 34, "rgba(140,120,90,0.85)", seed, "wolf-path");
+
+  if (p < 0.42){
+    // wide shot: wolf emerges gradually from tree shadow, not popping in
+    const revealP = smooth01(p/0.42);
+    ctx.save();
+    ctx.globalAlpha = revealP;
+    drawWolf(1080, horizon+80, 1.5, -1, 0.15, { crouch:0.15*(1-revealP), headTurn:-0.1 });
+    ctx.restore();
+    drawRed(420, horizon+140, 1.05, 1, (tGlobal/560)%1, {});
+    drawMotifThread(tGlobal, seed, 0.6);
+  } else if (p < 0.72){
+    // shot/reverse-shot: medium on wolf, eyeline to Red
+    drawWolf(1080, horizon+80, 1.6, -1, 0.2, { headTurn:-0.14, eyesGlow:true });
+    drawRed(420, horizon+140, 1.05, 1, 0.2, { static:true, lookX:1.2 });
+    drawMotifThread(tGlobal, seed, 0.5);
+  } else {
+    // reverse: medium on Red reacting, wolf soft-focus background
+    ctx.save(); ctx.globalAlpha=0.55;
+    drawWolf(1080, horizon+80, 1.6, -1, 0.25, { headTurn:-0.1 });
+    ctx.restore();
+    drawRed(420, horizon+140, 1.1, 1, 0.25, { static:true, lookX:1.6 });
+    drawMotifThread(tGlobal, seed, 0.6);
+  }
+  ctx.restore();
+
+  drawMotes(seed, tGlobal, colors, 20, "wolf-appear-motes");
+  drawChapterTitle(seed, 3, t, dur);
+  drawVignette(0.48);
+}
+
+function seq4_question(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const horizon = 470;
+  drawSky(colors, horizon);
+  drawGround(horizon, colors, {near:[62,74,54], far:[104,108,92]});
+  drawForest(seed, 4, colors, true, 4);
+  drawLightShafts(seed, tGlobal, colors, 4, 0.07);
+  drawPath(-40, BASE_H-60, 900, horizon+70, 34, "rgba(140,120,90,0.85)", seed, "wolf-path");
+
+  const p = t/dur;
+  ctx.save();
+
+  // medium two-shot: Red talking, gesturing toward the cottage direction (offscreen), basket visible
+  const camX = lerp(60, -140, smooth01(p));
+  applyCamera({zoom: 1.28, px: camX, py: -50});
+
+  drawRed(430, horizon+140, 1.15, 1, 0.3, { static:true, lookX: 1.6, basketFlowers:false });
+  drawWolf(760, horizon+120, 1.55, -1, 0.15, { headTurn: -0.12 + Math.sin(tGlobal*0.002)*0.03, eyesGlow:false, grin:true });
+
+  // wolf's gaze/attention shifts toward wildflowers off to the side (staged with a directional accent)
+  if (p > 0.55){
+    const flowerP = smooth01((p-0.55)/0.45);
+    ctx.save();
+    ctx.globalAlpha = flowerP;
+    // small cluster of wildflowers glowing, drawing the eye away from the path
+    const fx = 1140, fy = horizon+190;
+    ["#f0c94a","#e88fae","#e6dfe8","#f0c94a"].forEach((c,i)=>{
+      ctx.fillStyle = c;
+      const off = i*22;
+      ctx.beginPath(); ctx.arc(fx+off, fy - Math.sin(tGlobal*0.003+i)*4, 5,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle="#3d5a34"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(fx+off,fy+4); ctx.lineTo(fx+off,fy+18); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  drawMotifThread(tGlobal, seed, 0.6);
+  ctx.restore();
+
+  drawMotes(seed, tGlobal, colors, 20, "question-motes");
+  drawChapterTitle(seed, 4, t, dur);
+  drawVignette(0.48);
+}
+
+function seq5_race(seed, tGlobal, t, dur){
+  const p = t/dur;
+
+  // Parallel editing: alternating panels, cutting rhythm accelerates.
+  // Segment count increases across the sequence to accelerate rhythm.
+  const cutBoundaries = [0,0.22,0.4,0.55,0.68,0.79,0.88,0.94,1.0];
+  let seg = 0;
+  for(let i=0;i<cutBoundaries.length-1;i++){
+    if (p>=cutBoundaries[i] && p<cutBoundaries[i+1]){ seg=i; break; }
+    if (i===cutBoundaries.length-2) seg=i;
+  }
+  const onFlowers = seg % 2 === 0;
+  const segLocalP = clamp((p - cutBoundaries[seg])/(cutBoundaries[seg+1]-cutBoundaries[seg]),0,1);
+  const globalProgress = p; // both characters progress toward cottage overall
+
+  if (onFlowers){
+    // bright clearing — Red gathering flowers, drifting laterally but overall progressing.
+    // Deliberately a fixed golden palette (not blended from the film's cooling light arc)
+    // so the parallel-edit contrast against the dark shortcut reads unmistakably.
+    const brightColors = { sky:[255,214,140], fog:[255,236,196], amb:[255,224,168] };
+    drawSky(brightColors, 500);
+    drawSun(1200,90,50,brightColors,0.9);
+    drawGround(500, brightColors, {near:[140,168,84], far:[188,200,132]});
+    ctx.save();
+    applyCamera({zoom:1.08, px: -globalProgress*60, py:0});
+    for(let i=0;i<10;i++){
+      const rr = streamRng(seed,"clearing-flower-"+i);
+      const fx = 100+rr()*1400, fy = 560+rr()*260;
+      const c = ["#f0c94a","#e88fae","#e6dfe8","#c98fe8"][i%4];
+      ctx.save(); ctx.translate(fx,fy);
+      ctx.strokeStyle="#3d5a34"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,16); ctx.stroke();
+      ctx.fillStyle=c; ctx.beginPath(); ctx.arc(0,-4,5,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    const rx = lerp(500,1100, easeInOut(globalProgress));
+    drawRed(rx, 640, 1.3, 1, (tGlobal/460)%1, { basketFlowers:true });
+    drawMotifThread(tGlobal, seed, 0.6);
+    ctx.restore();
+    drawMotes(seed, tGlobal, brightColors, 24, "clearing-motes");
+  } else {
+    // darker shortcut — wolf racing, low urgent angle. Fixed cold palette for maximum
+    // contrast against the golden clearing cutaways.
+    const darkColors = { sky:[32,26,40], fog:[52,44,62], amb:[70,60,90] };
+    drawSky(darkColors, 480);
+    drawGround(480, darkColors, {near:[30,34,26], far:[54,56,50]});
+    ctx.save();
+    const jitter = handheldJitter(seed, tGlobal, 3);
+    applyCamera({zoom:1.22, px: -globalProgress*90 + jitter.x, py: 10+jitter.y});
+    drawForest(seed, 4, darkColors, true, -globalProgress*40);
+    const wx = lerp(400,1200, easeInOut(globalProgress));
+    drawWolf(wx, 560, 1.7, 1, (tGlobal/300)%1, { eyesGlow:true, headTurn:0.05 });
+    drawMotifThread(tGlobal, seed, 0.8);
+    ctx.restore();
+    drawMotes(seed, tGlobal, darkColors, 14, "shortcut-motes");
+  }
+
+  // quick cut flash accent to sell the edit rhythm
+  const cutFlash = segLocalP < 0.06 ? (0.06-segLocalP)/0.06*0.25 : 0;
+  if (cutFlash>0){
+    ctx.save(); ctx.globalAlpha = cutFlash; ctx.fillStyle="#000"; ctx.fillRect(0,0,BASE_W,BASE_H); ctx.restore();
+  }
+
+  drawChapterTitle(seed, 5, t, dur);
+  drawVignette(0.4);
+}
+
+function seq6_grandmothersDoor(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const horizon = 470;
+  drawSky(colors, horizon);
+  drawGround(horizon, colors, {near:[52,58,50],far:[92,92,88]});
+  drawForest(seed, 3, colors, true, 0);
+
+  const p = t/dur;
+  ctx.save();
+
+  if (p < 0.4){
+    // wolf reaches the cottage — wide establishing
+    const local = smooth01(p/0.4);
+    applyCamera({zoom: lerp(1.0,1.1,local), px:0, py:-20});
+    drawCottage(BASE_W/2, horizon+220, 1.0, { windowLit:true, doorGlow:0.2, mood: moodFromColors(colors) });
+    const wx = lerp(-120, 30, easeInOut(local));
+    drawWolf(BASE_W/2+wx, horizon+250, 1.4, -1, (tGlobal/320)%1, { eyesGlow:true });
+  } else if (p < 0.68){
+    // imitates knock — medium on door, wolf paw raised
+    const local = (p-0.4)/0.28;
+    applyCamera({zoom: lerp(1.1,1.9,smooth01(local)), px:60, py:-90});
+    drawCottage(BASE_W/2, horizon+220, 1.0, { windowLit:true, doorGlow:0.35, mood: moodFromColors(colors) });
+    drawWolf(BASE_W/2+40, horizon+250, 1.5, -1, 0, { static:true, headTurn:-0.2 });
+    const knock = Math.sin(local*Math.PI*6)>0.3 ? 4 : 0;
+    ctx.save();
+    ctx.translate(BASE_W/2 + 4 - knock, horizon+206);
+    ctx.fillStyle = "#3c3a48";
+    ctx.beginPath(); ctx.arc(0,0,5,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else {
+    // entry — door swings open, shadow swallows the frame, grandmother's shadow trapped at edge
+    const local = (p-0.68)/0.32;
+    applyCamera({zoom: lerp(1.3,1.5,smooth01(local)), px:0, py:-70});
+    drawCottage(BASE_W/2, horizon+220, 1.0, { windowLit:true, doorOpen: local>0.15, doorGlow:0.1, silhouette:true, mood: moodFromColors(colors) });
+    ctx.save();
+    ctx.globalAlpha = smooth01(local);
+    ctx.fillStyle = "rgba(10,8,10,0.55)";
+    ctx.beginPath();
+    ctx.moveTo(BASE_W/2-18, horizon+174);
+    ctx.lineTo(BASE_W/2-18, horizon+220);
+    ctx.lineTo(BASE_W/2+70, horizon+220);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    // grandmother glimpsed, trapped out of sight (silhouette retreating behind curtain), still alive — shown by motion
+    if (local>0.3){
+      ctx.save();
+      ctx.globalAlpha = 0.7*smooth01((local-0.3)/0.7);
+      drawGrandmother(BASE_W/2+150, horizon+250, 0.9, -1, { expression:"worried" });
+      ctx.restore();
+    }
+  }
+
+  drawMotifThread(tGlobal, seed, 0.75);
+  ctx.restore();
+
+  drawMotes(seed, tGlobal, colors, 16, "door-motes");
+  drawChapterTitle(seed, 6, t, dur);
+  drawVignette(0.52);
+}
+
+function seq7_disguise(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const p = t/dur;
+
+  // cross-cut between cottage interior (wolf building disguise) and Red approaching through trees
+  const cutBoundaries = [0,0.24,0.46,0.68,0.86,1.0];
+  let seg=0;
+  for(let i=0;i<cutBoundaries.length-1;i++){ if(p>=cutBoundaries[i]&&p<cutBoundaries[i+1]){seg=i;break;} if(i===cutBoundaries.length-2)seg=i; }
+  const inCottage = seg % 2 === 0;
+
+  if (inCottage){
+    drawCottageInterior(seed, { windowWarm:false, wardrobe:true, wardrobeAjar:0 });
+    drawBedFrame(seed, true);
+
+    const local = seg===0 ? p/cutBoundaries[1] :
+                  seg===2 ? (p-cutBoundaries[2])/(cutBoundaries[3]-cutBoundaries[2]) :
+                  (p-cutBoundaries[4])/(1-cutBoundaries[4]);
+
+    if (seg===0){
+      // nightcap
+      drawWolf(1000,600,1.7,-1,0,{static:true, headTurn:-0.1});
+      ctx.save();
+      ctx.globalAlpha = smooth01(local);
+      ctx.translate(1025,532);
+      ctx.fillStyle = "#f4ede0";
+      ctx.beginPath(); ctx.ellipse(0,-4,16,12,0,0,Math.PI,true); ctx.fill();
+      ctx.beginPath(); ctx.arc(14,-14,4,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    } else if (seg===2){
+      // spectacles
+      drawWolf(1000,600,1.7,-1,0,{static:true, headTurn:-0.1});
+      ctx.save();
+      ctx.translate(1025,532);
+      ctx.fillStyle = "#f4ede0";
+      ctx.beginPath(); ctx.ellipse(0,-4,16,12,0,0,Math.PI,true); ctx.fill();
+      ctx.beginPath(); ctx.arc(14,-14,4,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha = smooth01(local);
+      ctx.strokeStyle="#3a3a3a"; ctx.lineWidth=1.6;
+      ctx.beginPath(); ctx.arc(14,6,4.4,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(24,6,4.4,0,Math.PI*2); ctx.stroke();
+      ctx.restore();
+    } else {
+      // quilt pulled up, settling into bed — final disguise pose
+      ctx.save(); ctx.globalAlpha = smooth01(local);
+      drawWolf(1000,588,1.65,-1,0,{static:true, headTurn:-0.08});
+      ctx.translate(1025,520);
+      ctx.fillStyle = "#f4ede0";
+      ctx.beginPath(); ctx.ellipse(0,-4,16,12,0,0,Math.PI,true); ctx.fill();
+      ctx.beginPath(); ctx.arc(14,-14,4,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle="#3a3a3a"; ctx.lineWidth=1.6;
+      ctx.beginPath(); ctx.arc(14,6,4.4,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(24,6,4.4,0,Math.PI*2); ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = smooth01(local)*0.9;
+      ctx.fillStyle = "#8a9868";
+      ctx.beginPath(); ctx.roundRect(870,560,300,60,14); ctx.fill();
+      ctx.restore();
+    }
+    drawMotifThread(tGlobal, seed, 0.7);
+  } else {
+    // Red approaching through the trees — audience understands the trap before she does
+    const dc = lightArcColor(tGlobal);
+    drawSky(dc, 470);
+    drawGround(470, dc, {near:[56,66,50],far:[98,100,86]});
+    drawForest(seed, 4, dc, true, 6);
+    drawLightShafts(seed, tGlobal, dc, 4, 0.07);
+    ctx.save();
+    applyCamera({zoom:1.15, px: seg===1? -80 : -160, py:-20});
+    const local = seg===1 ? p/cutBoundaries[1]*0 + (p-cutBoundaries[1])/(cutBoundaries[2]-cutBoundaries[1]) :
+                  (p-cutBoundaries[3])/(cutBoundaries[4]-cutBoundaries[3]);
+    const rx = lerp(300,720, easeInOut(clamp(local,0,1)) * 0.6 + (seg===3?0.4:0));
+    drawRed(rx, 620, 1.2, 1, (tGlobal/500)%1, { basketFlowers:true });
+    // cottage glimpsed distant through trees — foreshadowing
+    ctx.save(); ctx.globalAlpha=0.8;
+    drawCottage(1250, 640, 0.55, { windowLit:true, doorGlow:0.3, oaks:false });
+    ctx.restore();
+    drawMotifThread(tGlobal, seed, 0.6);
+    ctx.restore();
+  }
+
+  drawChapterTitle(seed, 7, t, dur);
+  drawVignette(0.5);
+}
+
+function seq8_redArrives(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const p = t/dur;
+  drawSky(colors, 470);
+  drawGround(470, colors, {near:[50,58,48], far:[92,92,84]});
+  drawForest(seed, 3, colors, true, 0);
+
+  ctx.save();
+  const jitter = handheldJitter(seed, tGlobal, 1);
+  applyCamera({zoom: lerp(1.0,1.22,easeIn(p)), px: jitter.x*0.5, py:-30-20*p+jitter.y*0.5});
+
+  drawCottage(BASE_W/2, 690, 1.05, { windowLit:true, doorOpen:true, doorGlow:0.22, silhouette:false, mood: moodFromColors(colors) });
+
+  // basket, flowers in hand — half-open door — bed curtain visible through door as altered light quality
+  const approachX = lerp(260, BASE_W/2-40, easeInOut(p));
+  drawRed(approachX, 760, 1.25, 1, p<0.85 ? (tGlobal/560)%1 : 0, { basketFlowers:true, static: p>=0.85 });
+
+  // suspense accents: door ajar shadow, cold light spilling
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = "rgba(120,140,190,0.18)";
+  ctx.beginPath(); ctx.ellipse(BASE_W/2, 700, 90, 40, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  drawMotifThread(tGlobal, seed, 0.8);
+  ctx.restore();
+
+  drawMotes(seed, tGlobal, colors, 18, "arrive-motes");
+  drawChapterTitle(seed, 8, t, dur);
+  drawVignette(0.5);
+}
+
+function seq9_whatBig(seed, tGlobal, t, dur){
+  // 6 beats of increasing closeness matched to caption pairs
+  const beats = 6;
+  const beatDur = dur/beats;
+  const beatIdx = clamp(Math.floor(t/beatDur), 0, beats-1);
+  const beatLocal = clamp((t - beatIdx*beatDur)/beatDur, 0, 1);
+  const beatT = beatIdx/(beats-1);
+
+  // Red leans in each beat; camera look-at drifts from between them toward the wolf's face
+  const leanX = lerp(600, 860, beatT);
+  const wolfFaceX = 1050, wolfFaceY = 566, redFaceY = 672;
+  const lookAtX = lerp(leanX, wolfFaceX, 0.3 + 0.6*beatT);
+  const lookAtY = lerp(redFaceY, wolfFaceY, beatT);
+  const zoom = lerp(1.1, 1.9, beatT) * lerp(1,1.03,smooth01(beatLocal));
+
+  ctx.save();
+  applyCamera({ zoom, px: BASE_W/2 - lookAtX, py: BASE_H/2 - lookAtY });
+
+  drawCottageInterior(seed, { windowWarm:false, wardrobe:true, wardrobeAjar:0 });
+  drawBedFrame(seed, true);
+
+  const shake = beatIdx>=4 ? Math.sin(tGlobal*0.05)*(beatIdx-3)*0.6 : 0;
+  drawWolf(1000+shake, 588, 1.7, -1, 0, {
+    static:true, headTurn:-0.06 - beatIdx*0.01,
+    eyesGlow: beatIdx>=1,
+    grin: beatIdx>=4,
+    teeth: beatIdx>=4
+  });
+  // nightcap + spectacles remain
+  ctx.save();
+  ctx.translate(1025,520);
+  ctx.fillStyle = "#f4ede0";
+  ctx.beginPath(); ctx.ellipse(0,-4,16,12,0,0,Math.PI,true); ctx.fill();
+  ctx.beginPath(); ctx.arc(14,-14,4,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle="#3a3a3a"; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.arc(14,6,4.4,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(24,6,4.4,0,Math.PI*2); ctx.stroke();
+  ctx.restore();
+
+  // Red at bedside, leaning closer each beat
+  drawRed(leanX, 700, 1.15, 1, 0, { static:true, hideBasket:true, lookX:1.8 });
+
+  drawMotifThread(tGlobal, seed, 0.9);
+  ctx.restore();
+
+  drawChapterTitle(seed, 9, t, dur);
+  drawVignette(0.56);
+}
+
+function seq10_rescue(seed, tGlobal, t, dur){
+  const p = t/dur;
+
+  if (p < 0.28){
+    // reveal + lunge — close on the wolf's face, then pull back to a two-shot with Red
+    const local = smooth01(p/0.28);
+    const wolfFaceX = 1050+local*40, wolfFaceY = 535-local*10;
+    const redX0 = 700-local*30, redFaceY0 = 675;
+    const wideX = (wolfFaceX+redX0)/2, wideY = (wolfFaceY+redFaceY0)/2;
+    const lookAtX = lerp(wolfFaceX, wideX, local), lookAtY = lerp(wolfFaceY, wideY, local);
+    ctx.save();
+    applyCamera({zoom: lerp(2.0,1.3,local), px: BASE_W/2-lookAtX, py: BASE_H/2-lookAtY});
+    drawCottageInterior(seed, { windowWarm:false, wardrobe:true, wardrobeAjar:0 });
+    drawBedFrame(seed, false);
+    // quilt thrown off
+    ctx.save(); ctx.globalAlpha = 1-local*0.6;
+    ctx.translate(900+local*80, 520-local*40); ctx.rotate(-local*0.6);
+    ctx.fillStyle="#8a9868"; ctx.beginPath(); ctx.roundRect(-100,-20,200,50,10); ctx.fill();
+    ctx.restore();
+    drawWolf(1000+local*40, 580-local*10, 1.9, -1, 0, { static:true, grin:true, teeth:true, eyesGlow:true, headTurn:-0.15-local*0.1 });
+    ctx.save(); ctx.globalAlpha = clamp(1-local*1.6,0,1);
+    // nightcap flying off
+    ctx.translate(1000-local*60,470-local*90);
+    ctx.rotate(local*2);
+    ctx.fillStyle="#f4ede0"; ctx.beginPath(); ctx.ellipse(0,0,16,12,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+    drawRed(700-local*30, 700, 1.15, 1, 0, { static:true, hideBasket:true, lookX:-1.8 });
+    ctx.restore();
+  } else if (p < 0.62){
+    // woodsman enters, fast legible action, Red escapes
+    const local = smooth01((p-0.28)/0.34);
+    ctx.save();
+    applyCamera({zoom: lerp(1.3,1.05,local), px:0, py:-60});
+    drawCottageInterior(seed, { windowWarm:false, wardrobe:true, wardrobeAjar:0 });
+    drawBedFrame(seed, false);
+    drawWolf(1020, 580, 1.85, -1, (tGlobal/260)%1, { grin:true, teeth:true, eyesGlow:true });
+    const redX = lerp(700, 420, easeOut(local));
+    drawRed(redX, 700, 1.15, -1, (tGlobal/260)%1, { hideBasket:true, lookX:-1.2 });
+    // woodsman bursts through door, ochre outerwear + axe silhouette as protective emblem
+    const wx = lerp(140, 340, easeOut(local));
+    ctx.save(); ctx.globalAlpha = smooth01(local*1.4);
+    drawWoodsman(wx, 720, 1.3, 1, (tGlobal/260)%1, { axe:true });
+    ctx.restore();
+    // door burst light accent
+    ctx.save();
+    ctx.globalAlpha = 0.3*(1-local);
+    ctx.fillStyle="rgba(255,220,160,0.4)";
+    ctx.beginPath(); ctx.ellipse(180,650,140,220,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+    ctx.restore();
+  } else if (p < 0.84){
+    // grandmother freed from hiding place — the wardrobe glimpsed in earlier interior shots opens
+    const local = smooth01((p-0.62)/0.22);
+    ctx.save();
+    applyCamera({zoom:1.15, px:-120, py:-40});
+    drawCottageInterior(seed, { windowWarm:false, wardrobe:true, wardrobeAjar: local });
+    drawBedFrame(seed, false);
+    ctx.save(); ctx.globalAlpha = smooth01(local);
+    drawGrandmother(470,660,1.15,1,{ expression: local<0.7 ? "worried":null });
+    ctx.restore();
+    drawWoodsman(300,700,1.25,1,0,{ static:true, axe:true });
+    drawRed(650,690,1.05,1,0,{ static:true, hideBasket:true });
+    ctx.restore();
+  } else {
+    // wolf flees through window into forest
+    const local = smooth01((p-0.84)/0.16);
+    const colors2 = lightArcColor(96500+local*3000);
+    drawSky(colors2, 470);
+    drawGround(470, colors2, {near:[54,60,48], far:[96,96,86]});
+    drawForest(seed, 4, colors2, true, local*20);
+    ctx.save();
+    applyCamera({zoom: lerp(1.1,1.0,local), px:120, py:-30});
+    drawCottage(BASE_W/2-100, 690, 1.0, { windowLit:true, doorOpen:true, mood: moodFromColors(colors2) });
+    // wolf silhouette leaping away through window, receding into trees
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    const fx = lerp(BASE_W/2-40, BASE_W-60, easeOut(local));
+    const fy = lerp(560, 640, local);
+    drawWolf(fx, fy, lerp(1.5,0.7,local), 1, (tGlobal/220)%1, { crouch:0.1 });
+    ctx.restore();
+    ctx.restore();
+  }
+
+  drawChapterTitle(seed, 10, t, dur);
+  drawVignette(0.5);
+}
+
+function seq11_pathHome(seed, tGlobal, t, dur){
+  const colors = lightArcColor(tGlobal);
+  const horizon = 500;
+  const p = t/dur;
+  drawSky(colors, horizon);
+  drawSun(1320,120,48,colors,0.95);
+  drawGround(horizon, colors, {near:[126,146,80], far:[178,190,126]});
+
+  ctx.save();
+  applyCamera({zoom: lerp(1.06,1.0,smooth01(p)), px: p*40, py:0});
+
+  drawCottage(360, horizon+150, 0.85, { windowLit:true, doorOpen:true, doorGlow:0.2, mood: moodFromColors(colors) });
+
+  // three figures outside cottage at dawn
+  drawWoodsman(500, horizon+192, 1.05, -1, 0, { static:true, axe:true });
+  drawGrandmother(430, horizon+186, 0.95, -1, { expression:null });
+
+  // Red returning to the path, basket now light (empty/near-empty, lid open, airy)
+  const rx = lerp(600, 1180, easeInOut(p));
+  const ry = lerp(horizon+140, horizon+70, p);
+  const rs = lerp(1.05, 0.85, p);
+  drawRed(rx, ry, rs, 1, (tGlobal/620)%1, { basketFull:false });
+
+  // path continuing to distant tree line — visual echo of departure shot, transformed
+  drawPath(430, horizon+180, 1500, horizon+40, 24, "rgba(206,178,124,0.9)", seed, "home-path");
+  for(let i=0;i<7;i++){
+    const rr = streamRng(seed,"home-treeline-"+i);
+    drawTreeSilhouette(1160+i*50+rr()*20, horizon+22-rr()*8, 0.55+rr()*0.25, false, 0.7);
+  }
+
+  drawMotifThread(tGlobal, seed, 1.0);
+  ctx.restore();
+
+  drawLightShafts(seed, tGlobal, colors, 3, 0.06);
+  drawMotes(seed, tGlobal, colors, 22, "home-motes");
+  drawChapterTitle(seed, 11, t, dur);
+  drawVignette(0.32);
+}
+
+const SEQ_RENDERERS = [
+  seq0_basket, seq1_departure, seq2_threshold, seq3_wolfAppears,
+  seq4_question, seq5_race, seq6_grandmothersDoor, seq7_disguise,
+  seq8_redArrives, seq9_whatBig, seq10_rescue, seq11_pathHome
+];
+
+/* =========================================================================
+   MASTER RENDER
+   ========================================================================= */
+function renderFrame(seed, tGlobal){
+  const t = clamp(tGlobal, 0, DURATION);
+  const idx = currentSequenceIndex(t);
+  const seq = SEQUENCES[idx];
+  const localT = t - seq.start;
+  const localDur = seq.end - seq.start;
+
+  ctx.save();
+  ctx.clearRect(0,0,BASE_W,BASE_H);
+  SEQ_RENDERERS[idx](seed, t, localT, localDur);
+  drawGrain(seed, 0.05);
+  ctx.restore();
+
+  updateCaptions(t);
+  updateHudFromState(idx, t);
+}
+
+/* =========================================================================
+   CAPTIONS
+   ========================================================================= */
+const captionEl = document.getElementById('caption-text');
+function updateCaptions(t){
+  if (!state.captionsOn){
+    captionEl.classList.remove('show');
+    return;
+  }
+  let active = null;
+  for (const c of CAPTIONS){
+    if (t >= c.start && t <= c.end){ active = c; break; }
+  }
+  if (active){
+    if (captionEl.textContent !== active.text) captionEl.textContent = active.text;
+    captionEl.classList.add('show');
+  } else {
+    captionEl.classList.remove('show');
+  }
+}
+
+/* =========================================================================
+   HUD
+   ========================================================================= */
+const hud = document.getElementById('hud');
+const scrubberRow = document.getElementById('scrubber-row');
+const scrubberFill = document.getElementById('scrubber-fill');
+const scrubHandle = document.getElementById('scrub-handle');
+const seqLabel = document.getElementById('seq-label');
+const btnPlay = document.getElementById('btn-play');
+const btnReplay = document.getElementById('btn-replay');
+const btnCaptions = document.getElementById('btn-captions');
+const speedButtons = Array.from(document.querySelectorAll('#speed-group .btn'));
+const srStatus = document.getElementById('sr-status');
+
+let markersBuilt = false;
+function buildMarkers(){
+  if (markersBuilt) return;
+  const track = document.getElementById('scrubber-track');
+  SEQUENCES.forEach((s,i)=>{
+    const m = document.createElement('div');
+    m.className = 'marker';
+    m.style.left = (s.start/DURATION*100) + "%";
+    m.title = (i+1) + ". " + s.name;
+    m.setAttribute('role','button');
+    m.setAttribute('tabindex','-1');
+    m.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      seekScene(i);
+      showHud();
+    });
+    track.appendChild(m);
+  });
+  markersBuilt = true;
+}
+buildMarkers();
+
+function updateHudFromState(idx, t){
+  const pct = (t/DURATION*100).toFixed(3);
+  scrubberFill.style.width = pct + "%";
+  scrubHandle.style.left = pct + "%";
+  scrubberRow.setAttribute('aria-valuenow', Math.round(t));
+  seqLabel.textContent = String(idx+1).padStart(2,'0') + " · " + SEQUENCES[idx].name;
+  btnPlay.textContent = state.playing ? "Pause" : "Play";
+  btnPlay.setAttribute('aria-pressed', state.playing ? "false" : "true");
+}
+
+let hudTimer = null;
+function showHud(){
+  hud.classList.add('visible');
+  if (hudTimer) clearTimeout(hudTimer);
+  hudTimer = setTimeout(()=>{ hud.classList.remove('visible'); }, 2600);
+}
+['mousemove','pointermove','touchstart','keydown'].forEach(ev=>{
+  window.addEventListener(ev, showHud, {passive:true});
+});
+showHud();
+
+/* =========================================================================
+   PLAYBACK ENGINE — deterministic film clock
+   ========================================================================= */
+const MAX_STEP = 100; // cap wall-clock delta per rAF step (ms)
+
+function tick(nowWall){
+  if (state.lastFrameWall === null) state.lastFrameWall = nowWall;
+  let delta = nowWall - state.lastFrameWall;
+  state.lastFrameWall = nowWall;
+  delta = clamp(delta, 0, MAX_STEP);
+
+  if (state.playing && !state.completed){
+    state.time += delta * state.speed;
+    if (state.time >= DURATION){
+      state.time = DURATION;
+      state.playing = false;
+      state.completed = true;
+    }
+  }
+  renderFrame(state.seed, state.time);
+  state.rafId = requestAnimationFrame(tick);
+}
+
+document.addEventListener('visibilitychange', ()=>{
+  // reset wall clock reference on visibility change to avoid a huge delta jump
+  state.lastFrameWall = null;
+});
+
+/* =========================================================================
+   PUBLIC DETERMINISTIC API
+   ========================================================================= */
+function doReset(seed){
+  state.seed = (seed === undefined || seed === null || isNaN(seed)) ? DEFAULT_SEED : (seed|0);
+  state.time = 0;
+  state.playing = true;
+  state.speed = 1;
+  state.completed = false;
+  state.lastFrameWall = null;
+  grainCanvas = null;
+  updateSpeedButtons();
+  renderFrame(state.seed, state.time);
+}
+function doPlay(){
+  if (state.completed && state.time >= DURATION){
+    // playing after completion with no seek is a no-op per spec (hold final frame)
+    return;
+  }
+  state.playing = true;
+  state.lastFrameWall = null;
+}
+function doPause(){
+  state.playing = false;
+}
+function doSeek(ms){
+  const t = clamp(Number(ms)||0, 0, DURATION);
+  state.time = t;
+  state.completed = t >= DURATION;
+  state.lastFrameWall = null;
+  renderFrame(state.seed, state.time);
+}
+function seekScene(index){
+  const i = clamp(Math.round(index), 0, SEQUENCES.length-1);
+  doSeek(SEQUENCES[i].start);
+}
+function doSetSpeed(mult){
+  const allowed = [0.5,1,2];
+  const m = allowed.includes(mult) ? mult : 1;
+  state.speed = m;
+  updateSpeedButtons();
+}
+function doSetCaptions(enabled){
+  state.captionsOn = !!enabled;
+  updateCaptions(state.time);
+}
+function getShotList(){
+  return SEQUENCES.map((s,i)=>({ index:i, name:s.name, start:s.start, end:s.end }));
+}
+function snapshot(){
+  const idx = currentSequenceIndex(state.time);
+  const seq = SEQUENCES[idx];
+  const progress = (state.time - seq.start) / (seq.end - seq.start);
+  return {
+    seed: state.seed,
+    playing: state.playing,
+    speed: state.speed,
+    time: state.time,
+    duration: DURATION,
+    sequenceIndex: idx,
+    sequenceName: seq.name,
+    sequenceProgress: clamp(progress,0,1),
+    captions: state.captionsOn,
+    completed: state.completed,
+    characters: {
+      redOnPath: idx <= 2 || idx === 11,
+      wolfDisguised: idx === 7 || idx === 8 || idx === 9,
+      wolfRevealed: idx === 10 && state.time > SEQUENCES[10].start + (SEQUENCES[10].end-SEQUENCES[10].start)*0.28,
+      grandmotherSafe: idx === 11 || (idx===10 && state.time > SEQUENCES[10].start + (SEQUENCES[10].end-SEQUENCES[10].start)*0.62)
+    }
+  };
+}
+
+function runSelfTest(){
+  const tests = [];
+  function check(name, cond){
+    tests.push({ name, passed: !!cond });
+  }
+  const savedSeed = state.seed, savedTime = state.time, savedPlaying = state.playing, savedSpeed = state.speed;
+
+  // deterministic reset
+  doReset(7777);
+  check("reset sets seed", state.seed === 7777);
+  check("reset sets time to 0", state.time === 0);
+
+  // exact duration
+  check("duration is exactly 112000", DURATION === 112000);
+
+  // 12 ordered sequence boundaries
+  check("exactly 12 sequences", SEQUENCES.length === 12);
+  let boundariesOk = SEQUENCES[0].start === 0 && SEQUENCES[11].end === DURATION;
+  for (let i=0;i<SEQUENCES.length;i++){
+    if (SEQUENCES[i].end <= SEQUENCES[i].start) boundariesOk = false;
+    if (i>0 && SEQUENCES[i].start !== SEQUENCES[i-1].end) boundariesOk = false;
+  }
+  check("sequence boundaries are contiguous and ordered", boundariesOk);
+
+  // exact seeking + determinism: same seed+time -> same snapshot-relevant state
+  doSeek(50000);
+  const snapA = snapshot();
+  doSeek(0);
+  doSeek(50000);
+  const snapB = snapshot();
+  check("seek is exact", state.time === 50000);
+  check("seeking to same ms with same seed reproduces same sequence/progress",
+    snapA.sequenceIndex === snapB.sequenceIndex &&
+    Math.abs(snapA.sequenceProgress - snapB.sequenceProgress) < 1e-9);
+
+  // seekScene
+  seekScene(6);
+  check("seekScene(6) lands on start of sequence 6", state.time === SEQUENCES[6].start && currentSequenceIndex(state.time)===6);
+  seekScene(0);
+  check("seekScene(0) lands at time 0", state.time === 0);
+
+  // pause
+  doPlay();
+  doPause();
+  check("pause stops playback flag", state.playing === false);
+
+  // replay behavior: restore seed/time/autoplay
+  doSeek(90000);
+  doReset(1812);
+  check("replay(reset) restores seed 1812", state.seed === 1812);
+  check("replay(reset) restores time 0", state.time === 0);
+  check("replay(reset) restores autoplay", state.playing === true);
+
+  // default autoplay w/ seed 1812 is the natural opening state
+  check("default seed constant equals 1812", DEFAULT_SEED === 1812);
+
+  // end-state reachability
+  doSeek(DURATION);
+  check("seeking to duration reaches completed state", state.completed === true);
+  const endSnap = snapshot();
+  check("end snapshot sequence index is last (11)", endSnap.sequenceIndex === 11);
+
+  // finite numeric state across a spread of times
+  let finiteOk = true;
+  for (let tt=0; tt<=DURATION; tt+=13333){
+    doSeek(tt);
+    const s = snapshot();
+    if (!isFinite(s.time) || !isFinite(s.sequenceProgress) || !isFinite(s.sequenceIndex)) finiteOk = false;
+  }
+  check("state remains finite numeric across sampled times", finiteOk);
+
+  const passed = tests.every(t=>t.passed);
+
+  // restore normal opening state
+  doReset(DEFAULT_SEED);
+
+  return { passed, tests };
+}
+
+window.__RED_HOOD_FILM__ = {
+  reset: doReset,
+  play: doPlay,
+  pause: doPause,
+  seek: doSeek,
+  seekScene: seekScene,
+  setSpeed: doSetSpeed,
+  setCaptions: doSetCaptions,
+  getShotList: getShotList,
+  snapshot: snapshot,
+  runSelfTest: runSelfTest
+};
+
+/* =========================================================================
+   UI WIRING
+   ========================================================================= */
+function updateSpeedButtons(){
+  speedButtons.forEach(b=>{
+    const v = parseFloat(b.dataset.speed);
+    b.setAttribute('aria-pressed', v === state.speed ? "true" : "false");
+  });
+}
+
+btnPlay.addEventListener('click', ()=>{
+  if (state.playing) doPause(); else {
+    if (state.completed && state.time>=DURATION){
+      // manual play after completion: treat as resume is meaningless at end;
+      // do nothing special — user can replay or scrub.
+      return;
+    }
+    doPlay();
+  }
+  showHud();
+});
+
+btnReplay.addEventListener('click', ()=>{
+  doReset(state.seed || DEFAULT_SEED === state.seed ? DEFAULT_SEED : DEFAULT_SEED);
+  doReset(DEFAULT_SEED);
+  showHud();
+});
+
+btnCaptions.addEventListener('click', ()=>{
+  doSetCaptions(!state.captionsOn);
+  btnCaptions.setAttribute('aria-pressed', state.captionsOn ? "true" : "false");
+  showHud();
+});
+
+speedButtons.forEach(b=>{
+  b.addEventListener('click', ()=>{
+    doSetSpeed(parseFloat(b.dataset.speed));
+    showHud();
+  });
+});
+
+function scrubToClientX(clientX){
+  const rect = scrubberRow.getBoundingClientRect();
+  const pct = clamp((clientX - rect.left) / rect.width, 0, 1);
+  doSeek(pct * DURATION);
+  state.playing = false; // manual timeline action takes over from autoplay
+}
+let scrubbing = false;
+scrubberRow.addEventListener('pointerdown', (e)=>{
+  scrubbing = true;
+  scrubToClientX(e.clientX);
+  showHud();
+});
+window.addEventListener('pointermove', (e)=>{
+  if (scrubbing) scrubToClientX(e.clientX);
+});
+window.addEventListener('pointerup', ()=>{ scrubbing = false; });
+scrubberRow.addEventListener('keydown', (e)=>{
+  if (e.key === 'ArrowRight'){ doSeek(state.time+2000); state.playing=false; }
+  else if (e.key === 'ArrowLeft'){ doSeek(state.time-2000); state.playing=false; }
+  showHud();
+});
+
+document.addEventListener('keydown', (e)=>{
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  if (e.code === 'Space'){
+    e.preventDefault();
+    if (state.playing) doPause(); else if(!(state.completed && state.time>=DURATION)) doPlay();
+    showHud();
+  } else if (e.code === 'ArrowRight'){
+    e.preventDefault();
+    doSeek(state.time + 5000);
+    state.playing = false;
+    showHud();
+  } else if (e.code === 'ArrowLeft'){
+    e.preventDefault();
+    doSeek(state.time - 5000);
+    state.playing = false;
+    showHud();
+  } else if (e.code === 'Home'){
+    e.preventDefault();
+    doReset(DEFAULT_SEED);
+    showHud();
+  }
+});
+
+/* =========================================================================
+   BOOT — first frame is already a finished composition; autoplay from 0.
+   ========================================================================= */
+updateSpeedButtons();
+renderFrame(state.seed, state.time);
+state.rafId = requestAnimationFrame(tick);
+
+})();
+</script>
+</body>
+</html>

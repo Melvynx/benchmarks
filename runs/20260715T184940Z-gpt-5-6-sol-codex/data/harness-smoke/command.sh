@@ -1,0 +1,1 @@
+codex exec --model gpt-5.6-sol -c model_reasoning_effort=\"ultra\" --json --sandbox workspace-write --skip-git-repo-check --output-last-message /Users/melvynx/Developer/experiments/benchmarks/runs/20260715T184940Z-gpt-5-6-sol-codex/data/harness-smoke/final.txt Reply\ with\ exactly\ HARNESS_OK\ and\ nothing\ else. 

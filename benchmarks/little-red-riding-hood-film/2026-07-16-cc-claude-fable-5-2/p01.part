@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Fable 5</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{background:#131009;overflow:hidden;font-family:Georgia,'Iowan Old Style',Palatino,serif;color:#e9ddc7}
+  #stage{position:fixed;inset:0}
+  #film{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #marquee{position:absolute;top:10px;left:0;right:0;text-align:center;font-size:11px;font-weight:400;
+    letter-spacing:.42em;text-transform:uppercase;color:rgba(233,221,199,.48);pointer-events:none;z-index:3}
+  #ui{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);width:min(940px,94vw);z-index:4;
+    display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 12px;border-radius:14px;
+    background:rgba(19,15,10,.62);border:1px solid rgba(233,221,199,.14);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    transition:opacity .6s ease}
+  #ui.idle{opacity:0}
+  #ui:focus-within{opacity:1}
+  #ui button{appearance:none;border:0;background:transparent;color:#e9ddc7;cursor:pointer;border-radius:9px;
+    min-width:38px;height:36px;display:inline-flex;align-items:center;justify-content:center;
+    font-family:inherit;font-size:13px;padding:0 8px}
+  #ui button:hover{background:rgba(233,221,199,.12)}
+  #ui button:focus-visible{outline:2px solid #c8503c;outline-offset:2px}
+  #ui button[aria-pressed="true"]{background:rgba(200,80,60,.28);color:#ffe9d2}
+  #ui svg{width:15px;height:15px;fill:currentColor}
+  #time{font-size:12.5px;letter-spacing:.06em;color:rgba(233,221,199,.85);min-width:86px;text-align:center;
+    font-variant-numeric:tabular-nums}
+  #scrub{position:relative;flex:1 1 220px;height:36px;display:flex;align-items:center;min-width:170px}
+  #range{width:100%;accent-color:#c8503c;cursor:pointer;height:20px;background:transparent}
+  #marks{position:absolute;left:8px;right:8px;top:1px;height:10px;pointer-events:none}
+  #marks button{position:absolute;pointer-events:auto;width:9px;height:9px;min-width:9px;padding:0;
+    transform:translateX(-50%) rotate(45deg);border-radius:2px;background:rgba(233,221,199,.42);border:0}
+  #marks button:hover{background:#e9ddc7}
+  #marks button:focus-visible{outline:2px solid #c8503c;outline-offset:1px}
+  #speeds{display:flex;gap:2px;border:1px solid rgba(233,221,199,.16);border-radius:9px;padding:2px}
+  #speeds button{min-width:34px;height:28px;font-size:12px}
+  @media (max-width:640px){
+    #ui{gap:4px;padding:7px 8px;bottom:10px}
+    #time{min-width:74px;font-size:11.5px}
+    #scrub{order:10;flex-basis:100%}
+  }
+  @media (prefers-reduced-motion: reduce){ #ui{transition:none} }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="film"></canvas>
+  <h1 id="marquee">Claude Fable 5</h1>
+  <div id="ui" aria-label="Film controls">
+    <button id="bPlay" aria-label="Pause" title="Play/Pause (Space)">
+      <svg id="icPlay" viewBox="0 0 16 16" style="display:none"><path d="M3 1.6v12.8L14 8z"/></svg>
+      <svg id="icPause" viewBox="0 0 16 16"><path d="M3 2h3.6v12H3zM9.4 2H13v12H9.4z"/></svg>
+    </button>
+    <button id="bReplay" aria-label="Replay from beginning" title="Replay (Home)">
+      <svg viewBox="0 0 16 16"><path d="M8 2.5V.2L4.4 3.4 8 6.6V4.1a4.4 4.4 0 1 1-4.4 4.4H2A6 6 0 1 0 8 2.5z"/></svg>
+    </button>
+    <div id="time" aria-hidden="true">0:00 / 1:52</div>
+    <div id="scrub">
+      <input id="range" type="range" min="0" max="112000" step="50" value="0" aria-label="Film timeline">
+      <div id="marks"></div>
+    </div>
+    <div id="speeds" role="group" aria-label="Playback speed">
+      <button data-sp="0.5" aria-pressed="false" title="Half speed">&frac12;&times;</button>
+      <button data-sp="1" aria-pressed="true" title="Normal speed">1&times;</button>
+      <button data-sp="2" aria-pressed="false" title="Double speed">2&times;</button>
+    </div>
+    <button id="bCC" aria-pressed="true" aria-label="Captions" title="Captions">CC</button>
+  </div>
+</div>
+<script>
+"use strict";
+(function(){
+/* ============================================================
+   Claude Fable 5 — Little Red Riding Hood, an illustrated film
+   One canvas, one deterministic clock, twelve sequences.
+   ============================================================ */
+const W=1600, H=900, DUR=112000, DEFAULT_SEED=1812, TAU=Math.PI*2;
+const SCENES=[
+  {name:'The Basket',start:0,end:9000},
+  {name:'The Red Departure',start:9000,end:18000},
+  {name:'The Forest Threshold',start:18000,end:27000},
+  {name:'The Wolf Appears',start:27000,end:38000},
+  {name:'The Question',start:38000,end:47000},
+  {name:'The Race',start:47000,end:57000},
+  {name:"At Grandmother's Door",start:57000,end:66000},
+  {name:'The Disguise',start:66000,end:75000},
+  {name:'Red Arrives',start:75000,end:84000},
+  {name:'What Big…',start:84000,end:95000},
+  {name:'The Rescue',start:95000,end:104000},
+  {name:'The Path Home',start:104000,end:112000}
+];
+const ROMAN=['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+const CUTS=[
+  [0,3500,6500,9000],
+  [0,4500,7000,9000],
+  [0,4000,6500,9000],
+  [0,3000,5000,8000,9600,11000],
+  [0,3000,5500,7300,9000],
+  [0,2000,3800,5300,6500,7500,8300,8900,9400,9700,10000],
+  [0,2500,5000,9000],
+  [0,2200,3800,5600,7200,9000],
+  [0,2500,5200,7000,9000],
+  [0,1800,3600,5400,7200,9200,11000],
+  [0,1400,2600,4600,6600,9000],
+  [0,3200,8000]
+];
+const CAPS=[
+  {a:3200,b:8600,who:'mother',text:'“Stay on the path, and do not linger.”'},
+  {a:35200,b:37950,who:'wolf',text:'“Good morning, little traveler. Where does this path take you?”'},
+  {a:38500,b:41600,who:'red',text:'“To Grandmother’s cottage — beneath the three old oaks.”'},
+  {a:84300,b:86050,who:'red',text:'“Grandmother, what big eyes you have.”'},
+  {a:86350,b:88050,who:'wolf',text:'“All the better to see you with.”'},
+  {a:88350,b:89950,who:'red',text:'“Grandmother, what big ears you have.”'},
+  {a:90150,b:91650,who:'wolf',text:'“All the better to hear you with.”'},
+  {a:91850,b:93350,who:'red',text:'“Grandmother, what big teeth you have.”'},
+  {a:93550,b:94950,who:'wolf',text:'“All the better to eat you with!”'},
+  {a:107600,b:111400,who:'narr',text:'She stayed on the path, and did not linger.'}
+];
+const KNOCK=[0,230,460,1050]; // the little knock rhythm — the wolf imitates it, Red owns it
+
+/* ---------- state ---------- */
+const state={seed:DEFAULT_SEED,time:0,playing:true,speed:1,captions:true,ended:false};
+let world=null, needsRender=true;
+let MOTION=1; // 0 when prefers-reduced-motion
+const mqRM=window.matchMedia?window.matchMedia('(prefers-reduced-motion: reduce)'):null;
+function readMotion(){ MOTION=(mqRM&&mqRM.matches)?0:1; needsRender=true; }
+if(mqRM){ if(mqRM.addEventListener)mqRM.addEventListener('change',readMotion); readMotion(); }
+
+/* ---------- math ---------- */
+const sat=v=>v<0?0:v>1?1:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const sm=t=>{t=sat(t);return t*t*(3-2*t);};
+const rt=(t,a,b)=>sat((t-a)/(b-a));
+const eio=t=>{t=sat(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;};
+const eo=t=>{t=sat(t);return 1-Math.pow(1-t,3);};
+const ei=t=>{t=sat(t);return t*t*t;};
+function shotOf(u,cuts){ let i=cuts.length-2; for(let k=0;k<cuts.length-1;k++){ if(u<cuts[k+1]){i=k;break;} } return [i,u-cuts[i],cuts[i+1]-cuts[i]]; }
+function seqIndexAt(t){ if(t>=DUR)return 11; for(let i=11;i>=0;i--){ if(t>=SCENES[i].start)return i; } return 0; }
+
+/* ---------- deterministic randomness ---------- */
+function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return function(){h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);h^=h>>>16;return h>>>0;};}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function rngFor(seed,label){ return mulberry32(xmur3(seed+':'+label)()); }
+function h32i(i,salt){let h=Math.imul((i|0)^0x9e3779b9,0x85ebca6b)^Math.imul((salt|0)+0x165667b1,0xc2b2ae35);h^=h>>>13;h=Math.imul(h,0x27d4eb2f);h^=h>>>16;return(h>>>0)/4294967296;}
+function vn(x,salt){const i=Math.floor(x),f=x-i;const a=h32i(i,salt),b=h32i(i+1,salt);return a+(b-a)*(f*f*(3-2*f));}
+const vnc=(x,salt)=>vn(x,salt)*2-1;
+function blinkAt(t,salt){const p=2600+h32i(salt,77)*2600;const ph=(t+h32i(salt,78)*p)%p;const d=140;return ph>p-d?1-Math.abs(((ph-(p-d))/d)*2-1):0;}
+
+/* ---------- color ---------- */
+const rgba=(r,g,b,a)=>'rgba('+r+','+g+','+b+','+(a==null?1:a)+')';
+function cmix(a,b,t){t=sat(t);return rgba(Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t)));}
+function cmixA(a,b,t,al){t=sat(t);return rgba(Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t)),al);}
+
+/* ---------- world (rebuilt per seed) ---------- */
+function buildWorld(seed){
+  const w={seed:seed};
+  {const r=rngFor(seed,'oaks');
+   w.oaks=[0,1,2].map(function(){return{
+     lean:(r()-.5)*.24,
+     blobs:Array.from({length:6},function(){return{dx:(r()-.5)*180,dy:-150-r()*110,r:44+r()*40,sh:r()};}),
+     limbs:Array.from({length:3},function(){return{a:-1.9+r()*1.4,l:80+r()*70};})};});}
+  {const r=rngFor(seed,'forest');
+   w.far=Array.from({length:16},function(){return{x:r()*2400-400,w:9+r()*8,lean:(r()-.5)*.06,s:r()};});
+   w.mid=Array.from({length:11},function(){return{x:r()*2400-400,w:20+r()*16,lean:(r()-.5)*.09,s:r()};});
+   w.near=Array.from({length:7},function(){return{x:r()*2400-400,w:46+r()*30,lean:(r()-.5)*.07,s:r()};});}
+  {const r=rngFor(seed,'edge');
+   w.edge=Array.from({length:20},function(){return{x:1130+r()*720,w:16+r()*30,lean:(r()-.5)*.1,s:r()};});}
+  {const r=rngFor(seed,'meadow');
+   w.meadowFlowers=Array.from({length:70},function(){return{x:r()*1700-50,y:660+r()*220,k:(r()*3)|0,ph:r()*TAU,h:10+r()*16};});}
+  {const r=rngFor(seed,'clearing');
+   w.clearFlowers=Array.from({length:150},function(){return{x:60+r()*1480,y:560+r()*310,k:(r()*4)|0,ph:r()*TAU,h:16+r()*30};});}
+  {const r=rngFor(seed,'houses');
+   w.houses=Array.from({length:7},function(i){return{x:70+i*62+r()*26,w:52+r()*40,h:40+r()*34,ro:r()};});}
+  {const r=rngFor(seed,'dapple');
+   w.dapples=Array.from({length:13},function(){return{x:r()*1600,y:520+r()*360,rx:60+r()*130,ry:20+r()*36,ph:r()*TAU};});}
+  {const r=rngFor(seed,'birds');
+   w.birds=Array.from({length:6},function(){return{y:120+r()*180,ph:r()*TAU,v:.028+r()*.02};});}
+  {const r=rngFor(seed,'bramble');
+   w.brambles=Array.from({length:24},function(){return{x:r()*1900-150,y:520+r()*380,r:60+r()*120,a:r()*TAU};});}
+  // film grain tile
+  const gc=document.createElement('canvas');gc.width=gc.height=192;
+  const gg=gc.getContext('2d');const im=gg.createImageData(192,192);const gr=rngFor(seed,'grain');
+  for(let i=0;i<im.data.length;i+=4){const v=(gr()*255)|0;im.data[i]=v;im.data[i+1]=v;im.data[i+2]=v;im.data[i+3]=16;}
+  gg.putImageData(im,0,0);
+  w.grain=gc; w.grainPat=null;
+  return w;
+}

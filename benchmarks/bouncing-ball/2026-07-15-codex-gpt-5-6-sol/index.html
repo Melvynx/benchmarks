@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPT-5.6</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000000;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    h1 {
+      position: fixed;
+      top: 18px;
+      left: 50%;
+      z-index: 1;
+      margin: 0;
+      color: #ffffff;
+      font: 500 16px/1 sans-serif;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>GPT-5.6</h1>
+  <canvas id="simulation"></canvas>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("simulation");
+      const context = canvas.getContext("2d");
+
+      const SIDES = 7;
+      const POLYGON_RADIUS = 250;
+      const BALL_RADIUS = 15;
+      const GRAVITY = 500;
+      const RESTITUTION = 0.8;
+      const FRICTION = 0.98;
+      const ROTATION_SPEED = 0.5;
+      const MAX_FRAME_TIME = 0.05;
+      const MAX_SUBSTEP_TRAVEL = BALL_RADIUS * 0.25;
+      const CONTACT_SLOP = 0.0001;
+
+      const localVertices = Array.from({ length: SIDES }, (_, index) => {
+        const vertexAngle = -Math.PI / 2 + index * Math.PI * 2 / SIDES;
+        return {
+          x: Math.cos(vertexAngle) * POLYGON_RADIUS,
+          y: Math.sin(vertexAngle) * POLYGON_RADIUS
+        };
+      });
+
+      const walls = localVertices.map((start, index) => {
+        const end = localVertices[(index + 1) % SIDES];
+        const edgeX = end.x - start.x;
+        const edgeY = end.y - start.y;
+        const lengthSquared = edgeX * edgeX + edgeY * edgeY;
+        const inverseLength = 1 / Math.sqrt(lengthSquared);
+
+        return {
+          start,
+          edgeX,
+          edgeY,
+          lengthSquared,
+          // Vertices are counterclockwise, so the right-hand normal is outward.
+          normalX: edgeY * inverseLength,
+          normalY: -edgeX * inverseLength
+        };
+      });
+
+      let width = window.innerWidth;
+      let height = window.innerHeight;
+      let centerX = width / 2;
+      let centerY = height / 2;
+      let angle = 0;
+      let lastTime = performance.now();
+
+      const ball = {
+        x: centerX,
+        y: centerY,
+        velocityX: 0,
+        velocityY: 0
+      };
+
+      function resize() {
+        const previousCenterX = centerX;
+        const previousCenterY = centerY;
+        width = window.innerWidth;
+        height = window.innerHeight;
+        centerX = width / 2;
+        centerY = height / 2;
+
+        ball.x += centerX - previousCenterX;
+        ball.y += centerY - previousCenterY;
+
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(width * pixelRatio);
+        canvas.height = Math.round(height * pixelRatio);
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      }
+
+      function resolveCollisions() {
+        const cosine = Math.cos(angle);
+        const sine = Math.sin(angle);
+        const relativeX = ball.x - centerX;
+        const relativeY = ball.y - centerY;
+
+        // Transform position and inertial velocity into the polygon's rotated frame.
+        let localX = cosine * relativeX + sine * relativeY;
+        let localY = -sine * relativeX + cosine * relativeY;
+        let localVelocityX = cosine * ball.velocityX + sine * ball.velocityY;
+        let localVelocityY = -sine * ball.velocityX + cosine * ball.velocityY;
+
+        // Repeated passes resolve simultaneous contacts at heptagon corners.
+        for (let pass = 0; pass < SIDES * 2; pass += 1) {
+          let corrected = false;
+
+          for (const wall of walls) {
+            const offsetX = localX - wall.start.x;
+            const offsetY = localY - wall.start.y;
+            const signedDistance = offsetX * wall.normalX + offsetY * wall.normalY;
+            const penetration = signedDistance + BALL_RADIUS;
+
+            if (penetration <= 0) {
+              continue;
+            }
+
+            corrected = true;
+
+            // Project the center into the inset half-plane before it can be rendered outside.
+            localX -= wall.normalX * (penetration + CONTACT_SLOP);
+            localY -= wall.normalY * (penetration + CONTACT_SLOP);
+
+            // Clamp the contact point to this finite wall segment.
+            const projectedX = localX - wall.start.x;
+            const projectedY = localY - wall.start.y;
+            const segmentAmount = Math.max(0, Math.min(1,
+              (projectedX * wall.edgeX + projectedY * wall.edgeY) / wall.lengthSquared
+            ));
+            const contactX = wall.start.x + wall.edgeX * segmentAmount;
+            const contactY = wall.start.y + wall.edgeY * segmentAmount;
+
+            // In polygon coordinates, omega cross contact gives the wall's inertial velocity.
+            const wallVelocityX = -ROTATION_SPEED * contactY;
+            const wallVelocityY = ROTATION_SPEED * contactX;
+            let relativeVelocityX = localVelocityX - wallVelocityX;
+            let relativeVelocityY = localVelocityY - wallVelocityY;
+            const outwardSpeed = relativeVelocityX * wall.normalX +
+              relativeVelocityY * wall.normalY;
+
+            if (outwardSpeed > 0) {
+              relativeVelocityX -= (1 + RESTITUTION) * outwardSpeed * wall.normalX;
+              relativeVelocityY -= (1 + RESTITUTION) * outwardSpeed * wall.normalY;
+              relativeVelocityX *= FRICTION;
+              relativeVelocityY *= FRICTION;
+              localVelocityX = relativeVelocityX + wallVelocityX;
+              localVelocityY = relativeVelocityY + wallVelocityY;
+            }
+          }
+
+          if (!corrected) {
+            break;
+          }
+        }
+
+        // Return the corrected position and velocity to world space.
+        ball.x = centerX + cosine * localX - sine * localY;
+        ball.y = centerY + sine * localX + cosine * localY;
+        ball.velocityX = cosine * localVelocityX - sine * localVelocityY;
+        ball.velocityY = sine * localVelocityX + cosine * localVelocityY;
+      }
+
+      function simulate(frameTime) {
+        const speed = Math.hypot(ball.velocityX, ball.velocityY) +
+          ROTATION_SPEED * POLYGON_RADIUS;
+        const estimatedTravel = speed * frameTime + 0.5 * GRAVITY * frameTime * frameTime;
+        const substeps = Math.max(1, Math.min(128,
+          Math.ceil(estimatedTravel / MAX_SUBSTEP_TRAVEL)
+        ));
+        const stepTime = frameTime / substeps;
+
+        for (let step = 0; step < substeps; step += 1) {
+          angle = (angle + ROTATION_SPEED * stepTime) % (Math.PI * 2);
+          ball.velocityY += GRAVITY * stepTime;
+          ball.x += ball.velocityX * stepTime;
+          ball.y += ball.velocityY * stepTime;
+          resolveCollisions();
+        }
+      }
+
+      function worldVertices() {
+        const cosine = Math.cos(angle);
+        const sine = Math.sin(angle);
+
+        return localVertices.map((vertex) => ({
+          x: centerX + cosine * vertex.x - sine * vertex.y,
+          y: centerY + sine * vertex.x + cosine * vertex.y
+        }));
+      }
+
+      function draw() {
+        context.clearRect(0, 0, width, height);
+
+        const vertices = worldVertices();
+        context.beginPath();
+        context.moveTo(vertices[0].x, vertices[0].y);
+        for (let index = 1; index < vertices.length; index += 1) {
+          context.lineTo(vertices[index].x, vertices[index].y);
+        }
+        context.closePath();
+        context.strokeStyle = "#FFFFFF";
+        context.lineWidth = 1.5;
+        context.stroke();
+
+        context.beginPath();
+        context.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+        context.fillStyle = "#FF0000";
+        context.fill();
+      }
+
+      function animate(currentTime) {
+        const frameTime = Math.min((currentTime - lastTime) / 1000, MAX_FRAME_TIME);
+        lastTime = currentTime;
+        simulate(Math.max(0, frameTime));
+        draw();
+        requestAnimationFrame(animate);
+      }
+
+      window.addEventListener("resize", resize);
+      resize();
+      draw();
+      requestAnimationFrame(animate);
+    })();
+  </script>
+</body>
+</html>

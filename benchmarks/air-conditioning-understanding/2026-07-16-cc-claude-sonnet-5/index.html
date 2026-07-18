@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Claude Sonnet 5</title>
+<style>
+  :root{
+    --bg:#0a0d12;
+    --panel:rgba(16,20,28,0.72);
+    --panel-border:rgba(255,255,255,0.09);
+    --text:#eef1f5;
+    --text-dim:#9aa4b2;
+    --cold:#5ec8ff;
+    --hot:#ff8a4c;
+    --accent:#f2b544;
+    --room-air:#ffe9c2;
+    --outdoor-air:#a9c7d8;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #app{position:fixed; inset:0; overflow:hidden;}
+  #scene{position:absolute; inset:0; display:block; touch-action:none;}
+  #labels{position:absolute; inset:0; pointer-events:none; overflow:hidden;}
+
+  .hvac-label{
+    position:absolute; transform:translate(-50%,-100%);
+    padding:5px 10px; border-radius:999px;
+    background:rgba(10,13,18,0.72); border:1px solid rgba(255,255,255,0.14);
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    font-size:11.5px; letter-spacing:.02em; white-space:nowrap;
+    display:flex; align-items:center; gap:6px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.35);
+    transition:opacity .25s ease;
+  }
+  .hvac-label .dot{width:7px; height:7px; border-radius:50%; flex:none;}
+  .hvac-label.dim{opacity:0.55;}
+
+  #loading{
+    position:absolute; inset:0; z-index:50; background:radial-gradient(circle at 50% 40%, #141a24 0%, #05070a 100%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    transition:opacity .5s ease;
+  }
+  #loading .ring{width:46px; height:46px; border-radius:50%; border:3px solid rgba(255,255,255,0.12); border-top-color:var(--accent); animation:spin 0.9s linear infinite;}
+  #loading .txt{color:var(--text-dim); font-size:13px; letter-spacing:.04em;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loading.hidden{opacity:0; pointer-events:none;}
+
+  #webgl-fail{
+    position:absolute; inset:0; z-index:60; display:none;
+    align-items:center; justify-content:center; padding:24px;
+    background:radial-gradient(circle at 50% 30%, #161c26 0%, #05070a 100%);
+  }
+  #webgl-fail .card{max-width:520px; text-align:center; background:var(--panel); border:1px solid var(--panel-border); border-radius:var(--radius); padding:28px 26px;}
+  #webgl-fail h2{margin:0 0 10px; font-size:19px;}
+  #webgl-fail p{color:var(--text-dim); font-size:14px; line-height:1.6; margin:0 0 8px;}
+  #webgl-fail .mini-diagram{margin:18px 0; font-size:13px; color:var(--text-dim); line-height:1.8; text-align:left; background:rgba(255,255,255,0.03); border-radius:10px; padding:14px 16px;}
+  #webgl-fail .mini-diagram b{color:var(--text);}
+
+  header#title-bar{
+    position:absolute; top:0; left:0; right:0; z-index:20;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:16px 18px; pointer-events:none;
+  }
+  #title{
+    margin:0; font-size:19px; font-weight:600; letter-spacing:.01em;
+    color:var(--text); text-shadow:0 2px 12px rgba(0,0,0,0.6);
+    pointer-events:auto;
+  }
+
+  #status-pill{
+    pointer-events:auto;
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:999px;
+    padding:8px 14px; display:flex; align-items:center; gap:10px;
+    font-size:12px; color:var(--text-dim); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 6px 20px rgba(0,0,0,0.3);
+    max-width:min(64vw, 560px);
+    flex-wrap:wrap;
+  }
+  #status-pill b{color:var(--text); font-weight:600;}
+  #status-pill .seg{white-space:nowrap;}
+  #status-pill .sep{opacity:0.3;}
+  #status-pill .mode-cool{color:var(--cold);}
+  #status-pill .mode-heat{color:var(--hot);}
+
+  #legend-toggle{
+    position:absolute; top:64px; left:18px; z-index:20; pointer-events:auto;
+    background:var(--panel); border:1px solid var(--panel-border); color:var(--text-dim);
+    border-radius:999px; padding:7px 13px; font-size:12px; cursor:pointer;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  }
+  #legend{
+    position:absolute; top:104px; left:18px; z-index:19; pointer-events:auto;
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:var(--radius);
+    padding:14px 16px; font-size:12.5px; color:var(--text-dim);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 10px 30px rgba(0,0,0,0.35);
+    display:flex; flex-direction:column; gap:8px;
+    transition:opacity .2s ease, transform .2s ease;
+    max-width:230px;
+  }
+  #legend.closed{opacity:0; transform:translateY(-6px); pointer-events:none;}
+  #legend h3{margin:0 0 2px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text);}
+  #legend .row{display:flex; align-items:center; gap:9px;}
+  #legend .swatch{width:11px; height:11px; border-radius:50%; flex:none; box-shadow:0 0 8px currentColor;}
+  #legend .grad{width:34px; height:8px; border-radius:5px; flex:none; background:linear-gradient(90deg,#ff5a3c,#ffce54,#5ec8ff);}
+  #legend .arrow{width:11px; height:11px; flex:none; color:var(--accent);}
+
+  #tutorial-caption{
+    position:absolute; left:50%; bottom:104px; transform:translateX(-50%);
+    z-index:22; width:min(92vw, 620px); pointer-events:auto;
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:var(--radius);
+    padding:14px 18px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    box-shadow:0 14px 36px rgba(0,0,0,0.4);
+    opacity:0; transition:opacity .3s ease, transform .3s ease;
+  }
+  #tutorial-caption.visible{opacity:1;}
+  #tutorial-caption .step-title{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--accent); margin-bottom:4px; font-weight:600;}
+  #tutorial-caption .step-text{font-size:14px; line-height:1.5; color:var(--text);}
+  #tutorial-caption .step-foot{display:flex; align-items:center; justify-content:space-between; margin-top:10px;}
+  #tutorial-caption .dots{display:flex; gap:5px;}
+  #tutorial-caption .dots span{width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,0.22);}
+  #tutorial-caption .dots span.active{background:var(--accent);}
+  #tutorial-caption .step-actions{display:flex; gap:6px;}
+  #tutorial-caption button{
+    background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.14); color:var(--text);
+    border-radius:8px; padding:5px 10px; font-size:11.5px; cursor:pointer;
+  }
+  #tutorial-caption button:hover{background:rgba(255,255,255,0.16);}
+
+  footer#controls{
+    position:absolute; left:0; right:0; bottom:0; z-index:21;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    padding:14px 14px calc(14px + env(safe-area-inset-bottom));
+    flex-wrap:wrap;
+  }
+  .dock{
+    display:flex; align-items:center; gap:6px;
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:999px;
+    padding:6px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    box-shadow:0 10px 30px rgba(0,0,0,0.35);
+  }
+  .seg-btn{
+    border:none; background:transparent; color:var(--text-dim);
+    font-size:12.5px; font-weight:500; padding:8px 14px; border-radius:999px; cursor:pointer;
+    transition:background .2s ease, color .2s ease; white-space:nowrap;
+  }
+  .seg-btn.active{background:rgba(255,255,255,0.14); color:var(--text);}
+  .seg-btn.active[data-mode="cooling"]{background:rgba(94,200,255,0.22); color:#cdeeff;}
+  .seg-btn.active[data-mode="heating"]{background:rgba(255,138,76,0.22); color:#ffe0cb;}
+
+  .icon-btn{
+    border:none; background:rgba(255,255,255,0.08); color:var(--text);
+    width:38px; height:38px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:background .2s ease; flex:none;
+  }
+  .icon-btn:hover{background:rgba(255,255,255,0.18);}
+  .icon-btn svg{width:16px; height:16px;}
+  .text-btn{
+    border:none; background:rgba(255,255,255,0.08); color:var(--text);
+    padding:9px 16px; border-radius:999px; cursor:pointer; font-size:12.5px; font-weight:500;
+    display:flex; align-items:center; gap:7px; white-space:nowrap;
+  }
+  .text-btn:hover{background:rgba(255,255,255,0.18);}
+  .text-btn svg{width:14px; height:14px;}
+
+  @media (max-width: 760px){
+    #status-pill{font-size:11px; padding:7px 11px; max-width:60vw;}
+    #title{font-size:16px;}
+    footer#controls{gap:7px;}
+    .dock{padding:5px;}
+    .seg-btn{padding:7px 10px; font-size:11.5px;}
+    .icon-btn{width:34px; height:34px;}
+    #legend{max-width:190px; padding:11px 13px; font-size:11.5px;}
+    #tutorial-caption{bottom:96px; padding:12px 14px;}
+    #tutorial-caption .step-text{font-size:13px;}
+  }
+  @media (max-width: 520px){
+    #legend-toggle{top:60px;}
+    #legend{top:98px;}
+    footer#controls{flex-direction:column; align-items:center;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="scene"></canvas>
+  <div id="labels"></div>
+
+  <div id="loading"><div class="ring"></div><div class="txt">Assembling the refrigeration circuit&hellip;</div></div>
+
+  <div id="webgl-fail">
+    <div class="card">
+      <h2>3D preview unavailable</h2>
+      <p>This browser or device could not start WebGL, so the interactive 3D scene can't render here. Try a recent version of Chrome, Edge, Firefox or Safari on a device with graphics acceleration enabled.</p>
+      <div class="mini-diagram">
+        <div><b>The core idea:</b> air conditioning does not create cold &mdash; it moves heat from one place to another using a sealed refrigerant loop.</div>
+        <div style="margin-top:8px;"><b>Cooling:</b> indoor coil absorbs heat from room air &rarr; compressor &rarr; outdoor coil releases that heat outside.</div>
+        <div style="margin-top:8px;"><b>Heating:</b> a reversing valve flips the loop &mdash; the outdoor coil absorbs heat from outside air, the indoor coil releases it into the room.</div>
+      </div>
+    </div>
+  </div>
+
+  <header id="title-bar">
+    <h1 id="title">Claude Sonnet 5</h1>
+    <div id="status-pill">
+      <span class="seg" id="status-system"><b>Split System</b></span>
+      <span class="sep">&middot;</span>
+      <span class="seg" id="status-mode">Cooling</span>
+      <span class="sep">&middot;</span>
+      <span class="seg">Indoor <b id="status-indoor">26&deg;C</b></span>
+      <span class="sep">&middot;</span>
+      <span class="seg">Outdoor <b id="status-outdoor">32&deg;C</b></span>
+    </div>
+  </header>
+
+  <button id="legend-toggle" type="button">Legend</button>
+  <div id="legend">
+    <h3>Legend</h3>
+    <div class="row"><span class="swatch" style="background:var(--room-air); color:var(--room-air);"></span>Room air</div>
+    <div class="row"><span class="swatch" style="background:var(--outdoor-air); color:var(--outdoor-air);"></span>Outdoor air</div>
+    <div class="row"><span class="grad"></span>Refrigerant (hot &rarr; cold)</div>
+    <div class="row">
+      <svg class="arrow" viewBox="0 0 24 24" fill="none"><path d="M4 12h13M12 5l7 7-7 7" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Heat energy flow
+    </div>
+  </div>
+
+  <div id="tutorial-caption">
+    <div class="step-title" id="tut-title">Step</div>
+    <div class="step-text" id="tut-text">&nbsp;</div>
+    <div class="step-foot">
+      <div class="dots" id="tut-dots"></div>
+      <div class="step-actions">
+        <button id="tut-prev" type="button">Back</button>
+        <button id="tut-next" type="button">Next</button>
+        <button id="tut-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <footer id="controls">
+    <div class="dock" id="dock-system">
+      <button class="seg-btn active" data-system="split">Split System</button>
+      <button class="seg-btn" data-system="mono">Monoblock</button>
+    </div>
+    <div class="dock" id="dock-mode">
+      <button class="seg-btn active" data-mode="cooling">Cooling</button>
+      <button class="seg-btn" data-mode="heating">Heating</button>
+    </div>
+    <div class="dock">
+      <button class="icon-btn" id="btn-playpause" title="Play / Pause" aria-label="Play or pause animation">
+        <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+        <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><path d="M7 5l12 7-12 7V5z"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-reset" title="Reset view" aria-label="Reset camera view">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 4v6h6"/></svg>
+      </button>
+      <button class="text-btn" id="btn-tour" title="Guided tour">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5-6-3.5z" fill="currentColor" stroke="none"/></svg>
+        Guided Tour
+      </button>
+    </div>
+  </footer>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+/* ---------------------------------------------------------------------- */
+/* Utilities                                                               */
+/* ---------------------------------------------------------------------- */
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const smoothstep = (t)=>t*t*(3-2*t);
+const easeInOutCubic = (t)=> t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+const tmpV3 = new THREE.Vector3();
+const tmpQ = new THREE.Quaternion();
+
+const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const colorHot = new THREE.Color(0xff5a3c);
+const colorWarm = new THREE.Color(0xffce54);
+const colorCold = new THREE.Color(0x5ec8ff);
+const colorCool = new THREE.Color(0x8fe0d0);
+function refrigerantColorAt(frac){
+  // frac in [0,1) describing progress through: condenser(0-.45) -> expansion(.45-.5) -> evaporator(.5-.9) -> suction return(.9-1)
+  if(frac < 0.45){
+    const t = frac/0.45;
+    return colorHot.clone().lerp(colorWarm, smoothstep(t));
+  } else if(frac < 0.5){
+    const t = (frac-0.45)/0.05;
+    return colorWarm.clone().lerp(colorCold, smoothstep(t));
+  } else if(frac < 0.9){
+    const t = (frac-0.5)/0.4;
+    return colorCold.clone().lerp(colorCool, smoothstep(t));
+  } else {
+    const t = (frac-0.9)/0.1;
+    return colorCool.clone().lerp(colorHot, smoothstep(t));
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Renderer / scene / camera                                              */
+/* ---------------------------------------------------------------------- */
+const canvas = document.getElementById("scene");
+let renderer, scene, camera, controls, labelRenderer, pmremGenerator;
+let webglOK = true;
+
+try{
+  const testCtx = canvas.getContext("webgl2") || canvas.getContext("webgl");
+  if(!testCtx) throw new Error("no webgl context");
+  renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false, powerPreference:"high-performance" });
+}catch(e){
+  webglOK = false;
+}
+
+if(webglOK){
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(42, window.innerWidth/window.innerHeight, 0.1, 100);
+  const DEFAULT_CAM_POS = new THREE.Vector3(7.4, 4.6, 8.6);
+  const DEFAULT_CAM_TARGET = new THREE.Vector3(0.2, 1.4, 0.1);
+  camera.position.copy(DEFAULT_CAM_POS);
+
+  labelRenderer = new CSS2DRenderer();
+  labelRenderer.setSize(window.innerWidth, window.innerHeight);
+  labelRenderer.domElement.style.position = "absolute";
+  labelRenderer.domElement.style.top = "0";
+  document.getElementById("labels").appendChild(labelRenderer.domElement);
+
+  controls = new OrbitControls(camera, labelRenderer.domElement);
+  controls.target.copy(DEFAULT_CAM_TARGET);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 3.2;
+  controls.maxDistance = 20;
+  controls.maxPolarAngle = Math.PI*0.49;
+  controls.update();
+
+  pmremGenerator = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.045).texture;
+}else{
+  document.getElementById("webgl-fail").style.display = "flex";
+  document.getElementById("loading").classList.add("hidden");
+}
+
+/* ---------------------------------------------------------------------- */
+/* Procedural textures (all generated at runtime, no external assets)     */
+/* ---------------------------------------------------------------------- */
+function makeCanvasTexture(size, painter){
+  const cvs = document.createElement("canvas");
+  cvs.width = size.w; cvs.height = size.h;
+  const ctx = cvs.getContext("2d");
+  painter(ctx, size.w, size.h);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function plasterTexture(){
+  return makeCanvasTexture({w:512,h:512}, (ctx,w,h)=>{
+    ctx.fillStyle = "#e9e2d3";
+    ctx.fillRect(0,0,w,h);
+    for(let i=0;i<9000;i++){
+      const x = Math.random()*w, y = Math.random()*h;
+      const v = Math.random()*10;
+      ctx.fillStyle = `rgba(${120+v*3},${110+v*2},${95+v},${0.04+Math.random()*0.05})`;
+      ctx.fillRect(x,y,1.4,1.4);
+    }
+  });
+}
+function woodFloorTexture(){
+  const tex = makeCanvasTexture({w:512,h:512}, (ctx,w,h)=>{
+    const base = ["#8a5a3b","#8f6141","#835636","#93673f"];
+    const plankH = h/8;
+    for(let p=0;p<8;p++){
+      ctx.fillStyle = base[p%base.length];
+      ctx.fillRect(0,p*plankH,w,plankH);
+      for(let i=0;i<40;i++){
+        const x = Math.random()*w;
+        ctx.fillStyle = "rgba(40,20,10,0.05)";
+        ctx.fillRect(x,p*plankH,1,plankH);
+      }
+      ctx.strokeStyle = "rgba(30,15,8,0.35)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0,p*plankH); ctx.lineTo(w,p*plankH); ctx.stroke();
+    }
+  });
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2,2);
+  return tex;
+}
+function sidingTexture(){
+  const tex = makeCanvasTexture({w:512,h:512}, (ctx,w,h)=>{
+    ctx.fillStyle = "#c7ccd1";
+    ctx.fillRect(0,0,w,h);
+    const stripe = h/12;
+    for(let i=0;i<12;i++){
+      ctx.strokeStyle = "rgba(60,66,74,0.35)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0,i*stripe); ctx.lineTo(w,i*stripe); ctx.stroke();
+      ctx.fillStyle = `rgba(0,0,0,${0.02+Math.random()*0.02})`;
+      ctx.fillRect(0,i*stripe,w,stripe);
+    }
+  });
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1,1.4);
+  return tex;
+}
+function groundTexture(){
+  const tex = makeCanvasTexture({w:512,h:512}, (ctx,w,h)=>{
+    ctx.fillStyle = "#4c6b3f";
+    ctx.fillRect(0,0,w,h);
+    for(let i=0;i<16000;i++){
+      const x = Math.random()*w, y = Math.random()*h;
+      const g = 90+Math.random()*70;
+      ctx.fillStyle = `rgba(${g*0.55},${g},${g*0.4},${0.12+Math.random()*0.18})`;
+      ctx.fillRect(x,y,1.6,1.6);
+    }
+  });
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(10,10);
+  return tex;
+}
+function skyTexture(mood){
+  return makeCanvasTexture({w:8,h:512}, (ctx,w,h)=>{
+    const grad = ctx.createLinearGradient(0,0,0,h);
+    if(mood === "warm"){
+      grad.addColorStop(0,"#2f6fb8");
+      grad.addColorStop(0.45,"#7fb8e0");
+      grad.addColorStop(0.72,"#dce9ee");
+      grad.addColorStop(1,"#eef3ea");
+    }else{
+      grad.addColorStop(0,"#3b4a63");
+      grad.addColorStop(0.45,"#7c8ea3");
+      grad.addColorStop(0.72,"#c3cdd6");
+      grad.addColorStop(1,"#dfe4e6");
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,w,h);
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* App state                                                               */
+/* ---------------------------------------------------------------------- */
+const state = {
+  system: "split",      // "split" | "mono"
+  mode: "cooling",      // "cooling" | "heating"
+  playing: true,
+  indoorTemp: 26,
+  outdoorTemp: 32,
+  tourActive: false,
+  tourStep: 0,
+  reducedMotion: prefersReducedMotion,
+};
+const TEMP_TARGETS = {
+  cooling:{ indoorStart:26, indoorTarget:21, outdoor:32 },
+  heating:{ indoorStart:18, indoorTarget:22, outdoor:5 },
+};
+state.indoorTemp = TEMP_TARGETS.cooling.indoorStart;
+state.outdoorTemp = TEMP_TARGETS.cooling.outdoor;
+
+/* ---------------------------------------------------------------------- */
+/* Scene construction                                                      */
+/* ---------------------------------------------------------------------- */
+const registry = {}; // named world anchors for labels/tutorial highlights: name -> THREE.Object3D
+let hemi, sunLight, roomLight;
+let skyMoodCurrent = "warm";
+let wallInteriorMat, wallExteriorMat, floorMat, groundMesh, groundMat;
+let splitGroup, monoGroup;
+let refrigerantLoopCurve = { split:{cooling:null,heating:null}, mono:{cooling:null,heating:null} };
+let refrigerantMesh, roomAirMesh, outdoorAirMesh, dropletMesh, heatArrowMesh;
+let roomAirParticles = [], outdoorAirParticles = [], refrigerantParticles = [], droplets = [], heatArrows = [];
+let roomLoopCurveObj, outdoorLoopCurveObj;
+let highlightRing, highlightLabel;
+let fans = []; // {group, speed}
+let compressors = []; // {group, baseY}
+let coilRoles = {}; // system -> {indoor:'evaporator'|'condenser', outdoor:'...'}
+let reversingValves = []; // {indicatorGroup, system}
+
+function init3D(){
+  buildEnvironment();
+  buildSplitSystem();
+  buildMonoSystem();
+  buildParticleSystems();
+  buildHighlightRing();
+  applySystemVisibility();
+  applyModeVisuals(true);
+  bindUI();
+  window.addEventListener("resize", onResize);
+  requestAnimationFrame(animate);
+  setTimeout(()=>document.getElementById("loading").classList.add("hidden"), 350);
+}
+
+function buildEnvironment(){
+  scene.fog = new THREE.Fog(0xbfd4de, 14, 34);
+
+  hemi = new THREE.HemisphereLight(0xdfe9f2, 0x33301f, 0.55);
+  scene.add(hemi);
+
+  sunLight = new THREE.DirectionalLight(0xfff2d8, 1.35);
+  sunLight.position.set(6, 9, 6);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.set(2048,2048);
+  sunLight.shadow.camera.left = -9; sunLight.shadow.camera.right = 9;
+  sunLight.shadow.camera.top = 9; sunLight.shadow.camera.bottom = -9;
+  sunLight.shadow.camera.near = 1; sunLight.shadow.camera.far = 30;
+  sunLight.shadow.bias = -0.0015;
+  scene.add(sunLight);
+
+  roomLight = new THREE.PointLight(0xffe4b8, 18, 12, 2.1);
+  roomLight.position.set(-2.2, 2.7, 0.8);
+  roomLight.castShadow = true;
+  roomLight.shadow.mapSize.set(1024,1024);
+  scene.add(roomLight);
+  const fillLight = new THREE.PointLight(0xbcd8ff, 5, 10, 2);
+  fillLight.position.set(-3.6, 1.2, -1.8);
+  scene.add(fillLight);
+
+  // ground
+  groundMat = new THREE.MeshStandardMaterial({ map: groundTexture(), roughness:0.95, metalness:0.0 });
+  const groundGeo = new THREE.PlaneGeometry(40,40);
+  groundMesh = new THREE.Mesh(groundGeo, groundMat);
+  groundMesh.rotation.x = -Math.PI/2;
+  groundMesh.position.set(6, 0, 0);
+  groundMesh.receiveShadow = true;
+  scene.add(groundMesh);
+
+  // patio slab near outdoor unit
+  const slabMat = new THREE.MeshStandardMaterial({ color:0x9aa0a6, roughness:0.85 });
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(3.4,0.08,2.6), slabMat);
+  slab.position.set(2.4, 0.04, 0);
+  slab.receiveShadow = true; slab.castShadow = false;
+  scene.add(slab);
+
+  // room floor
+  floorMat = new THREE.MeshStandardMaterial({ map: woodFloorTexture(), roughness:0.7, metalness:0.02 });
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(5.0,0.1,5.6), floorMat);
+  floor.position.set(-2.55, -0.05, 0);
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // ceiling
+  const ceilMat = new THREE.MeshStandardMaterial({ color:0xf3efe5, roughness:0.95 });
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(5.0,0.1,5.6), ceilMat);
+  ceiling.position.set(-2.55, 3.0, 0);
+  ceiling.receiveShadow = true;
+  scene.add(ceiling);
+
+  // back wall
+  const backWallMat = new THREE.MeshStandardMaterial({ map: plasterTexture(), roughness:0.92 });
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(5.0,3.0,0.12), backWallMat);
+  backWall.position.set(-2.55, 1.5, -2.72);
+  backWall.receiveShadow = true; backWall.castShadow = true;
+  scene.add(backWall);
+
+  // end cap wall
+  const endWall = new THREE.Mesh(new THREE.BoxGeometry(0.12,3.0,5.6), backWallMat);
+  endWall.position.set(-5.05, 1.5, 0);
+  endWall.receiveShadow = true;
+  scene.add(endWall);
+
+  // dividing wall (the star of the show) - 6 face materials so indoor/outdoor faces differ
+  wallInteriorMat = new THREE.MeshStandardMaterial({ map: plasterTexture(), roughness:0.9 });
+  wallExteriorMat = new THREE.MeshStandardMaterial({ map: sidingTexture(), roughness:0.75, metalness:0.05 });
+  const wallEdgeMat = new THREE.MeshStandardMaterial({ color:0xcac2ae, roughness:0.9 });
+  const wallMats = [wallExteriorMat, wallInteriorMat, wallEdgeMat, wallEdgeMat, wallEdgeMat, wallEdgeMat]; // +x,-x,+y,-y,+z,-z
+  const dividingWall = new THREE.Mesh(new THREE.BoxGeometry(0.3,3.0,5.6), wallMats);
+  dividingWall.position.set(0, 1.5, 0);
+  dividingWall.castShadow = true; dividingWall.receiveShadow = true;
+  scene.add(dividingWall);
+  registry.wall = dividingWall;
+
+  // small sconce-like ceiling light fixture (visual only)
+  const fixture = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.14,0.05,20), new THREE.MeshStandardMaterial({color:0xfff6df, emissive:0xffdb8a, emissiveIntensity:0.9, roughness:0.4}));
+  fixture.position.set(-2.2, 2.96, 0.8);
+  scene.add(fixture);
+
+  applySkyMood("warm");
+}
+
+function applySkyMood(mood){
+  if(mood === skyMoodCurrent && scene.background) return;
+  skyMoodCurrent = mood;
+  scene.background = skyTexture(mood);
+  if(mood === "warm"){
+    sunLight.color.set(0xfff2d8);
+    sunLight.intensity = 1.35;
+    hemi.intensity = 0.55;
+    scene.fog.color.set(0xbfd4de);
+    groundMat.color.set(0xffffff);
+  }else{
+    sunLight.color.set(0xdfe8ff);
+    sunLight.intensity = 1.05;
+    hemi.intensity = 0.42;
+    scene.fog.color.set(0xaab3bd);
+    groundMat.color.set(0xc9d2d6);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Reusable component builders                                            */
+/* ---------------------------------------------------------------------- */
+function createFan(opts){
+  const { bladeCount=5, outerRadius=0.22, hubRadius=0.045, bladeLen=0.19, bladeWidth=0.075, color=0x3a3f46, hubColor=0x20232a } = opts;
+  const group = new THREE.Group();
+  const hubMat = new THREE.MeshStandardMaterial({ color:hubColor, roughness:0.4, metalness:0.6 });
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(hubRadius,hubRadius,0.05,16), hubMat);
+  hub.rotation.x = Math.PI/2;
+  group.add(hub);
+  const bladeMat = new THREE.MeshStandardMaterial({ color, roughness:0.45, metalness:0.35, side:THREE.DoubleSide });
+  const bladeGeo = new THREE.BoxGeometry(bladeLen, bladeWidth, 0.012);
+  bladeGeo.translate(bladeLen/2 + hubRadius*0.6, 0, 0);
+  for(let i=0;i<bladeCount;i++){
+    const blade = new THREE.Mesh(bladeGeo, bladeMat);
+    blade.rotation.z = (i/bladeCount)*Math.PI*2;
+    blade.rotation.x = 0.36;
+    blade.castShadow = true;
+    group.add(blade);
+  }
+  group.userData.spinAxisIsZ = true;
+  return group;
+}
+
+function makeSerpentinePath(width, height, depth, rows){
+  // returns array of THREE.Vector3 (local space) forming a zig-zag serpentine tube through a fin stack
+  const pts = [];
+  const xStep = width/(rows);
+  for(let r=0;r<rows;r++){
+    const x = -width/2 + xStep*(r+0.5);
+    const zDir = (r%2===0) ? 1 : -1;
+    const y = -height/2 + (height* (r/(rows-1||1)));
+    if(r===0){
+      pts.push(new THREE.Vector3(x, y, -depth/2*zDir*-1));
+    }
+    pts.push(new THREE.Vector3(x, y, depth/2*zDir));
+    if(r < rows-1){
+      const xNext = -width/2 + xStep*(r+1.5);
+      pts.push(new THREE.Vector3((x+xNext)/2, y + (height/(rows-1||1))*0.5, depth/2*zDir*1.08));
+    }
+  }
+  return pts;
+}
+
+function createCoil(opts){
+  const { width=0.62, height=0.34, depth=0.26, finCount=15, tubeRadius=0.014, finColor=0xb9c1c8 } = opts;
+  const group = new THREE.Group();
+
+  const finGeo = new THREE.BoxGeometry(0.012, height, depth);
+  const finMat = new THREE.MeshStandardMaterial({ color:finColor, roughness:0.45, metalness:0.55, emissive:0x000000, emissiveIntensity:0 });
+  const finMesh = new THREE.InstancedMesh(finGeo, finMat, finCount);
+  finMesh.castShadow = true; finMesh.receiveShadow = true;
+  const step = width/(finCount-1);
+  const dummy = new THREE.Object3D();
+  for(let i=0;i<finCount;i++){
+    dummy.position.set(-width/2 + step*i, 0, 0);
+    dummy.updateMatrix();
+    finMesh.setMatrixAt(i, dummy.matrix);
+  }
+  group.add(finMesh);
+
+  const rows = 4;
+  const pathPts = makeSerpentinePath(width*0.94, height*0.72, depth*0.85, rows);
+  const curve = new THREE.CatmullRomCurve3(pathPts, false, "catmullrom", 0.35);
+  const tubeGeo = new THREE.TubeGeometry(curve, 64, tubeRadius, 8, false);
+  const tubeMat = new THREE.MeshStandardMaterial({ color:0xb56a4d, roughness:0.3, metalness:0.85 });
+  const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+  tubeMesh.castShadow = true;
+  group.add(tubeMesh);
+
+  const enterPoint = pathPts[0].clone();
+  const exitPoint = pathPts[pathPts.length-1].clone();
+
+  group.userData.setState = (roleColor, intensity)=>{
+    finMat.emissive.copy(roleColor);
+    finMat.emissiveIntensity = intensity;
+  };
+  group.userData.enterLocal = enterPoint;
+  group.userData.exitLocal = exitPoint;
+  group.userData.curvePointsLocal = pathPts;
+  return group;
+}
+
+function createCompressor(){
+  const group = new THREE.Group();
+  const shellMat = new THREE.MeshStandardMaterial({ color:0x23262b, roughness:0.42, metalness:0.68, emissive:0x431900, emissiveIntensity:0 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.135,0.15,0.26,24), shellMat);
+  body.position.y = 0.15;
+  body.castShadow = true;
+  group.add(body);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.135,24,16,0,Math.PI*2,0,Math.PI/2), shellMat);
+  cap.position.y = 0.28;
+  cap.castShadow = true;
+  group.add(cap);
+  const footMat = new THREE.MeshStandardMaterial({ color:0x111316, roughness:0.6, metalness:0.3 });
+  for(let i=0;i<3;i++){
+    const a = (i/3)*Math.PI*2;
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.05,10), footMat);
+    foot.position.set(Math.cos(a)*0.1, 0.02, Math.sin(a)*0.1);
+    group.add(foot);
+  }
+  const pipeMat = new THREE.MeshStandardMaterial({ color:0xb56a4d, roughness:0.3, metalness:0.85 });
+  const stub1 = new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.14,10), pipeMat);
+  stub1.rotation.z = Math.PI/2; stub1.position.set(0.14, 0.22, 0);
+  group.add(stub1);
+  const stub2 = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.14,10), pipeMat);
+  stub2.rotation.z = Math.PI/2; stub2.position.set(0.14, 0.1, 0.06);
+  group.add(stub2);
+
+  group.userData.shellMat = shellMat;
+  group.userData.dischargePoint = new THREE.Vector3(0.21, 0.22, 0);
+  group.userData.suctionPoint = new THREE.Vector3(0.21, 0.1, 0.06);
+  return group;
+}
+
+function createExpansionDevice(){
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color:0xc9cdd2, roughness:0.35, metalness:0.75 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,0.09,12), bodyMat);
+  body.rotation.z = Math.PI/2;
+  group.add(body);
+  const needle = new THREE.Mesh(new THREE.ConeGeometry(0.014,0.05,10), new THREE.MeshStandardMaterial({color:0x8b8f94, roughness:0.3, metalness:0.8}));
+  needle.rotation.z = -Math.PI/2;
+  needle.position.x = 0.02;
+  group.add(needle);
+  const glow = new THREE.Mesh(new THREE.TorusGeometry(0.045,0.006,8,20), new THREE.MeshBasicMaterial({ color:0x5ec8ff, transparent:true, opacity:0.55 }));
+  glow.rotation.y = Math.PI/2;
+  group.add(glow);
+  group.userData.glow = glow;
+  return group;
+}
+
+function createReversingValve(){
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color:0x8e939a, roughness:0.4, metalness:0.7 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.075,0.09,20), bodyMat);
+  body.rotation.x = Math.PI/2;
+  group.add(body);
+  const pipeMat = new THREE.MeshStandardMaterial({ color:0xb0b5bb, roughness:0.35, metalness:0.75 });
+  const positions = [[0.09,0,0.05],[ -0.09,0,0.05],[0.05,0,-0.08],[-0.05,0,-0.08]];
+  positions.forEach(p=>{
+    const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.08,8), pipeMat);
+    stub.position.set(p[0],p[1],p[2]);
+    stub.rotation.x = Math.PI/2;
+    group.add(stub);
+  });
+  const indicator = new THREE.Mesh(
+    new THREE.TorusGeometry(0.05,0.008,6,16,Math.PI),
+    new THREE.MeshBasicMaterial({ color:0x5ec8ff })
+  );
+  indicator.position.set(0,0,0.09);
+  group.add(indicator);
+  group.userData.indicator = indicator;
+  return group;
+}
+
+function createRefrigerantTube(curve, radius, insulated){
+  const geo = new THREE.TubeGeometry(curve, 80, radius, 10, false);
+  const mat = insulated
+    ? new THREE.MeshStandardMaterial({ color:0x3a3f46, roughness:0.85, metalness:0.05 })
+    : new THREE.MeshStandardMaterial({ color:0xb56a4d, roughness:0.3, metalness:0.85 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  return mesh;
+}
+
+function createCabinetShell(width, height, depth, glassFace, plasticColor=0xf0f1f3){
+  // BoxGeometry face order: +x,-x,+y,-y,+z,-z
+  const plasticMat = new THREE.MeshPhysicalMaterial({ color:plasticColor, roughness:0.38, metalness:0.05, clearcoat:0.55, clearcoatRoughness:0.28 });
+  const glassMat = new THREE.MeshPhysicalMaterial({ color:0x0d1013, roughness:0.12, metalness:0.0, transmission:0.82, thickness:0.08, transparent:true, opacity:0.62, clearcoat:0.4 });
+  const mats = [plasticMat,plasticMat,plasticMat,plasticMat,plasticMat,plasticMat];
+  const faceIndex = { "+x":0,"-x":1,"+y":2,"-y":3,"+z":4,"-z":5 }[glassFace];
+  mats[faceIndex] = glassMat;
+  const geo = new RoundedBoxGeometry(width,height,depth,3,0.02);
+  const mesh = new THREE.Mesh(geo, mats);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  return mesh;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Split system                                                            */
+/* ---------------------------------------------------------------------- */
+function buildSplitSystem(){
+  splitGroup = new THREE.Group();
+  scene.add(splitGroup);
+
+  // ---- indoor unit ----
+  const indoorUnit = new THREE.Group();
+  indoorUnit.position.set(-0.32, 2.32, 0);
+  const indoorShell = createCabinetShell(0.4, 0.32, 1.7, "+z");
+  indoorUnit.add(indoorShell);
+  const indoorFan = createFan({ bladeCount:7, outerRadius:0.13, hubRadius:0.03, bladeLen:0.11, bladeWidth:0.05, color:0x4a5158 });
+  indoorFan.position.set(0.04, -0.02, 0);
+  indoorUnit.add(indoorFan);
+  fans.push({ group:indoorFan, speedRef:()=> (state.system==="split" && state.playing) ? 6.5 : 0 });
+  const indoorCoil = createCoil({ width:1.4, height:0.22, depth:0.12, finCount:16 });
+  indoorCoil.position.set(-0.02, 0.03, 0);
+  indoorCoil.rotation.y = Math.PI/2;
+  indoorUnit.add(indoorCoil);
+  const louvre = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.03,1.55), new THREE.MeshStandardMaterial({color:0xe4e6e9, roughness:0.5}));
+  louvre.position.set(0.19,-0.14,0);
+  louvre.rotation.z = 0.25;
+  indoorUnit.add(louvre);
+  splitGroup.add(indoorUnit);
+  registry.splitIndoorUnit = indoorUnit;
+  registry.splitIndoorCoil = indoorCoil;
+
+  // ---- outdoor unit ----
+  const outdoorUnit = new THREE.Group();
+  outdoorUnit.position.set(2.25, 0.02, 0);
+  const padMat = new THREE.MeshStandardMaterial({ color:0xb7bcc1, roughness:0.8 });
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(1.1,0.06,1.0), padMat);
+  pad.position.y = 0.03;
+  pad.receiveShadow = true;
+  outdoorUnit.add(pad);
+
+  const outdoorShell = createCabinetShell(0.95, 0.85, 0.9, "+x", 0xdcdfe2);
+  outdoorShell.position.set(0, 0.06+0.425, 0);
+  outdoorUnit.add(outdoorShell);
+
+  const outdoorFan = createFan({ bladeCount:6, outerRadius:0.3, hubRadius:0.05, bladeLen:0.27, bladeWidth:0.1, color:0x545b62 });
+  outdoorFan.rotation.y = Math.PI/2;
+  outdoorFan.position.set(0.34, 0.06+0.425, 0);
+  outdoorUnit.add(outdoorFan);
+  fans.push({ group:outdoorFan, speedRef:()=> (state.system==="split" && state.playing) ? 5.5 : 0 });
+
+  const outdoorCoil = createCoil({ width:0.78, height:0.5, depth:0.14, finCount:18 });
+  outdoorCoil.position.set(-0.12, 0.06+0.36, -0.2);
+  outdoorCoil.rotation.y = Math.PI/2;
+  outdoorUnit.add(outdoorCoil);
+
+  const compressor = createCompressor();
+  compressor.position.set(-0.22, 0.09, 0.25);
+  outdoorUnit.add(compressor);
+  compressors.push({ group:compressor, activeRef:()=> state.system==="split" && state.playing });
+
+  const revValve = createReversingValve();
+  revValve.position.set(-0.1, 0.09+0.28, 0.28);
+  revValve.scale.setScalar(0.9);
+  outdoorUnit.add(revValve);
+  reversingValves.push({ obj:revValve, system:"split" });
+
+  const expDevice = createExpansionDevice();
+  expDevice.position.set(0.08, 0.09+0.15, -0.36);
+  outdoorUnit.add(expDevice);
+
+  splitGroup.add(outdoorUnit);
+  registry.splitOutdoorUnit = outdoorUnit;
+  registry.splitOutdoorCoil = outdoorCoil;
+  registry.splitCompressor = compressor;
+  registry.splitValve = revValve;
+  registry.splitExpansion = expDevice;
+
+  // ---- refrigerant lines through the wall ----
+  const indoorWorldPipeStart = new THREE.Vector3(-0.32-0.02, 2.32+0.02, 0.62);
+  const wallPassA = new THREE.Vector3(-0.05, 0.42, 0.35);
+  const wallPassB = new THREE.Vector3(0.05, 0.42, 0.35);
+  const outdoorWorldPipeEnd = outdoorUnit.position.clone().add(new THREE.Vector3(-0.3, 0.09+0.05, 0.42));
+
+  const gasCurve = new THREE.CatmullRomCurve3([
+    indoorWorldPipeStart,
+    new THREE.Vector3(-0.15, 1.3, 0.55),
+    wallPassA,
+    new THREE.Vector3(0.9, 0.35, 0.5),
+    outdoorWorldPipeEnd.clone().add(new THREE.Vector3(0,0.05,0.03)),
+  ]);
+  const liquidCurve = new THREE.CatmullRomCurve3([
+    indoorWorldPipeStart.clone().add(new THREE.Vector3(0,-0.04,0.02)),
+    new THREE.Vector3(-0.08, 1.25, 0.5),
+    wallPassB,
+    new THREE.Vector3(0.95, 0.3, 0.46),
+    outdoorWorldPipeEnd.clone().add(new THREE.Vector3(0,-0.03,-0.02)),
+  ]);
+  splitGroup.add(createRefrigerantTube(gasCurve, 0.026, true));
+  splitGroup.add(createRefrigerantTube(liquidCurve, 0.016, false));
+
+  registry.splitPipeMidGas = new THREE.Vector3(0.9, 0.35, 0.5);
+  registry.splitPipeMidLiquid = new THREE.Vector3(0.95, 0.3, 0.46);
+
+  buildRefrigerantLoops("split", {
+    compressor, revValve, expDevice, indoorCoil, outdoorCoil,
+    indoorUnit, outdoorUnit, gasCurve, liquidCurve
+  });
+
+  // condensation drip anchor
+  registry.splitDripAnchor = new THREE.Vector3(-0.5, 2.16, 0);
+  registry.splitDischargeAnchor = new THREE.Vector3(-0.42, 2.18, 0);
+  registry.splitOutdoorDischargeAnchor = outdoorUnit.position.clone().add(new THREE.Vector3(0.5, 0.425, 0));
+  registry.splitOutdoorIntakeAnchor = outdoorUnit.position.clone().add(new THREE.Vector3(-0.3, 0.3, -0.35));
+}
+
+/* ---------------------------------------------------------------------- */
+/* Monoblock system                                                        */
+/* ---------------------------------------------------------------------- */
+function buildMonoSystem(){
+  monoGroup = new THREE.Group();
+  scene.add(monoGroup);
+
+  const cabinet = new THREE.Group();
+  cabinet.position.set(0.02, 1.35, 0);
+  monoGroup.add(cabinet);
+
+  const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.34,1.05,1.85), new THREE.MeshStandardMaterial({color:0xcac2ae, roughness:0.85}));
+  cabinet.add(sleeve);
+
+  const indoorShell = createCabinetShell(0.62, 0.95, 1.7, "+z", 0xf0f1f3);
+  indoorShell.position.set(-0.45, 0, 0);
+  cabinet.add(indoorShell);
+  const outdoorShell = createCabinetShell(0.62, 0.95, 1.7, "-x", 0xdadde0);
+  outdoorShell.position.set(0.45, 0, 0);
+  cabinet.add(outdoorShell);
+
+  const indoorFan = createFan({ bladeCount:7, outerRadius:0.16, hubRadius:0.035, bladeLen:0.14, bladeWidth:0.055, color:0x4a5158 });
+  indoorFan.rotation.y = Math.PI/2;
+  indoorFan.position.set(-0.42, 0.15, 0.25);
+  cabinet.add(indoorFan);
+  fans.push({ group:indoorFan, speedRef:()=> (state.system==="mono" && state.playing) ? 6.5 : 0 });
+
+  const outdoorFan = createFan({ bladeCount:6, outerRadius:0.2, hubRadius:0.04, bladeLen:0.17, bladeWidth:0.065, color:0x545b62 });
+  outdoorFan.rotation.y = Math.PI/2;
+  outdoorFan.position.set(0.42, 0.15, -0.25);
+  cabinet.add(outdoorFan);
+  fans.push({ group:outdoorFan, speedRef:()=> (state.system==="mono" && state.playing) ? 5.5 : 0 });
+
+  const indoorCoil = createCoil({ width:0.7, height:0.5, depth:0.13, finCount:16 });
+  indoorCoil.position.set(-0.4, -0.1, -0.35);
+  indoorCoil.rotation.y = Math.PI/2;
+  cabinet.add(indoorCoil);
+
+  const outdoorCoil = createCoil({ width:0.7, height:0.5, depth:0.13, finCount:16 });
+  outdoorCoil.position.set(0.4, -0.1, 0.35);
+  outdoorCoil.rotation.y = Math.PI/2;
+  cabinet.add(outdoorCoil);
+
+  const compressor = createCompressor();
+  compressor.scale.setScalar(0.85);
+  compressor.position.set(0.02, -0.35, 0.05);
+  cabinet.add(compressor);
+  compressors.push({ group:compressor, activeRef:()=> state.system==="mono" && state.playing });
+
+  const revValve = createReversingValve();
+  revValve.scale.setScalar(0.8);
+  revValve.position.set(0.05, -0.1, 0.05);
+  cabinet.add(revValve);
+  reversingValves.push({ obj:revValve, system:"mono" });
+
+  const expDevice = createExpansionDevice();
+  expDevice.scale.setScalar(0.85);
+  expDevice.position.set(0.02, 0.05, -0.02);
+  cabinet.add(expDevice);
+
+  registry.monoCabinet = cabinet;
+  registry.monoIndoorUnit = indoorShell;
+  registry.monoOutdoorUnit = outdoorShell;
+  registry.monoIndoorCoil = indoorCoil;
+  registry.monoOutdoorCoil = outdoorCoil;
+  registry.monoCompressor = compressor;
+  registry.monoValve = revValve;
+  registry.monoExpansion = expDevice;
+
+  buildRefrigerantLoops("mono", {
+    compressor, revValve, expDevice, indoorCoil, outdoorCoil,
+    indoorUnit: indoorShell, outdoorUnit: outdoorShell,
+    localGroup: cabinet
+  });
+
+  registry.monoDripAnchor = cabinet.localToWorld(new THREE.Vector3(-0.4,-0.34,-0.35));
+  registry.monoDischargeAnchor = cabinet.localToWorld(new THREE.Vector3(-0.42,-0.28,0.25));
+  registry.monoOutdoorDischargeAnchor = cabinet.localToWorld(new THREE.Vector3(0.75,0.15,-0.25));
+  registry.monoOutdoorIntakeAnchor = cabinet.localToWorld(new THREE.Vector3(0.35,-0.05,0.4));
+}
+
+/* ---------------------------------------------------------------------- */
+/* Refrigerant loop assembly (shared logic)                                */
+/* ---------------------------------------------------------------------- */
+function buildRefrigerantLoops(systemKey, parts){
+  const { compressor, revValve, expDevice, indoorCoil, outdoorCoil, gasCurve, liquidCurve, localGroup } = parts;
+
+  const toWorld = (obj, localPt)=> obj.localToWorld(localPt.clone());
+
+  const compDischarge = toWorld(compressor, compressor.userData.dischargePoint);
+  const compSuction = toWorld(compressor, compressor.userData.suctionPoint);
+  const valvePos = revValve.getWorldPosition(new THREE.Vector3());
+  const expPos = expDevice.getWorldPosition(new THREE.Vector3());
+
+  const indoorEnter = toWorld(indoorCoil, indoorCoil.userData.enterLocal);
+  const indoorExit = toWorld(indoorCoil, indoorCoil.userData.exitLocal);
+  const outdoorEnter = toWorld(outdoorCoil, outdoorCoil.userData.enterLocal);
+  const outdoorExit = toWorld(outdoorCoil, outdoorCoil.userData.exitLocal);
+
+  function buildOrderedPoints(condenserIsIndoor){
+    const condCoilEnter = condenserIsIndoor ? indoorEnter : outdoorEnter;
+    const condCoilExit = condenserIsIndoor ? indoorExit : outdoorExit;
+    const evapCoilEnter = condenserIsIndoor ? outdoorEnter : indoorEnter;
+    const evapCoilExit = condenserIsIndoor ? outdoorExit : indoorExit;
+    const pts = [];
+    pts.push(compDischarge);
+    pts.push(valvePos.clone().add(new THREE.Vector3(0,0.02,0)));
+    pts.push(condCoilEnter);
+    pts.push(condCoilExit);
+    if(systemKey === "split"){
+      const midPts = condenserIsIndoor
+        ? [registry.splitPipeMidLiquid.clone(), new THREE.Vector3(0.3,0.5,0.4)]
+        : [registry.splitPipeMidLiquid.clone()];
+      midPts.forEach(p=>pts.push(p));
+    }
+    pts.push(expPos.clone());
+    pts.push(evapCoilEnter);
+    pts.push(evapCoilExit);
+    if(systemKey === "split"){
+      pts.push(registry.splitPipeMidGas.clone());
+    }
+    pts.push(valvePos.clone().add(new THREE.Vector3(0,-0.02,0)));
+    pts.push(compSuction);
+    return pts;
+  }
+
+  const coolingPts = buildOrderedPoints(false); // outdoor coil = condenser in cooling
+  const heatingPts = buildOrderedPoints(true);  // indoor coil = condenser in heating
+
+  refrigerantLoopCurve[systemKey].cooling = new THREE.CatmullRomCurve3(coolingPts, true, "catmullrom", 0.28);
+  refrigerantLoopCurve[systemKey].heating = new THREE.CatmullRomCurve3(heatingPts, true, "catmullrom", 0.28);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Particle systems                                                       */
+/* ---------------------------------------------------------------------- */
+const REFRIGERANT_COUNT = 90;
+const ROOM_AIR_COUNT = 110;
+const OUTDOOR_AIR_COUNT = 110;
+const DROPLET_COUNT = 26;
+const HEAT_ARROW_COUNT = 22;
+
+function buildParticleSystems(){
+  const refGeo = new THREE.SphereGeometry(0.026, 10, 8);
+  const refMat = new THREE.MeshStandardMaterial({ roughness:0.3, metalness:0.1, emissive:0x222222, emissiveIntensity:0.6 });
+  refrigerantMesh = new THREE.InstancedMesh(refGeo, refMat, REFRIGERANT_COUNT);
+  refrigerantMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(REFRIGERANT_COUNT*3), 3);
+  scene.add(refrigerantMesh);
+  for(let i=0;i<REFRIGERANT_COUNT;i++){
+    refrigerantParticles.push({ t: i/REFRIGERANT_COUNT });
+  }
+
+  const airGeo = new THREE.SphereGeometry(0.021, 8, 6);
+  const roomAirMat = new THREE.MeshStandardMaterial({ color:0xffe9c2, transparent:true, opacity:0.85, roughness:0.6, emissive:0x froid });
+  scene.add(0); // placeholder removed below
+}
+
+</script>
+</body>
+</html>

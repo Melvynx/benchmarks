@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPT-5.6</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000000;
+    }
+
+    body {
+      position: relative;
+    }
+
+    h1 {
+      position: fixed;
+      z-index: 1;
+      top: 18px;
+      left: 0;
+      right: 0;
+      margin: 0;
+      color: #FFFFFF;
+      font: 500 18px/1 system-ui, sans-serif;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #000000;
+    }
+  </style>
+</head>
+<body>
+  <h1>GPT-5.6</h1>
+  <canvas aria-label="A red ball bouncing inside a rotating white heptagon"></canvas>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.querySelector("canvas");
+      const context = canvas.getContext("2d");
+
+      const SIDES = 7;
+      const BALL_RADIUS = 15;
+      const POLYGON_RADIUS = 250;
+      const ROTATION_SPEED = 0.5;
+      const GRAVITY = 500;
+      const RESTITUTION = 0.8;
+      const FRICTION = 0.98;
+      const FIXED_STEP = 1 / 240;
+      const MAX_FRAME_DELTA = 1 / 30;
+      const MAX_SUBSTEP_TRAVEL = BALL_RADIUS / 5;
+      const TAU = Math.PI * 2;
+
+      let width = 0;
+      let height = 0;
+      let pixelRatio = 1;
+      let angle = 0;
+      let accumulator = 0;
+      let previousTime = null;
+      let animationFrame = 0;
+      let running = true;
+
+      // Position is relative to the polygon center in world coordinates.
+      const ball = { x: 0, y: 0, vx: 0, vy: 0 };
+
+      const vertices = Array.from({ length: SIDES }, (_, index) => {
+        const vertexAngle = -Math.PI / 2 + index * TAU / SIDES;
+        return {
+          x: Math.cos(vertexAngle) * POLYGON_RADIUS,
+          y: Math.sin(vertexAngle) * POLYGON_RADIUS
+        };
+      });
+
+      const walls = vertices.map((start, index) => {
+        const end = vertices[(index + 1) % SIDES];
+        const midpointX = start.x + end.x;
+        const midpointY = start.y + end.y;
+        const midpointLength = Math.hypot(midpointX, midpointY);
+        const normal = {
+          x: midpointX / midpointLength,
+          y: midpointY / midpointLength
+        };
+
+        return {
+          start,
+          end,
+          normal,
+          limit: normal.x * start.x + normal.y * start.y - BALL_RADIUS
+        };
+      });
+
+      // A ball is fully contained when its center is inside this inset polygon.
+      const apothem = POLYGON_RADIUS * Math.cos(Math.PI / SIDES);
+      const insetScale = (apothem - BALL_RADIUS) / apothem;
+      const insetVertices = vertices.map((vertex) => ({
+        x: vertex.x * insetScale,
+        y: vertex.y * insetScale
+      }));
+
+      function toLocal(x, y) {
+        const cosine = Math.cos(angle);
+        const sine = Math.sin(angle);
+        return {
+          x: cosine * x + sine * y,
+          y: -sine * x + cosine * y
+        };
+      }
+
+      function toWorld(x, y) {
+        const cosine = Math.cos(angle);
+        const sine = Math.sin(angle);
+        return {
+          x: cosine * x - sine * y,
+          y: sine * x + cosine * y
+        };
+      }
+
+      function closestPointOnSegment(point, start, end) {
+        const edgeX = end.x - start.x;
+        const edgeY = end.y - start.y;
+        const lengthSquared = edgeX * edgeX + edgeY * edgeY;
+        const projection = (
+          (point.x - start.x) * edgeX +
+          (point.y - start.y) * edgeY
+        ) / lengthSquared;
+        const amount = Math.max(0, Math.min(1, projection));
+
+        return {
+          x: start.x + edgeX * amount,
+          y: start.y + edgeY * amount
+        };
+      }
+
+      function resolveCollisions() {
+        const localPosition = toLocal(ball.x, ball.y);
+        let outside = false;
+
+        for (const wall of walls) {
+          const signedDistance =
+            wall.normal.x * localPosition.x +
+            wall.normal.y * localPosition.y;
+
+          if (signedDistance > wall.limit) {
+            outside = true;
+            break;
+          }
+        }
+
+        if (!outside) return;
+
+        // Find the exact closest point on the inset polygon. This final
+        // projection is a hard containment guarantee after every substep.
+        let projected = null;
+        let closestEdgeIndex = 0;
+        let closestDistanceSquared = Infinity;
+
+        for (let index = 0; index < SIDES; index += 1) {
+          const candidate = closestPointOnSegment(
+            localPosition,
+            insetVertices[index],
+            insetVertices[(index + 1) % SIDES]
+          );
+          const differenceX = localPosition.x - candidate.x;
+          const differenceY = localPosition.y - candidate.y;
+          const distanceSquared =
+            differenceX * differenceX + differenceY * differenceY;
+
+          if (distanceSquared < closestDistanceSquared) {
+            closestDistanceSquared = distanceSquared;
+            closestEdgeIndex = index;
+            projected = candidate;
+          }
+        }
+
+        // Nudge toward the center to keep floating-point roundoff inside.
+        projected.x *= 1 - 1e-10;
+        projected.y *= 1 - 1e-10;
+
+        const correctedWorldPosition = toWorld(projected.x, projected.y);
+        ball.x = correctedWorldPosition.x;
+        ball.y = correctedWorldPosition.y;
+
+        const contactedWalls = [];
+        for (let index = 0; index < SIDES; index += 1) {
+          const wall = walls[index];
+          const separation = wall.limit - (
+            wall.normal.x * projected.x +
+            wall.normal.y * projected.y
+          );
+
+          if (separation < 1e-5) contactedWalls.push(index);
+        }
+
+        if (contactedWalls.length === 0) contactedWalls.push(closestEdgeIndex);
+
+        for (const wallIndex of contactedWalls) {
+          const wall = walls[wallIndex];
+          const normalWorld = toWorld(wall.normal.x, wall.normal.y);
+          const wallPointLocal = closestPointOnSegment(
+            projected,
+            wall.start,
+            wall.end
+          );
+          const wallPointWorld = toWorld(wallPointLocal.x, wallPointLocal.y);
+
+          // Velocity of a point on a body rotating around the origin: omega x r.
+          const wallVelocityX = -ROTATION_SPEED * wallPointWorld.y;
+          const wallVelocityY = ROTATION_SPEED * wallPointWorld.x;
+          const relativeVelocityX = ball.vx - wallVelocityX;
+          const relativeVelocityY = ball.vy - wallVelocityY;
+          const normalSpeed =
+            relativeVelocityX * normalWorld.x +
+            relativeVelocityY * normalWorld.y;
+
+          // Positive means the ball is moving out through this wall.
+          if (normalSpeed <= 0) continue;
+
+          const tangentVelocityX =
+            relativeVelocityX - normalSpeed * normalWorld.x;
+          const tangentVelocityY =
+            relativeVelocityY - normalSpeed * normalWorld.y;
+
+          ball.vx = wallVelocityX +
+            tangentVelocityX * FRICTION -
+            normalSpeed * RESTITUTION * normalWorld.x;
+          ball.vy = wallVelocityY +
+            tangentVelocityY * FRICTION -
+            normalSpeed * RESTITUTION * normalWorld.y;
+        }
+      }
+
+      function simulate(step) {
+        const speed = Math.hypot(ball.vx, ball.vy);
+        const maximumRelativeSpeed =
+          speed + Math.abs(ROTATION_SPEED) * (POLYGON_RADIUS + BALL_RADIUS);
+        const predictedTravel =
+          maximumRelativeSpeed * step + GRAVITY * step * step;
+        const substeps = Math.max(
+          1,
+          Math.ceil(predictedTravel / MAX_SUBSTEP_TRAVEL)
+        );
+        const substep = step / substeps;
+
+        for (let index = 0; index < substeps; index += 1) {
+          angle = (angle + ROTATION_SPEED * substep) % TAU;
+          ball.vy += GRAVITY * substep;
+          ball.x += ball.vx * substep;
+          ball.y += ball.vy * substep;
+          resolveCollisions();
+        }
+
+        if (![ball.x, ball.y, ball.vx, ball.vy, angle].every(Number.isFinite)) {
+          ball.x = 0;
+          ball.y = 0;
+          ball.vx = 0;
+          ball.vy = 0;
+          angle = 0;
+        }
+      }
+
+      function draw() {
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        context.fillStyle = "#000000";
+        context.fillRect(0, 0, width, height);
+
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const cosine = Math.cos(angle);
+        const sine = Math.sin(angle);
+
+        context.beginPath();
+        for (let index = 0; index < SIDES; index += 1) {
+          const vertex = vertices[index];
+          const x = centerX + cosine * vertex.x - sine * vertex.y;
+          const y = centerY + sine * vertex.x + cosine * vertex.y;
+
+          if (index === 0) context.moveTo(x, y);
+          else context.lineTo(x, y);
+        }
+        context.closePath();
+        context.lineWidth = 1.5;
+        context.strokeStyle = "#FFFFFF";
+        context.stroke();
+
+        context.beginPath();
+        context.arc(
+          centerX + ball.x,
+          centerY + ball.y,
+          BALL_RADIUS,
+          0,
+          TAU
+        );
+        context.fillStyle = "#FF0000";
+        context.fill();
+      }
+
+      function frame(time) {
+        if (!running) return;
+
+        if (previousTime === null) previousTime = time;
+        const elapsed = Math.min(
+          Math.max(0, (time - previousTime) / 1000),
+          MAX_FRAME_DELTA
+        );
+        previousTime = time;
+        accumulator += elapsed;
+
+        while (accumulator >= FIXED_STEP) {
+          simulate(FIXED_STEP);
+          accumulator -= FIXED_STEP;
+        }
+
+        draw();
+        animationFrame = requestAnimationFrame(frame);
+      }
+
+      function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+        canvas.width = Math.round(width * pixelRatio);
+        canvas.height = Math.round(height * pixelRatio);
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        draw();
+      }
+
+      window.addEventListener("resize", resize, { passive: true });
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          running = false;
+          cancelAnimationFrame(animationFrame);
+          animationFrame = 0;
+          accumulator = 0;
+          previousTime = null;
+        } else if (!running) {
+          running = true;
+          animationFrame = requestAnimationFrame(frame);
+        }
+      });
+      window.addEventListener("pagehide", () => {
+        running = false;
+        cancelAnimationFrame(animationFrame);
+      }, { once: true });
+
+      resize();
+      animationFrame = requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1461 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>GPT-5.6 SOL</title>
+  <style>
+    :root {
+      --ink: #09060d;
+      --ink-2: #130c18;
+      --paper: #f1edd9;
+      --acid: #d8ff3e;
+      --ember: #ff5c45;
+      --violet: #916dff;
+      --hairline: rgba(241, 237, 217, .27);
+      --ease: cubic-bezier(.22, 1, .36, 1);
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--paper);
+      background: var(--ink);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+
+    body {
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px) 0 0 / 7.6vw 100%,
+        var(--ink);
+      overscroll-behavior: none;
+    }
+
+    button, input { font: inherit; }
+
+    button { color: inherit; }
+
+    button:focus-visible,
+    input:focus-visible,
+    canvas:focus-visible {
+      outline: 2px solid var(--acid);
+      outline-offset: 4px;
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: 70px minmax(0, 1fr) 34px;
+      width: 100%;
+      height: 100dvh;
+      isolation: isolate;
+    }
+
+    .identity-bar {
+      position: relative;
+      z-index: 20;
+      display: grid;
+      grid-template-columns: minmax(170px, 1fr) auto minmax(170px, 1fr);
+      align-items: center;
+      gap: 24px;
+      padding: 0 clamp(16px, 2.6vw, 42px);
+      border-bottom: 1px solid var(--hairline);
+      background: rgba(9, 6, 13, .94);
+    }
+
+    .model-title {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .model-title::before {
+      content: "";
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: 10px;
+      border-radius: 50%;
+      background: var(--acid);
+      box-shadow: 0 0 16px var(--acid);
+      vertical-align: 0;
+    }
+
+    .mode-switch {
+      display: flex;
+      align-self: stretch;
+      align-items: stretch;
+      gap: 0;
+    }
+
+    .mode-button {
+      position: relative;
+      min-width: 116px;
+      padding: 1px 18px 0;
+      border: 0;
+      border-left: 1px solid var(--hairline);
+      background: transparent;
+      color: rgba(241, 237, 217, .54);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .17em;
+      text-transform: uppercase;
+      transition: color 250ms var(--ease), background 250ms var(--ease);
+    }
+
+    .mode-button:last-child { border-right: 1px solid var(--hairline); }
+
+    .mode-button::before {
+      content: attr(data-index);
+      margin-right: 9px;
+      color: var(--ember);
+      font-family: Georgia, serif;
+      font-size: 9px;
+      font-style: italic;
+      font-weight: 400;
+    }
+
+    .mode-button::after {
+      content: "";
+      position: absolute;
+      right: 18px;
+      bottom: 10px;
+      left: 18px;
+      height: 2px;
+      background: var(--acid);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 350ms var(--ease);
+    }
+
+    .mode-button:hover { color: var(--paper); background: rgba(255,255,255,.035); }
+    .mode-button[aria-selected="true"] { color: var(--paper); }
+    .mode-button[aria-selected="true"]::after { transform: scaleX(1); }
+
+    .seed-deck {
+      display: flex;
+      justify-self: end;
+      align-items: center;
+      gap: 9px;
+      font-size: 9px;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .seed-deck > span { color: rgba(241, 237, 217, .5); }
+    #seed-value { min-width: 5ch; color: var(--paper); font-variant-numeric: tabular-nums; }
+
+    .seed-button {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border: 1px solid var(--hairline);
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+      font-size: 14px;
+      transition: border-color 180ms ease, color 180ms ease, transform 120ms ease;
+    }
+
+    .seed-button:hover { border-color: var(--acid); color: var(--acid); }
+    .seed-button:active { transform: scale(.92); }
+
+    .stage {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 40%, rgba(145,109,255,.07), transparent 45%),
+        var(--ink);
+    }
+
+    .view {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      opacity: 0;
+      visibility: hidden;
+      transform: scale(.985);
+      clip-path: inset(0 50% 0 50%);
+      transition:
+        opacity 320ms var(--ease),
+        transform 520ms var(--ease),
+        clip-path 520ms var(--ease),
+        visibility 0s linear 520ms;
+    }
+
+    .view.is-active {
+      z-index: 2;
+      opacity: 1;
+      visibility: visible;
+      transform: scale(1);
+      clip-path: inset(0 0 0 0);
+      transition-delay: 0s;
+    }
+
+    .view::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(105deg, transparent 44%, rgba(216,255,62,.11) 49%, transparent 54%);
+      transform: translateX(-120%);
+    }
+
+    .view.is-entering::after { animation: threshold 620ms var(--ease) both; }
+
+    @keyframes threshold { to { transform: translateX(120%); } }
+
+    .poster-view {
+      background:
+        linear-gradient(115deg, rgba(255,92,69,.04), transparent 35%),
+        #0b0710;
+    }
+
+    .poster-frame {
+      position: relative;
+      width: min(68vw, calc((100dvh - 132px) * .8), 690px);
+      aspect-ratio: 4 / 5;
+      overflow: hidden;
+      border: 1px solid rgba(241, 237, 217, .48);
+      background: #130c18;
+      color: var(--paper);
+      box-shadow: 0 28px 100px rgba(0,0,0,.56), 0 0 0 10px rgba(255,255,255,.018);
+      container-type: inline-size;
+    }
+
+    #poster-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .poster-frame::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      pointer-events: none;
+      opacity: .24;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.27'/%3E%3C/svg%3E");
+      mix-blend-mode: soft-light;
+    }
+
+    .poster-header,
+    .poster-copy,
+    .poster-name,
+    .poster-footer,
+    .poster-index {
+      position: absolute;
+      z-index: 4;
+    }
+
+    .poster-header {
+      top: 4.1cqw;
+      right: 4.5cqw;
+      left: 4.5cqw;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      border-top: .16cqw solid rgba(241,237,217,.8);
+      padding-top: 1.6cqw;
+      font-size: 1.55cqw;
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .poster-header .right { text-align: right; color: var(--acid); }
+
+    .poster-copy {
+      top: 19cqw;
+      left: 4.5cqw;
+      width: 30cqw;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 3.8cqw;
+      font-style: italic;
+      line-height: .95;
+    }
+
+    .poster-copy span {
+      display: block;
+      margin-top: 1.2cqw;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 1.45cqw;
+      font-style: normal;
+      font-weight: 700;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    .poster-name {
+      top: 45.5cqw;
+      left: -1.5cqw;
+      width: 103cqw;
+      font-family: Arial Black, Arial, Helvetica, sans-serif;
+      font-size: 16.9cqw;
+      font-weight: 900;
+      line-height: .76;
+      letter-spacing: -.096em;
+      text-transform: uppercase;
+      transform: scaleY(1.55);
+      transform-origin: center;
+      white-space: nowrap;
+      mix-blend-mode: screen;
+    }
+
+    .poster-name .cut {
+      color: var(--ember);
+      -webkit-text-stroke: .08cqw var(--paper);
+    }
+
+    .poster-name .hollow {
+      color: transparent;
+      -webkit-text-stroke: .14cqw var(--paper);
+    }
+
+    .poster-index {
+      top: 35cqw;
+      right: 4.4cqw;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      width: 16cqw;
+      border-top: .14cqw solid var(--paper);
+      padding-top: 1cqw;
+      font-size: 1.3cqw;
+      letter-spacing: .1em;
+    }
+
+    .poster-index i { width: .8cqw; height: .8cqw; border-radius: 50%; background: var(--acid); }
+    .poster-index i:nth-child(2) { background: var(--ember); }
+    .poster-index i:nth-child(3) { background: var(--violet); }
+
+    .poster-footer {
+      right: 4.5cqw;
+      bottom: 4.2cqw;
+      left: 4.5cqw;
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 5cqw;
+      border-top: .16cqw solid rgba(241,237,217,.8);
+      padding-top: 2.2cqw;
+    }
+
+    .poster-artists {
+      font-size: 2.15cqw;
+      font-weight: 700;
+      line-height: 1.45;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .poster-artists strong {
+      display: block;
+      margin-bottom: 1.4cqw;
+      color: var(--acid);
+      font-size: 1.35cqw;
+      letter-spacing: .18em;
+    }
+
+    .poster-details {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 3cqw;
+      font-style: italic;
+      line-height: 1.08;
+      text-align: right;
+    }
+
+    .poster-details small {
+      display: block;
+      margin-top: 1.5cqw;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 1.45cqw;
+      font-style: normal;
+      font-weight: 700;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .motion-view,
+    .instrument-view { background: #09060d; }
+
+    #motion-canvas,
+    #instrument-canvas {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .motion-brow,
+    .instrument-brow {
+      position: absolute;
+      z-index: 5;
+      top: clamp(18px, 3vw, 38px);
+      left: clamp(18px, 3vw, 44px);
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: 9px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .motion-brow::before,
+    .instrument-brow::before {
+      content: "";
+      width: 42px;
+      height: 1px;
+      background: var(--acid);
+      box-shadow: 0 0 8px var(--acid);
+    }
+
+    #phase-label { color: var(--acid); min-width: 10ch; }
+
+    .motion-controls {
+      position: absolute;
+      z-index: 8;
+      right: clamp(16px, 3vw, 44px);
+      bottom: clamp(16px, 3vw, 36px);
+      left: clamp(16px, 3vw, 44px);
+      display: grid;
+      grid-template-columns: auto auto minmax(120px, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      padding-top: 13px;
+      border-top: 1px solid rgba(241,237,217,.36);
+    }
+
+    .transport-button {
+      min-width: 74px;
+      padding: 9px 12px;
+      border: 1px solid rgba(241,237,217,.5);
+      background: rgba(9,6,13,.62);
+      cursor: pointer;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .17em;
+      text-transform: uppercase;
+      backdrop-filter: blur(5px);
+      transition: color 160ms ease, background 160ms ease, border-color 160ms ease, transform 120ms ease;
+    }
+
+    .transport-button:hover { color: var(--ink); border-color: var(--acid); background: var(--acid); }
+    .transport-button:active { transform: scale(.96); }
+
+    .timeline {
+      width: 100%;
+      height: 20px;
+      margin: 0;
+      appearance: none;
+      background: transparent;
+      cursor: ew-resize;
+    }
+
+    .timeline::-webkit-slider-runnable-track {
+      height: 2px;
+      background: linear-gradient(90deg, var(--acid) 0 var(--progress, 0%), rgba(241,237,217,.28) var(--progress, 0%) 100%);
+    }
+
+    .timeline::-webkit-slider-thumb {
+      width: 14px;
+      height: 14px;
+      margin-top: -6px;
+      appearance: none;
+      border: 2px solid var(--ink);
+      border-radius: 50%;
+      background: var(--acid);
+      box-shadow: 0 0 0 1px var(--acid), 0 0 16px rgba(216,255,62,.7);
+    }
+
+    .timeline::-moz-range-track { height: 2px; background: rgba(241,237,217,.28); }
+    .timeline::-moz-range-progress { height: 2px; background: var(--acid); }
+    .timeline::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid var(--ink); border-radius: 50%; background: var(--acid); }
+
+    #time-readout {
+      min-width: 6.5ch;
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .12em;
+      text-align: right;
+    }
+
+    .instrument-view { cursor: crosshair; }
+    #instrument-canvas { touch-action: none; }
+
+    .instrument-brow {
+      max-width: min(480px, 70vw);
+      line-height: 1.45;
+    }
+
+    .instrument-readout {
+      position: absolute;
+      z-index: 5;
+      right: clamp(18px, 3vw, 44px);
+      bottom: clamp(18px, 3vw, 38px);
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+      gap: 24px;
+      padding-top: 11px;
+      border-top: 1px solid rgba(241,237,217,.36);
+      pointer-events: none;
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .instrument-readout span { color: rgba(241,237,217,.5); }
+    .instrument-readout output { display: block; margin-top: 5px; color: var(--paper); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+    .event-thread {
+      position: relative;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-top: 1px solid var(--hairline);
+      background: var(--acid);
+      color: var(--ink);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .event-thread span { margin: 0 1.3em; color: rgba(9,6,13,.38); }
+
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    @media (max-width: 760px) {
+      .app { grid-template-rows: 106px minmax(0, 1fr) 30px; }
+      .identity-bar {
+        grid-template-columns: 1fr auto;
+        grid-template-rows: 44px 62px;
+        gap: 0 12px;
+        padding: 0 12px;
+      }
+      .model-title { font-size: 10px; }
+      .seed-deck { grid-column: 2; grid-row: 1; }
+      .seed-deck > span:first-child { display: none; }
+      .mode-switch {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        width: 100%;
+      }
+      .mode-button { flex: 1; min-width: 0; padding-inline: 5px; font-size: 8px; }
+      .mode-button::before { display: none; }
+      .mode-button::after { right: 8px; left: 8px; bottom: 8px; }
+      .poster-frame { width: min(calc(100vw - 24px), calc((100dvh - 150px) * .8)); }
+      .motion-controls {
+        grid-template-columns: 1fr 1fr auto;
+        gap: 8px;
+      }
+      .timeline { grid-column: 1 / -1; grid-row: 1; }
+      #time-readout { grid-column: 3; grid-row: 2; }
+      .transport-button { min-width: 0; }
+      .instrument-brow { max-width: calc(100vw - 36px); font-size: 8px; }
+      .instrument-readout { right: 18px; left: 18px; justify-content: space-between; gap: 8px; }
+      .event-thread { justify-content: flex-start; padding-left: 12px; font-size: 8px; }
+    }
+
+    @media (max-height: 600px) and (orientation: landscape) {
+      .app { grid-template-rows: 52px minmax(0, 1fr) 26px; }
+      .identity-bar { grid-template-columns: minmax(150px,1fr) auto minmax(150px,1fr); padding-inline: 14px; }
+      .mode-button { min-width: 92px; padding-inline: 8px; font-size: 8px; }
+      .poster-frame { width: min(46vw, calc((100dvh - 90px) * .8)); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="identity-bar">
+      <h1 class="model-title">GPT-5.6 SOL</h1>
+
+      <nav class="mode-switch" aria-label="Identity expressions" role="tablist">
+        <button class="mode-button" type="button" role="tab" aria-selected="true" aria-controls="poster-view" id="poster-tab" data-mode="poster" data-index="I">Poster</button>
+        <button class="mode-button" type="button" role="tab" aria-selected="false" aria-controls="motion-view" id="motion-tab" data-mode="motion" data-index="II">Motion</button>
+        <button class="mode-button" type="button" role="tab" aria-selected="false" aria-controls="instrument-view" id="instrument-tab" data-mode="instrument" data-index="III">Instrument</button>
+      </nav>
+
+      <div class="seed-deck" aria-label="Identity seed controls">
+        <span>Light code</span>
+        <button class="seed-button" id="seed-down" type="button" aria-label="Previous seed">−</button>
+        <output id="seed-value" aria-live="polite">2604</output>
+        <button class="seed-button" id="seed-up" type="button" aria-label="Next seed">+</button>
+      </div>
+    </header>
+
+    <main class="stage">
+      <section class="view poster-view is-active" id="poster-view" role="tabpanel" aria-labelledby="poster-tab">
+        <div class="poster-frame" aria-label="NOCTURNE festival poster">
+          <canvas id="poster-canvas" aria-hidden="true"></canvas>
+          <div class="poster-header">
+            <div>Atlas Observatory<br>18 October</div>
+            <div class="right">Doors 19:30<br>Light score № 01</div>
+          </div>
+          <div class="poster-copy">Festival of<br>Impossible Light<span>Ceremonial · Electric · Intimate</span></div>
+          <div class="poster-index" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="poster-name" role="img" aria-label="NOCTURNE"><span>NOC</span><span class="cut">T</span><span class="hollow">UR</span><span>NE</span></div>
+          <div class="poster-footer">
+            <div class="poster-artists"><strong>Live apparitions</strong>Mira Vale<br>Glass Choir<br>Static Bloom</div>
+            <div class="poster-details">18 October<small>Doors 19:30<br>Atlas Observatory</small></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view motion-view" id="motion-view" role="tabpanel" aria-labelledby="motion-tab" aria-hidden="true">
+        <canvas id="motion-canvas" aria-label="Twelve-second NOCTURNE kinetic title sequence"></canvas>
+        <div class="motion-brow"><span>12 second ceremony</span><span id="phase-label">Dormant</span></div>
+        <div class="motion-controls" aria-label="Motion playback controls">
+          <button class="transport-button" id="play-button" type="button">Play</button>
+          <button class="transport-button" id="replay-button" type="button">Replay</button>
+          <input class="timeline" id="timeline" type="range" min="0" max="12000" step="1" value="0" aria-label="Motion position in milliseconds">
+          <output id="time-readout" for="timeline">00.000</output>
+        </div>
+      </section>
+
+      <section class="view instrument-view" id="instrument-view" role="tabpanel" aria-labelledby="instrument-tab" aria-hidden="true">
+        <canvas id="instrument-canvas" tabindex="0" aria-label="Interactive light instrument. Move or drag the pointer; use arrow keys and Space on the keyboard."></canvas>
+        <div class="instrument-brow"><span>Conduct the impossible light — move, drag, touch, arrows + space</span></div>
+        <div class="instrument-readout" aria-hidden="true">
+          <span>Azimuth<output id="azimuth-readout">180°</output></span>
+          <span>Altitude<output id="altitude-readout">45°</output></span>
+          <span>Charge<output id="charge-readout">000</output></span>
+        </div>
+      </section>
+    </main>
+
+    <footer class="event-thread" aria-label="Event details">
+      NOCTURNE <span>◆</span> Festival of Impossible Light <span>◆</span> 18 October <span>◆</span> Doors 19:30 <span>◆</span> Atlas Observatory <span>◆</span> Mira Vale · Glass Choir · Static Bloom
+    </footer>
+    <div class="sr-only" id="live-status" aria-live="polite"></div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const DURATION = 12000;
+      const MODES = ['poster', 'motion', 'instrument'];
+      const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+      const state = {
+        seed: 2604,
+        mode: 'poster',
+        motionTime: 0,
+        playing: false,
+        identity: null
+      };
+
+      const instrument = {
+        x: .5,
+        y: .5,
+        targetX: .5,
+        targetY: .5,
+        energy: 0,
+        dragging: false,
+        gestureCount: 0,
+        trail: [],
+        nodes: []
+      };
+
+      const els = {
+        stage: document.querySelector('.stage'),
+        tabs: [...document.querySelectorAll('.mode-button')],
+        views: [...document.querySelectorAll('.view')],
+        seedValue: document.querySelector('#seed-value'),
+        seedDown: document.querySelector('#seed-down'),
+        seedUp: document.querySelector('#seed-up'),
+        poster: document.querySelector('#poster-canvas'),
+        motion: document.querySelector('#motion-canvas'),
+        instrument: document.querySelector('#instrument-canvas'),
+        play: document.querySelector('#play-button'),
+        replay: document.querySelector('#replay-button'),
+        timeline: document.querySelector('#timeline'),
+        time: document.querySelector('#time-readout'),
+        phase: document.querySelector('#phase-label'),
+        azimuth: document.querySelector('#azimuth-readout'),
+        altitude: document.querySelector('#altitude-readout'),
+        charge: document.querySelector('#charge-readout'),
+        live: document.querySelector('#live-status')
+      };
+
+      const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const smooth = t => {
+        t = clamp(t);
+        return t * t * (3 - 2 * t);
+      };
+      const span = (time, start, end) => smooth((time - start) / (end - start));
+      const pulse = (time, start, peak, end) => time < peak ? span(time, start, peak) : 1 - span(time, peak, end);
+
+      function mulberry32(seed) {
+        let value = seed >>> 0;
+        return () => {
+          value += 0x6D2B79F5;
+          let t = value;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function normalizeSeed(seed) {
+        const number = Number(seed);
+        return Number.isFinite(number) ? Math.trunc(number) >>> 0 : 2604;
+      }
+
+      function createIdentity(seed) {
+        const random = mulberry32(seed);
+        const stars = Array.from({ length: 110 }, () => ({
+          x: random(),
+          y: random(),
+          r: .25 + random() * 1.25,
+          a: .12 + random() * .55
+        }));
+        const rays = Array.from({ length: 72 }, (_, index) => ({
+          angle: (index / 72) * Math.PI * 2 + (random() - .5) * .035,
+          length: .18 + random() * .38,
+          weight: .35 + random() * 1.15,
+          phase: random() * Math.PI * 2
+        }));
+        const wave = Array.from({ length: 8 }, () => ({
+          amplitude: .08 + random() * .13,
+          frequency: 1.2 + random() * 2.1,
+          phase: random() * Math.PI * 2,
+          lean: random() * 2 - 1
+        }));
+        const cuts = Array.from({ length: 15 }, () => ({
+          x: .1 + random() * .8,
+          y: .12 + random() * .72,
+          length: .025 + random() * .12,
+          angle: random() * Math.PI
+        }));
+        return { stars, rays, wave, cuts, hueShift: Math.round((random() - .5) * 18) };
+      }
+
+      function resetInstrument() {
+        const random = mulberry32(state.seed ^ 0x9E3779B9);
+        instrument.x = .5;
+        instrument.y = .5;
+        instrument.targetX = .5;
+        instrument.targetY = .5;
+        instrument.energy = 0;
+        instrument.dragging = false;
+        instrument.gestureCount = 0;
+        instrument.trail = [];
+        instrument.nodes = Array.from({ length: 9 }, (_, index) => ({
+          lane: index % 3,
+          x: .08 + random() * .84,
+          y: .12 + random() * .76,
+          mass: .55 + random() * .8,
+          phase: random() * Math.PI * 2
+        }));
+      }
+
+      function prepareCanvas(canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.min(2.5, Math.max(1, devicePixelRatio || 1));
+        const width = Math.max(1, Math.round(rect.width * dpr));
+        const height = Math.max(1, Math.round(rect.height * dpr));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { ctx, width: rect.width, height: rect.height };
+      }
+
+      function drawStars(ctx, width, height, opacity = 1) {
+        ctx.save();
+        for (const star of state.identity.stars) {
+          ctx.globalAlpha = star.a * opacity;
+          ctx.fillStyle = star.r > 1.15 ? '#d8ff3e' : '#f1edd9';
+          ctx.fillRect(star.x * width, star.y * height, star.r, star.r);
+        }
+        ctx.restore();
+      }
+
+      function drawRays(ctx, cx, cy, radius, amount, rotation = 0) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rotation);
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < state.identity.rays.length; i++) {
+          const ray = state.identity.rays[i];
+          const visible = clamp(amount * state.identity.rays.length - i, 0, 1);
+          if (!visible) continue;
+          const inner = radius * (.72 + Math.sin(ray.phase) * .03);
+          const outer = inner + radius * ray.length * visible;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(ray.angle) * inner, Math.sin(ray.angle) * inner);
+          ctx.lineTo(Math.cos(ray.angle) * outer, Math.sin(ray.angle) * outer);
+          ctx.strokeStyle = i % 3 === 0 ? 'rgba(216,255,62,.58)' : i % 3 === 1 ? 'rgba(255,92,69,.38)' : 'rgba(145,109,255,.35)';
+          ctx.lineWidth = ray.weight;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function renderPoster() {
+        if (!state.identity) return;
+        const { ctx, width, height } = prepareCanvas(els.poster);
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#130c18';
+        ctx.fillRect(0, 0, width, height);
+        drawStars(ctx, width, height, .7);
+
+        const cx = width * .72;
+        const cy = height * .29;
+        const radius = width * .205;
+        drawRays(ctx, cx, cy, radius, .9, state.seed * .0001);
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-.24);
+        ctx.shadowBlur = width * .06;
+        ctx.shadowColor = '#d8ff3e';
+        ctx.fillStyle = '#d8ff3e';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, radius * .76, radius, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#09060d';
+        ctx.beginPath();
+        ctx.ellipse(radius * .22, -radius * .03, radius * .72, radius * .94, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        const colors = ['#d8ff3e', '#ff5c45', '#916dff'];
+        state.identity.wave.slice(0, 3).forEach((wave, lane) => {
+          ctx.beginPath();
+          for (let i = 0; i <= 100; i++) {
+            const t = i / 100;
+            const x = lerp(-width * .08, width * 1.08, t);
+            const y = height * (.66 + lane * .026) + Math.sin(t * Math.PI * wave.frequency + wave.phase) * width * wave.amplitude * (1 - Math.abs(t - .5));
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = colors[lane];
+          ctx.globalAlpha = .55;
+          ctx.lineWidth = width * (.005 - lane * .0008);
+          ctx.shadowBlur = width * .025;
+          ctx.shadowColor = colors[lane];
+          ctx.stroke();
+        });
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(241,237,217,.55)';
+        ctx.lineWidth = .7;
+        for (const cut of state.identity.cuts) {
+          const x = cut.x * width;
+          const y = cut.y * height;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + Math.cos(cut.angle) * cut.length * width, y + Math.sin(cut.angle) * cut.length * width);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function phaseAt(time) {
+        if (time === 0) return 'Dormant';
+        if (time < 2200) return 'Aperture';
+        if (time < 5200) return 'Invocation';
+        if (time < 8100) return 'Conduction';
+        if (time < 10100) return 'Zenith';
+        if (time < DURATION) return 'Afterimage';
+        return 'Resolved';
+      }
+
+      function drawTrackedText(ctx, text, centerX, y, font, spacing, color, alpha = 1) {
+        ctx.save();
+        ctx.font = font;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const widths = [...text].map(char => ctx.measureText(char).width);
+        const total = widths.reduce((sum, value) => sum + value, 0) + spacing * (text.length - 1);
+        let x = centerX - total / 2;
+        [...text].forEach((char, index) => {
+          ctx.fillText(char, x, y);
+          x += widths[index] + spacing;
+        });
+        ctx.restore();
+      }
+
+      function renderMotion() {
+        if (!state.identity) return;
+        const { ctx, width, height } = prepareCanvas(els.motion);
+        const t = state.motionTime;
+        const minSide = Math.min(width, height);
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#09060d';
+        ctx.fillRect(0, 0, width, height);
+        drawStars(ctx, width, height, .32 + span(t, 0, 1200) * .55);
+
+        const cx = width / 2;
+        const cy = height / 2 - minSide * .025;
+        const ignite = span(t, 180, 1850);
+        const invoke = span(t, 1800, 4700);
+        const conduct = span(t, 4300, 7600);
+        const zenith = pulse(t, 7350, 8850, 10100);
+        const resolve = span(t, 9700, 11600);
+        const apertureRadius = minSide * (.055 + ignite * .13 + zenith * .045);
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-.31 + Math.sin(state.seed) * .035);
+        ctx.globalCompositeOperation = 'lighter';
+        const slitWidth = minSide * (.006 + ignite * .036 + zenith * .025);
+        const gradient = ctx.createLinearGradient(-slitWidth, -height * .22, slitWidth, height * .22);
+        gradient.addColorStop(0, 'rgba(255,92,69,0)');
+        gradient.addColorStop(.3, 'rgba(255,92,69,.8)');
+        gradient.addColorStop(.53, '#f1edd9');
+        gradient.addColorStop(.72, 'rgba(216,255,62,.9)');
+        gradient.addColorStop(1, 'rgba(216,255,62,0)');
+        ctx.fillStyle = gradient;
+        ctx.shadowBlur = minSide * .07;
+        ctx.shadowColor = '#d8ff3e';
+        ctx.fillRect(-slitWidth / 2, -height * .32 * ignite, slitWidth, height * .64 * ignite);
+        ctx.restore();
+
+        drawRays(ctx, cx, cy, apertureRadius, clamp(conduct + zenith * .4), t * .00008 + state.seed * .00001);
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        const ringAlpha = clamp(invoke * 1.4 - resolve * .8);
+        ctx.globalAlpha = ringAlpha;
+        for (let ring = 0; ring < 3; ring++) {
+          ctx.beginPath();
+          ctx.ellipse(0, 0, apertureRadius * (1.12 + ring * .5), apertureRadius * (.62 + ring * .27), -.3 + ring * .2, 0, Math.PI * 2);
+          ctx.strokeStyle = ring === 0 ? '#d8ff3e' : ring === 1 ? 'rgba(255,92,69,.8)' : 'rgba(145,109,255,.72)';
+          ctx.lineWidth = ring === 0 ? 2 : 1;
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#09060d';
+        ctx.shadowBlur = 28;
+        ctx.shadowColor = 'rgba(145,109,255,.8)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, apertureRadius * .76, apertureRadius, -.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (t > 1700 && t < 10100) {
+          const letters = [...'NOCTURNE'];
+          const fontSize = clamp(width * .13, 52, 178);
+          ctx.save();
+          ctx.font = `900 ${fontSize}px Arial, Helvetica, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          letters.forEach((letter, index) => {
+            const local = span(t, 1900 + index * 190, 3050 + index * 220);
+            const depart = span(t, 8650 + index * 90, 9900 + index * 25);
+            const targetX = cx + (index - 3.5) * fontSize * .69;
+            const fromY = index % 2 === 0 ? -fontSize : height + fontSize;
+            const y = lerp(fromY, cy, local) + Math.sin(index * 2.4 + state.seed) * minSide * .025 * conduct;
+            const x = targetX + Math.sin(t * .0014 + index) * minSide * .012 * conduct;
+            ctx.globalAlpha = local * (1 - depart);
+            ctx.fillStyle = index === 3 ? '#ff5c45' : index === 5 || index === 6 ? 'transparent' : '#f1edd9';
+            ctx.strokeStyle = index === 5 || index === 6 ? '#f1edd9' : 'rgba(0,0,0,0)';
+            ctx.lineWidth = 2;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(.82 + zenith * .2, 1.55 - zenith * .18);
+            ctx.fillText(letter, 0, 0);
+            ctx.strokeText(letter, 0, 0);
+            ctx.restore();
+          });
+          ctx.restore();
+        }
+
+        const artistIn = span(t, 4650, 5850) * (1 - span(t, 8100, 9200));
+        if (artistIn > 0) {
+          const artists = ['MIRA VALE', 'GLASS CHOIR', 'STATIC BLOOM'];
+          ctx.save();
+          ctx.font = `700 ${clamp(minSide * .018, 10, 16)}px Arial, sans-serif`;
+          ctx.letterSpacing = '2px';
+          artists.forEach((artist, index) => {
+            const angle = -Math.PI / 2 + index * Math.PI * .67 + t * .00008 * (index % 2 ? -1 : 1);
+            const orbit = apertureRadius * (2.15 + index * .31);
+            const x = cx + Math.cos(angle) * orbit;
+            const y = cy + Math.sin(angle) * orbit * .58;
+            ctx.globalAlpha = artistIn;
+            ctx.fillStyle = ['#d8ff3e', '#ff5c45', '#916dff'][index];
+            ctx.textAlign = 'center';
+            ctx.fillText(artist, x, y);
+          });
+          ctx.restore();
+        }
+
+        if (zenith > 0) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'screen';
+          ctx.globalAlpha = zenith * .19;
+          ctx.fillStyle = '#f1edd9';
+          ctx.fillRect(0, 0, width, height);
+          ctx.restore();
+        }
+
+        if (resolve > 0) {
+          ctx.save();
+          const lift = (1 - resolve) * minSide * .08;
+          drawTrackedText(ctx, 'NOCTURNE', cx, cy - minSide * .075 + lift, `900 ${clamp(width * .095, 42, 132)}px Arial, Helvetica, sans-serif`, -clamp(width * .005, 2, 8), '#f1edd9', resolve);
+          drawTrackedText(ctx, 'FESTIVAL OF IMPOSSIBLE LIGHT', cx, cy + minSide * .035 + lift, `700 ${clamp(minSide * .017, 9, 15)}px Arial, Helvetica, sans-serif`, clamp(width * .004, 2, 7), '#d8ff3e', resolve);
+          drawTrackedText(ctx, '18 OCTOBER  ·  19:30  ·  ATLAS OBSERVATORY', cx, cy + minSide * .096 + lift, `700 ${clamp(minSide * .012, 8, 11)}px Arial, Helvetica, sans-serif`, clamp(width * .002, 1, 3), '#f1edd9', resolve * .75);
+          ctx.restore();
+        }
+
+        els.phase.textContent = phaseAt(t);
+        els.timeline.value = String(Math.round(t));
+        els.timeline.style.setProperty('--progress', `${(t / DURATION) * 100}%`);
+        const displayTime = Math.round(t);
+        els.time.textContent = `${String(Math.floor(displayTime / 1000)).padStart(2, '0')}.${String(displayTime % 1000).padStart(3, '0')}`;
+        els.play.textContent = state.playing ? 'Pause' : 'Play';
+      }
+
+      function renderInstrument() {
+        if (!state.identity) return;
+        const { ctx, width, height } = prepareCanvas(els.instrument);
+        const minSide = Math.min(width, height);
+        const px = instrument.x * width;
+        const py = instrument.y * height;
+        const energy = instrument.energy;
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#09060d';
+        ctx.fillRect(0, 0, width, height);
+        drawStars(ctx, width, height, .48);
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(241,237,217,.1)';
+        ctx.lineWidth = 1;
+        for (let i = 1; i < 12; i++) {
+          const x = (i / 12) * width;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        const colors = ['#d8ff3e', '#ff5c45', '#916dff'];
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (let lane = 0; lane < 3; lane++) {
+          const wave = state.identity.wave[lane];
+          for (let string = 0; string < 5; string++) {
+            const baseY = height * (.27 + lane * .23) + (string - 2) * minSide * .018;
+            const affinity = 1 - clamp(Math.abs(baseY - py) / (height * .52));
+            const bend = (.16 + energy * .7) * affinity;
+            ctx.beginPath();
+            for (let step = 0; step <= 80; step++) {
+              const u = step / 80;
+              const x = u * width;
+              const proximity = Math.exp(-Math.pow((x - px) / (width * .22), 2));
+              const wavelet = Math.sin(u * Math.PI * (wave.frequency + string * .17) + wave.phase) * minSide * .008 * (1 + energy * 2);
+              const y = baseY + (py - baseY) * proximity * bend + wavelet;
+              if (step === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = colors[lane];
+            ctx.globalAlpha = .3 + affinity * .55;
+            ctx.lineWidth = string === 2 ? 2.2 : .7;
+            ctx.shadowBlur = string === 2 ? 18 + energy * 28 : 6;
+            ctx.shadowColor = colors[lane];
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const node of instrument.nodes) {
+          const nx = node.x * width;
+          const ny = node.y * height;
+          const distance = Math.hypot(nx - px, ny - py);
+          const influence = clamp(1 - distance / (minSide * .48));
+          const radius = node.mass * (2 + influence * 7 + energy * 3);
+          ctx.beginPath();
+          ctx.arc(lerp(nx, px, influence * energy * .08), lerp(ny, py, influence * energy * .08), radius, 0, Math.PI * 2);
+          ctx.fillStyle = colors[node.lane];
+          ctx.globalAlpha = .35 + influence * .55;
+          ctx.shadowBlur = 14 + influence * 20;
+          ctx.shadowColor = colors[node.lane];
+          ctx.fill();
+        }
+        ctx.restore();
+
+        if (instrument.trail.length > 1) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.lineCap = 'round';
+          for (let i = 1; i < instrument.trail.length; i++) {
+            const a = instrument.trail[i - 1];
+            const b = instrument.trail[i];
+            ctx.beginPath();
+            ctx.moveTo(a.x * width, a.y * height);
+            ctx.lineTo(b.x * width, b.y * height);
+            ctx.strokeStyle = i % 2 ? '#d8ff3e' : '#f1edd9';
+            ctx.globalAlpha = (i / instrument.trail.length) * .65;
+            ctx.lineWidth = 1 + (i / instrument.trail.length) * 3;
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        const aperture = minSide * (.052 + energy * .026);
+        drawRays(ctx, px, py, aperture, .18 + energy * .82, (instrument.x - .5) * Math.PI);
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate((instrument.x - .5) * .8 - .3);
+        ctx.fillStyle = '#d8ff3e';
+        ctx.shadowBlur = 28 + energy * 30;
+        ctx.shadowColor = '#d8ff3e';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, aperture * .68, aperture, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#09060d';
+        ctx.beginPath();
+        ctx.ellipse(aperture * .23, 0, aperture * .62, aperture * .93, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        const labelSize = clamp(minSide * .015, 8, 12);
+        ctx.save();
+        ctx.font = `700 ${labelSize}px Arial, sans-serif`;
+        ctx.fillStyle = 'rgba(241,237,217,.74)';
+        ctx.textAlign = px > width * .68 ? 'right' : 'left';
+        ctx.fillText('NOCTURNE / CONDUCTOR', px + (px > width * .68 ? -aperture * 1.4 : aperture * 1.4), py - aperture * 1.25);
+        ctx.restore();
+
+        els.azimuth.textContent = `${Math.round(instrument.x * 360)}°`;
+        els.altitude.textContent = `${Math.round((1 - instrument.y) * 90)}°`;
+        els.charge.textContent = String(Math.round(energy * 100)).padStart(3, '0');
+      }
+
+      function announce(message) {
+        els.live.textContent = '';
+        requestAnimationFrame(() => { els.live.textContent = message; });
+      }
+
+      function updateModeUI(animate = true) {
+        els.tabs.forEach(tab => {
+          const active = tab.dataset.mode === state.mode;
+          tab.setAttribute('aria-selected', String(active));
+          tab.tabIndex = active ? 0 : -1;
+        });
+        els.views.forEach(view => {
+          const active = view.id === `${state.mode}-view`;
+          view.classList.toggle('is-active', active);
+          view.setAttribute('aria-hidden', String(!active));
+          if (active && animate && !reduceMotion.matches) {
+            view.classList.remove('is-entering');
+            void view.offsetWidth;
+            view.classList.add('is-entering');
+          }
+        });
+        if (state.mode === 'poster') renderPoster();
+        if (state.mode === 'motion') renderMotion();
+        if (state.mode === 'instrument') renderInstrument();
+      }
+
+      function setMode(name, options = {}) {
+        const normalized = String(name).toLowerCase();
+        if (!MODES.includes(normalized)) return false;
+        state.mode = normalized;
+        updateModeUI(options.animate !== false);
+        if (!options.silent) announce(`${normalized} expression active`);
+        return true;
+      }
+
+      function applySeed(seed) {
+        state.seed = normalizeSeed(seed);
+        state.identity = createIdentity(state.seed);
+        els.seedValue.textContent = String(state.seed).padStart(4, '0');
+        resetInstrument();
+      }
+
+      function reset(seed) {
+        applySeed(seed);
+        state.motionTime = 0;
+        state.playing = false;
+        state.mode = 'poster';
+        updateModeUI(false);
+        renderPoster();
+        renderMotion();
+        renderInstrument();
+        announce(`Identity reset to light code ${state.seed}`);
+        return snapshot();
+      }
+
+      function seek(milliseconds) {
+        const number = Number(milliseconds);
+        state.motionTime = clamp(Number.isFinite(number) ? number : 0, 0, DURATION);
+        state.playing = false;
+        renderMotion();
+        return state.motionTime;
+      }
+
+      function playMotion(fromStart = false) {
+        if (fromStart || state.motionTime >= DURATION) state.motionTime = 0;
+        state.playing = true;
+        lastFrame = performance.now();
+        renderMotion();
+      }
+
+      function applyInteraction(x, y, charged = false) {
+        instrument.x = clamp(Number(x));
+        instrument.y = clamp(Number(y));
+        instrument.targetX = instrument.x;
+        instrument.targetY = instrument.y;
+        instrument.energy = clamp(Math.max(instrument.energy, charged ? 1 : .42));
+        if (charged) {
+          instrument.gestureCount += 1;
+          instrument.trail.push({ x: instrument.x, y: instrument.y });
+          if (instrument.trail.length > 28) instrument.trail.shift();
+        }
+        renderInstrument();
+      }
+
+      function instrumentSignature() {
+        return instrument.nodes.map(node => [node.lane, +node.x.toFixed(5), +node.y.toFixed(5), +node.mass.toFixed(5)]);
+      }
+
+      function trailChecksum() {
+        return +instrument.trail.reduce((sum, point, index) => sum + point.x * (index + 1) * 3 + point.y * (index + 1) * 7, 0).toFixed(5);
+      }
+
+      function snapshot() {
+        return {
+          seed: state.seed,
+          mode: state.mode,
+          motionTime: +state.motionTime.toFixed(3),
+          playing: state.playing,
+          interactive: {
+            pointer: { x: +instrument.x.toFixed(5), y: +instrument.y.toFixed(5) },
+            energy: +instrument.energy.toFixed(5),
+            dragging: instrument.dragging,
+            gestureCount: instrument.gestureCount,
+            trailLength: instrument.trail.length,
+            trailChecksum: trailChecksum(),
+            constellation: instrumentSignature()
+          }
+        };
+      }
+
+      function copyInstrumentState() {
+        return {
+          x: instrument.x,
+          y: instrument.y,
+          targetX: instrument.targetX,
+          targetY: instrument.targetY,
+          energy: instrument.energy,
+          dragging: instrument.dragging,
+          gestureCount: instrument.gestureCount,
+          trail: instrument.trail.map(point => ({ ...point })),
+          nodes: instrument.nodes.map(node => ({ ...node }))
+        };
+      }
+
+      function restoreExperience(original) {
+        applySeed(original.seed);
+        state.mode = original.mode;
+        state.motionTime = original.motionTime;
+        state.playing = original.playing;
+        Object.assign(instrument, original.instrument);
+        updateModeUI(false);
+        renderPoster();
+        renderMotion();
+        renderInstrument();
+        lastFrame = performance.now();
+      }
+
+      function runSelfTest() {
+        const original = {
+          seed: state.seed,
+          mode: state.mode,
+          motionTime: state.motionTime,
+          playing: state.playing,
+          instrument: copyInstrumentState()
+        };
+        const tests = [];
+        const record = (name, pass, detail) => tests.push({ name, pass: Boolean(pass), detail });
+
+        reset(314159);
+        const first = JSON.stringify(snapshot());
+        applyInteraction(.18, .82, true);
+        reset(314159);
+        const second = JSON.stringify(snapshot());
+        record('deterministic reset', first === second, first === second ? 'Identical seed restores identical full state.' : 'Snapshots differed after identical reset.');
+
+        const modesPassed = MODES.every(mode => setMode(mode, { animate: false, silent: true }) && state.mode === mode);
+        record('all expression modes', modesPassed, modesPassed ? 'Poster, motion, and instrument state functions accepted.' : 'At least one mode was rejected.');
+
+        const exact = seek(4387) === 4387 && state.motionTime === 4387;
+        record('exact motion seeking', exact, exact ? 'Motion placed exactly at 4387ms.' : `Unexpected time ${state.motionTime}.`);
+
+        const upper = seek(12000) === 12000;
+        const clamped = seek(12001) === 12000;
+        const lower = seek(-1) === 0;
+        record('12-second timeline boundary', upper && clamped && lower, upper && clamped && lower ? '0ms and 12000ms boundaries clamp exactly.' : 'Timeline boundary failed.');
+
+        setMode('instrument', { animate: false, silent: true });
+        applyInteraction(.234, .789, true);
+        const numbers = [instrument.x, instrument.y, instrument.energy, instrument.gestureCount, trailChecksum(), ...instrument.nodes.flatMap(node => [node.x, node.y, node.mass, node.phase])];
+        const finite = numbers.every(Number.isFinite);
+        record('finite interaction state', finite, finite ? 'Pointer, charge, trail, and constellation remain finite.' : 'Non-finite interactive state detected.');
+
+        restoreExperience(original);
+        return { passed: tests.every(test => test.pass), tests };
+      }
+
+      els.tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => setMode(tab.dataset.mode));
+        tab.addEventListener('keydown', event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          let next = index;
+          if (event.key === 'ArrowLeft') next = (index + MODES.length - 1) % MODES.length;
+          if (event.key === 'ArrowRight') next = (index + 1) % MODES.length;
+          if (event.key === 'Home') next = 0;
+          if (event.key === 'End') next = MODES.length - 1;
+          setMode(MODES[next]);
+          els.tabs[next].focus();
+        });
+      });
+
+      els.seedDown.addEventListener('click', () => reset(state.seed - 1));
+      els.seedUp.addEventListener('click', () => reset(state.seed + 1));
+
+      els.play.addEventListener('click', () => {
+        if (state.playing) {
+          state.playing = false;
+          renderMotion();
+        } else {
+          playMotion(false);
+        }
+      });
+      els.replay.addEventListener('click', () => playMotion(true));
+      els.timeline.addEventListener('input', event => seek(Number(event.target.value)));
+
+      function eventPoint(event) {
+        const rect = els.instrument.getBoundingClientRect();
+        return {
+          x: (event.clientX - rect.left) / Math.max(1, rect.width),
+          y: (event.clientY - rect.top) / Math.max(1, rect.height)
+        };
+      }
+
+      els.instrument.addEventListener('pointerdown', event => {
+        const point = eventPoint(event);
+        instrument.dragging = true;
+        els.instrument.setPointerCapture?.(event.pointerId);
+        applyInteraction(point.x, point.y, true);
+      });
+      els.instrument.addEventListener('pointermove', event => {
+        const point = eventPoint(event);
+        applyInteraction(point.x, point.y, instrument.dragging);
+      });
+      const releasePointer = event => {
+        instrument.dragging = false;
+        if (event && els.instrument.hasPointerCapture?.(event.pointerId)) els.instrument.releasePointerCapture(event.pointerId);
+      };
+      els.instrument.addEventListener('pointerup', releasePointer);
+      els.instrument.addEventListener('pointercancel', releasePointer);
+      els.instrument.addEventListener('pointerleave', event => { if (!instrument.dragging) releasePointer(event); });
+
+      els.instrument.addEventListener('keydown', event => {
+        const step = event.shiftKey ? .1 : .035;
+        let x = instrument.x;
+        let y = instrument.y;
+        if (event.key === 'ArrowLeft') x -= step;
+        else if (event.key === 'ArrowRight') x += step;
+        else if (event.key === 'ArrowUp') y -= step;
+        else if (event.key === 'ArrowDown') y += step;
+        else if (event.key === ' ') {
+          event.preventDefault();
+          applyInteraction(x, y, true);
+          return;
+        } else return;
+        event.preventDefault();
+        applyInteraction(x, y, false);
+      });
+
+      const resizeObserver = new ResizeObserver(() => {
+        if (state.mode === 'poster') renderPoster();
+        if (state.mode === 'motion') renderMotion();
+        if (state.mode === 'instrument') renderInstrument();
+      });
+      resizeObserver.observe(els.stage);
+      resizeObserver.observe(document.querySelector('.poster-frame'));
+
+      let lastFrame = performance.now();
+      function frame(now) {
+        const delta = clamp(now - lastFrame, 0, 50);
+        lastFrame = now;
+        if (state.playing) {
+          state.motionTime = Math.min(DURATION, state.motionTime + delta);
+          if (state.motionTime >= DURATION) state.playing = false;
+          if (state.mode === 'motion') renderMotion();
+        }
+        if (instrument.energy > 0 && !instrument.dragging) {
+          const previous = instrument.energy;
+          instrument.energy = Math.max(0, instrument.energy - delta * .00016);
+          if (state.mode === 'instrument' && Math.abs(previous - instrument.energy) > .00001) renderInstrument();
+        }
+        requestAnimationFrame(frame);
+      }
+
+      window.__LIVING_IDENTITY__ = Object.freeze({
+        reset,
+        setMode,
+        seek,
+        snapshot,
+        runSelfTest
+      });
+
+      applySeed(state.seed);
+      updateModeUI(false);
+      renderPoster();
+      renderMotion();
+      renderInstrument();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

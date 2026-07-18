@@ -1,0 +1,1934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Claude Fable 5</title>
+<link rel="icon" href="data:,">
+<style>
+  :root{
+    --panel: rgba(11, 16, 24, 0.74);
+    --panel-2: rgba(11, 16, 24, 0.55);
+    --line: rgba(255,255,255,0.10);
+    --txt: #eef3f8;
+    --muted: #a7b7c6;
+    --accent: #6fd0ff;
+    --hot: #ff9a62;
+    --cold: #7ec8ff;
+    --focus: #ffd166;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.25);
+    font-size: 16px;
+  }
+  *{ box-sizing: border-box; }
+  html, body{ margin:0; padding:0; height:100%; overflow:hidden; }
+  body{
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background:#0b1016; color:var(--txt);
+    -webkit-font-smoothing: antialiased;
+  }
+  #scene{ position:fixed; inset:0; }
+  #scene canvas{ display:block; }
+
+  /* soft vignette over the 3D view */
+  #vignette{
+    position:fixed; inset:0; pointer-events:none; z-index:2;
+    background: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(5,9,14,.38) 100%);
+  }
+
+  /* ---------- overlay layout ---------- */
+  .ui{ position:fixed; z-index:10; }
+  header.ui{
+    top:0; left:0; right:0; display:flex; flex-direction:column; align-items:center;
+    padding:14px 12px 26px; pointer-events:none; text-align:center;
+    background:linear-gradient(180deg, rgba(6,10,16,.55), transparent);
+  }
+  h1{
+    margin:0; font-size:clamp(1.15rem, 2.6vw, 1.6rem); font-weight:650; letter-spacing:.02em;
+    text-shadow: 0 2px 14px rgba(0,0,0,.55);
+  }
+  .sub{
+    margin-top:2px; font-size:.78rem; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--muted); text-shadow:0 1px 8px rgba(0,0,0,.5);
+  }
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); backdrop-filter: blur(14px) saturate(1.25);
+    -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  }
+
+  /* legend, top-left */
+  #legend{ top:14px; left:14px; max-width:238px; font-size:.74rem; }
+  #legend summary{
+    cursor:pointer; list-style:none; padding:9px 12px; font-weight:600; font-size:.78rem;
+    letter-spacing:.05em; color:var(--txt); display:flex; align-items:center; gap:8px; user-select:none;
+  }
+  #legend summary::-webkit-details-marker{ display:none; }
+  #legend summary::after{ content:"▾"; margin-left:auto; color:var(--muted); transition:transform .2s; }
+  #legend:not([open]) summary::after{ transform:rotate(-90deg); }
+  #legend .rows{ padding:0 12px 10px; display:grid; gap:7px; color:var(--muted); line-height:1.35; }
+  .lg{ display:grid; grid-template-columns:26px 1fr; gap:8px; align-items:center; }
+  .sw{ width:22px; height:12px; border-radius:7px; justify-self:center; }
+  .sw.room{ background:radial-gradient(circle at 50% 45%, #fff 0%, #9fd9ff 45%, transparent 75%); height:16px; width:16px; border-radius:50%; }
+  .sw.outair{ background:radial-gradient(circle at 50% 45%, #e7f5ff 0%, #9fc9b9 40%, transparent 70%); height:10px; width:10px; border-radius:50%; }
+  .sw.temp{ background:linear-gradient(90deg,#5db6ff,#c78bd9,#ff8b57); }
+  .sw.refr{ background:linear-gradient(90deg,#3f9dff,#b06ab3,#ff6b35); height:8px; border-radius:4px; box-shadow:0 0 0 1px rgba(255,255,255,.25) inset; }
+  .sw.heat{ background:radial-gradient(circle,#ffd9a0 0%,#ff8a3c 40%,transparent 75%); height:16px; width:16px; border-radius:50%; }
+  .sw.drip{ background:radial-gradient(circle,#cdeaff 0%,#6fb6e8 55%,transparent 80%); height:10px; width:10px; border-radius:50%; }
+  .lg b{ color:var(--txt); font-weight:600; }
+
+  /* status, top-right */
+  #status{ top:14px; right:14px; width:252px; padding:11px 13px; font-size:.78rem; }
+  #status .state{ font-weight:650; font-size:.82rem; letter-spacing:.03em; margin-bottom:8px; display:flex; align-items:center; gap:7px; }
+  #status .dot{ width:8px; height:8px; border-radius:50%; background:#54e08a; box-shadow:0 0 8px #54e08a; flex:none; }
+  #status .dot.paused{ background:#ffc861; box-shadow:0 0 8px #ffc861; }
+  .temps{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:9px; }
+  .temp{ border:1px solid var(--line); border-radius:10px; padding:6px 9px; background:rgba(255,255,255,.03); }
+  .temp .l{ color:var(--muted); font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; }
+  .temp .v{ font-size:1.06rem; font-weight:650; font-variant-numeric:tabular-nums; margin-top:1px; }
+  .temp .v small{ font-size:.7em; font-weight:500; color:var(--muted); }
+  #tIn .v{ color:var(--cold); } #tOut .v{ color:var(--hot); }
+  .flowrow{ display:grid; grid-template-columns:58px 1fr; gap:7px; margin-top:5px; color:var(--muted); line-height:1.3; }
+  .flowrow b{ color:var(--txt); font-weight:600; }
+  .flowrow .k{ font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; padding-top:1px; }
+  .flowrow .k.in{ color:#7ec8ff; } .flowrow .k.out{ color:#ff9a62; }
+  #energy{ margin-top:9px; padding-top:8px; border-top:1px solid var(--line); color:var(--muted); font-size:.71rem; line-height:1.35; }
+
+  /* controls, bottom center */
+  #controls{
+    bottom:calc(14px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    display:flex; gap:10px; align-items:center; padding:8px; flex-wrap:wrap; justify-content:center;
+    max-width:calc(100vw - 20px);
+  }
+  .seg{ display:flex; background:rgba(255,255,255,.05); border:1px solid var(--line); border-radius:11px; padding:3px; gap:3px; }
+  button{
+    font:inherit; color:var(--txt); background:transparent; border:none; border-radius:9px;
+    padding:8px 13px; cursor:pointer; font-size:.8rem; font-weight:600; letter-spacing:.02em;
+    transition: background .15s, color .15s, transform .1s; white-space:nowrap;
+  }
+  button:hover{ background:rgba(255,255,255,.10); }
+  button:active{ transform:scale(.97); }
+  button:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  .seg button[aria-pressed="true"]{ background:linear-gradient(180deg,#79d2ff,#4fa8e8); color:#06283c; }
+  .seg.warm button[aria-pressed="true"].hot{ background:linear-gradient(180deg,#ffb37c,#ff8a4d); color:#3c1606; }
+  .btn{ background:rgba(255,255,255,.06); border:1px solid var(--line); }
+  .btn[aria-pressed="true"]{ background:rgba(111,208,255,.18); border-color:rgba(111,208,255,.4); color:#bfe7ff; }
+  .btn .ic{ margin-right:5px; }
+
+  /* tutorial, bottom-left */
+  #tutorial{
+    left:14px; bottom:calc(14px + env(safe-area-inset-bottom)); width:min(354px, calc(100vw - 28px));
+    padding:13px 15px 11px; font-size:.82rem;
+    transition: opacity .3s, transform .3s; transform-origin:bottom left;
+  }
+  #tutorial.hidden{ opacity:0; pointer-events:none; transform:scale(.96) translateY(8px); }
+  #tutorial .top{ display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
+  #tutorial .stepn{ font-size:.68rem; letter-spacing:.1em; color:var(--accent); font-weight:700; }
+  #tutorial h2{ margin:0; font-size:.92rem; font-weight:650; flex:1; }
+  #tutorial .close{ padding:2px 8px; margin:-2px -6px 0 0; color:var(--muted); font-size:1rem; }
+  #tutorial p{ margin:5px 0 10px; line-height:1.5; color:#d5e0ea; }
+  #tutorial .nav{ display:flex; align-items:center; gap:6px; }
+  #tutorial .dots{ display:flex; gap:5px; flex:1; }
+  #tutorial .dots i{ width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.18); transition:background .2s, transform .2s; }
+  #tutorial .dots i.on{ background:var(--accent); transform:scale(1.3); }
+  #tutorial .nav .btn{ padding:6px 12px; font-size:.76rem; }
+
+  /* component labels */
+  #labels, #leaders{ position:fixed; inset:0; pointer-events:none; z-index:5; }
+  #leaders{ z-index:4; }
+  .lbl{
+    position:absolute; left:0; top:0; transform:translate(-50%,-50%);
+    background:rgba(9,13,20,.78); border:1px solid rgba(255,255,255,.14); border-radius:8px;
+    padding:3px 8px 3px 6px; font-size:.66rem; font-weight:600; letter-spacing:.04em; color:#dfe9f2;
+    white-space:nowrap; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    box-shadow:0 2px 10px rgba(0,0,0,.35); display:flex; align-items:center; gap:5px;
+    transition:opacity .25s;
+  }
+  .lbl .d{ width:5px; height:5px; border-radius:50%; background:var(--accent); flex:none; }
+  .lbl.hotd .d{ background:var(--hot); }
+  #leaders line{ stroke:rgba(190,215,235,.5); stroke-width:1; }
+
+  /* loading + fallback */
+  #loading, #fallback{
+    position:fixed; inset:0; z-index:50; display:flex; flex-direction:column; gap:14px;
+    align-items:center; justify-content:center; background:#0b1016; text-align:center; padding:24px;
+  }
+  #loading .ring{
+    width:34px; height:34px; border-radius:50%; border:3px solid rgba(255,255,255,.12);
+    border-top-color:var(--accent); animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #loading .t{ font-size:1.2rem; font-weight:650; letter-spacing:.02em; }
+  #loading .s{ color:var(--muted); font-size:.8rem; }
+  #loading.done{ opacity:0; pointer-events:none; transition:opacity .6s; }
+  #fallback[hidden]{ display:none; }
+  #fallback h2{ margin:0; font-size:1.1rem; }
+  #fallback p{ max-width:440px; color:var(--muted); line-height:1.5; font-size:.88rem; margin:0; }
+
+  @media (prefers-reduced-motion: reduce){
+    #loading .ring{ animation-duration: 2.5s; }
+  }
+
+  /* mobile */
+  @media (max-width: 880px){
+    #status{ width:212px; font-size:.72rem; top:10px; right:10px; padding:9px 11px; }
+    #legend{ top:10px; left:10px; max-width:200px; }
+    .temps{ gap:6px; } .temp .v{ font-size:.95rem; }
+    #controls{ gap:6px; padding:6px; }
+    button{ padding:7px 10px; font-size:.74rem; }
+    #tutorial{ left:10px; bottom:calc(66px + env(safe-area-inset-bottom)); font-size:.78rem; }
+    .lbl{ font-size:.6rem; }
+    header.ui{ padding-top:10px; }
+  }
+  @media (max-width: 560px){
+    #status{ display:none; }
+    #legend{ max-width:180px; }
+  }
+</style>
+<script>
+  // Boot watchdog: if the module app fails to start (no WebGL, CDN unreachable,
+  // old browser), surface a friendly explanation instead of a black screen.
+  window.__fable5Started = false;
+  window.__showFallback = function(msg){
+    var f = document.getElementById('fallback');
+    var l = document.getElementById('loading');
+    if (l) l.classList.add('done');
+    if (f){ f.hidden = false; var p = document.getElementById('fbmsg'); if (p && msg) p.textContent = msg; }
+  };
+  setTimeout(function(){
+    if (!window.__fable5Started){
+      window.__showFallback('The 3D engine did not start. This page needs WebGL and an internet connection to load Three.js from its CDN. Please try a current version of Chrome, Edge, Firefox or Safari.');
+    }
+  }, 12000);
+  window.addEventListener('error', function(e){
+    if (!window.__fable5Started && e && e.message && /import|module|three/i.test(String(e.message))){
+      window.__showFallback('Three.js could not be loaded from the CDN. Check your internet connection and reload.');
+    }
+  });
+</script>
+</head>
+<body>
+
+<div id="scene" aria-hidden="true"></div>
+<div id="vignette"></div>
+
+<svg id="leaders" aria-hidden="true"></svg>
+<div id="labels" aria-hidden="true"></div>
+
+<header class="ui">
+  <h1>Claude Fable 5</h1>
+  <div class="sub">How reversible air conditioning works</div>
+</header>
+
+<details class="card ui" id="legend" open>
+  <summary>Legend</summary>
+  <div class="rows">
+    <div class="lg"><span class="sw room"></span><span><b>Room air</b> — large soft puffs, stays indoors</span></div>
+    <div class="lg"><span class="sw outair"></span><span><b>Outdoor air</b> — fine particles, stays outdoors</span></div>
+    <div class="lg"><span class="sw temp"></span><span>Air tint = temperature (cold → warm)</span></div>
+    <div class="lg"><span class="sw refr"></span><span><b>Refrigerant</b> — dots inside the pipes (blue = cold low-pressure, red = hot high-pressure)</span></div>
+    <div class="lg"><span class="sw heat"></span><span><b>Heat energy</b> — embers where heat is absorbed or rejected</span></div>
+    <div class="lg"><span class="sw drip"></span><span><b>Condensate</b> — water drops</span></div>
+  </div>
+</details>
+
+<div class="card ui" id="status" role="status" aria-live="polite">
+  <div class="state"><span class="dot" id="stateDot"></span><span id="stateText">Running — Split · Cooling</span></div>
+  <div class="temps">
+    <div class="temp" id="tIn"><div class="l">Indoor</div><div class="v"><span id="tInV">26.0</span><small> °C</small></div></div>
+    <div class="temp" id="tOut"><div class="l">Outdoor</div><div class="v"><span id="tOutV">32.0</span><small> °C</small></div></div>
+  </div>
+  <div class="flowrow"><span class="k in">Heat in</span><span id="heatIn"><b>Indoors</b> — room air gives heat to the indoor coil</span></div>
+  <div class="flowrow"><span class="k out">Heat out</span><span id="heatOut"><b>Outdoors</b> — the outdoor coil dumps it into outside air</span></div>
+  <div id="energy">≈ 1 kW of electricity moves ≈ 3–4 kW of heat. Cold is never created — heat is only moved to the other side of the wall.</div>
+</div>
+
+<div class="card ui" id="controls" role="toolbar" aria-label="Simulation controls">
+  <div class="seg" role="group" aria-label="System type">
+    <button id="btnSplit" aria-pressed="true">Split System</button>
+    <button id="btnMono" aria-pressed="false">Monoblock</button>
+  </div>
+  <div class="seg warm" role="group" aria-label="Operating mode">
+    <button id="btnCool" aria-pressed="true">Cooling</button>
+    <button id="btnHeat" class="hot" aria-pressed="false">Heating</button>
+  </div>
+  <button class="btn" id="btnPlay" aria-pressed="true" title="Play / pause the simulation (Space)"><span class="ic">⏸</span><span id="playTxt">Pause</span></button>
+  <button class="btn" id="btnReset" title="Return to the cinematic view (R)"><span class="ic">⌂</span>Reset View</button>
+  <button class="btn" id="btnCut" aria-pressed="true" title="See inside the machines (X)"><span class="ic">◪</span>Cutaway</button>
+  <button class="btn" id="btnGuide" title="Restart the guided tour (G)"><span class="ic">↻</span>Guide</button>
+</div>
+
+<div class="card ui hidden" id="tutorial" role="region" aria-label="Guided tutorial">
+  <div class="top">
+    <span class="stepn" id="tutStep">1 / 7</span>
+    <h2 id="tutTitle">Two separate air loops</h2>
+    <button class="close" id="tutClose" aria-label="Close tutorial (Escape)">✕</button>
+  </div>
+  <p id="tutBody" aria-live="polite"></p>
+  <div class="nav">
+    <div class="dots" id="tutDots" aria-hidden="true"></div>
+    <button class="btn" id="tutBack">← Back</button>
+    <button class="btn" id="tutNext">Next →</button>
+  </div>
+</div>
+
+<div id="loading">
+  <div class="t">Claude Fable 5</div>
+  <div class="ring" aria-hidden="true"></div>
+  <div class="s">Building the heat-pump exhibit…</div>
+</div>
+
+<div id="fallback" hidden>
+  <h2>Unable to start the 3D exhibit</h2>
+  <p id="fbmsg">This page needs WebGL and an internet connection to load Three.js from its CDN.</p>
+  <p>A reversible air conditioner never creates cold: a compressor-driven refrigerant loop absorbs heat on one side of the wall and rejects it on the other. A reversing valve swaps the two coils' jobs, so the same machine cools in summer and heats in winter.</p>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ============================================================
+   0. App state & constants
+============================================================ */
+const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const MOTION = REDUCED ? 0.35 : 1;
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const easeInOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+const state = {
+  system: 'split',        // 'split' | 'mono'
+  mode: 'cool',           // 'cool' | 'heat'
+  playing: true,
+  cutaway: true,
+  tutOpen: false,
+  tutIndex: 0,
+};
+
+let simSpeed = 1;         // eased 0..1 play factor
+let modeBlend = 0;        // 0 = cooling, 1 = heating (eased)
+let modeTarget = 0;
+let splitK = 1, monoK = 0; // system crossfade factors
+let cutK = 1;             // cutaway factor (1 = glass)
+let time = 0;
+
+/* ============================================================
+   1. Renderer / scene / camera  (graceful WebGL failure)
+============================================================ */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  if (!renderer.getContext()) throw new Error('no context');
+} catch (e) {
+  window.__showFallback('WebGL is not available on this device or browser, so the 3D exhibit cannot start.');
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('scene').appendChild(renderer.domElement);
+renderer.domElement.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  window.__showFallback('The WebGL context was lost. Please reload the page.');
+});
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xcfe4f2, 26, 60);
+
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 200);
+const HOME = { pos: V3(-4.9, 2.6, 10.6), tgt: V3(-0.1, 1.5, 0.6) };
+camera.position.copy(REDUCED ? HOME.pos : V3(-11, 7, 18));
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.copy(HOME.tgt);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.enablePan = false;
+controls.minDistance = 3.4;
+controls.maxDistance = 19;
+controls.minPolarAngle = 0.14;
+controls.maxPolarAngle = 1.48;
+
+// post-processing
+const rtOpts = { type: THREE.HalfFloatType, samples: 4 };
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, rtOpts));
+composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.38, 0.65, 0.86);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ============================================================
+   2. Procedural textures & shared materials
+============================================================ */
+function canvasTex(size, draw, repeat = [1, 1]) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat[0], repeat[1]);
+  t.anisotropy = 4;
+  return t;
+}
+const brickTex = canvasTex(512, (g, s) => {
+  g.fillStyle = '#b98a6d'; g.fillRect(0, 0, s, s);
+  const bw = s / 4, bh = s / 8;
+  for (let r = 0; r < 8; r++) {
+    for (let c = -1; c < 5; c++) {
+      const x = c * bw + (r % 2 ? bw / 2 : 0), y = r * bh;
+      const sh = 0.88 + Math.abs(Math.sin(r * 13.7 + c * 7.1)) * 0.24;
+      g.fillStyle = `rgb(${Math.round(178 * sh)},${Math.round(128 * sh)},${Math.round(100 * sh)})`;
+      g.fillRect(x + 3, y + 3, bw - 6, bh - 6);
+    }
+  }
+}, [2.6, 1.3]);
+const woodTex = canvasTex(512, (g, s) => {
+  g.fillStyle = '#8d6a4c'; g.fillRect(0, 0, s, s);
+  const pw = s / 6;
+  for (let i = 0; i < 6; i++) {
+    const sh = 0.86 + Math.abs(Math.sin(i * 5.3)) * 0.28;
+    g.fillStyle = `rgb(${Math.round(150 * sh)},${Math.round(113 * sh)},${Math.round(80 * sh)})`;
+    g.fillRect(i * pw + 1.5, 0, pw - 3, s);
+    g.strokeStyle = 'rgba(60,40,25,.35)'; g.lineWidth = 2;
+    for (let k = 0; k < 4; k++) {
+      g.beginPath();
+      const y0 = ((i * 731 + k * 197) % s);
+      g.moveTo(i * pw + 6, y0); g.bezierCurveTo(i * pw + pw * .4, y0 + 30, i * pw + pw * .6, y0 - 30, i * pw + pw - 6, y0 + 12);
+      g.stroke();
+    }
+  }
+}, [2.2, 2.6]);
+const finTex = canvasTex(128, (g, s) => {
+  g.fillStyle = '#c8cdd2'; g.fillRect(0, 0, s, s);
+  g.fillStyle = 'rgba(70,80,90,.55)';
+  for (let x = 0; x < s; x += 6) g.fillRect(x, 0, 2, s);
+}, [3, 1]);
+const grillTex = canvasTex(128, (g, s) => {
+  g.fillStyle = '#e8ebee'; g.fillRect(0, 0, s, s);
+  g.fillStyle = 'rgba(40,50,60,.5)';
+  for (let y = 6; y < s; y += 12) g.fillRect(0, y, s, 4);
+}, [1, 1]);
+function softCircleTex(hard = 0.15) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(hard, 'rgba(255,255,255,1)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const puffTex = softCircleTex(0.06);
+const dotTex = softCircleTex(0.55);
+const glowTex = softCircleTex(0.02);
+const shadowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(0,0,0,.42)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); return t;
+})();
+
+const M = {
+  plaster: new THREE.MeshStandardMaterial({ color: 0xefe9dd, roughness: 0.92 }),
+  plasterIn: new THREE.MeshStandardMaterial({ color: 0xf3eee2, roughness: 0.95 }),
+  brick: new THREE.MeshStandardMaterial({ map: brickTex, roughness: 0.95 }),
+  wood: new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.7 }),
+  concrete: new THREE.MeshStandardMaterial({ color: 0xa9adaf, roughness: 0.95 }),
+  copper: new THREE.MeshPhysicalMaterial({ color: 0xc98a5b, metalness: 0.85, roughness: 0.28, transparent: true, opacity: 0.4, depthWrite: false }),
+  darkMetal: new THREE.MeshStandardMaterial({ color: 0x3a4148, metalness: 0.7, roughness: 0.45 }),
+  brass: new THREE.MeshStandardMaterial({ color: 0xc9a24b, metalness: 0.85, roughness: 0.35 }),
+  grille: new THREE.MeshStandardMaterial({ map: grillTex, color: 0xffffff, roughness: 0.6 }),
+  blade: new THREE.MeshStandardMaterial({ color: 0xaab3ba, metalness: 0.5, roughness: 0.45, side: THREE.DoubleSide }),
+  duct: new THREE.MeshStandardMaterial({ color: 0xd7dbde, metalness: 0.35, roughness: 0.5 }),
+};
+
+// cutaway "shell" materials — animated between solid and glass
+const shellMats = [];
+function shellMat(color, glassOpacity = 0.18) {
+  const m = new THREE.MeshPhysicalMaterial({
+    color, roughness: 0.32, metalness: 0.05, transparent: true, opacity: glassOpacity, depthWrite: false,
+    clearcoat: 0.6, clearcoatRoughness: 0.3,
+  });
+  m.userData = { glassOpacity };
+  shellMats.push(m);
+  return m;
+}
+
+/* ============================================================
+   3. Lights & environment (sky, sun, ground, room, outdoors)
+============================================================ */
+const hemi = new THREE.HemisphereLight(0xbfd9ef, 0x6b6458, 0.75);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff0da, 1.7);
+sun.position.set(9, 13, -6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -11; sun.shadow.camera.right = 11;
+sun.shadow.camera.top = 11; sun.shadow.camera.bottom = -11;
+sun.shadow.camera.near = 2; sun.shadow.camera.far = 45;
+sun.shadow.bias = -0.0006;
+scene.add(sun);
+const roomLight = new THREE.PointLight(0xffd9a8, 14, 12, 2);
+roomLight.position.set(-4.5, 2.6, 0.5);
+scene.add(roomLight);
+const fillLight = new THREE.DirectionalLight(0xcfe2ff, 0.35);
+fillLight.position.set(-6, 5, 8);
+scene.add(fillLight);
+
+// gradient sky dome
+const skyU = {
+  top: { value: new THREE.Color(0x3f8fd8) },
+  hor: { value: new THREE.Color(0xdff0f8) },
+  warm: { value: new THREE.Color(0xffe6c4) },
+  warmAmt: { value: 0.5 },
+};
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: skyU,
+  vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `
+    varying vec3 vP; uniform vec3 top,hor,warm; uniform float warmAmt;
+    void main(){
+      float h = clamp(normalize(vP).y, 0.0, 1.0);
+      vec3 c = mix(hor, top, pow(h, 0.62));
+      float sunside = clamp(normalize(vP).x*0.5+0.5, 0.0, 1.0);
+      c = mix(c, warm, (1.0-h)*(1.0-h)*sunside*warmAmt);
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+});
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(80, 32, 16), skyMat));
+
+// sun disc
+const sunDisc = new THREE.Mesh(
+  new THREE.SphereGeometry(1.6, 24, 24),
+  new THREE.MeshBasicMaterial({ color: 0xfff3cf, fog: false })
+);
+sunDisc.position.set(30, 22, -38);
+scene.add(sunDisc);
+const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe9b0, transparent: true, opacity: 0.85, fog: false, depthWrite: false }));
+sunGlow.scale.setScalar(16); sunGlow.position.copy(sunDisc.position);
+scene.add(sunGlow);
+
+// outdoor ground
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x6da95e, roughness: 1 });
+const ground = new THREE.Mesh(new THREE.CircleGeometry(60, 48), groundMat);
+ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02;
+ground.receiveShadow = true;
+scene.add(ground);
+
+function contactShadow(x, z, sx, sz, opacity = 1) {
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(sx, sz),
+    new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity, depthWrite: false })
+  );
+  m.rotation.x = -Math.PI / 2; m.position.set(x, 0.012, z); m.renderOrder = 1;
+  return m;
+}
+
+// ---- the dividing wall ----
+const WALL = { h: 3.25, zMin: -4, zMax: 2.8, t: 0.35 };
+const wallMats = [M.brick, M.plasterIn, M.plaster, M.plaster, M.plaster, M.plaster];
+// order: +x (outdoor), -x (indoor), +y, -y, +z, -z
+const wallZC = (WALL.zMin + WALL.zMax) / 2;
+const wall = new THREE.Mesh(new THREE.BoxGeometry(WALL.t, WALL.h, WALL.zMax - WALL.zMin), wallMats);
+wall.position.set(0, WALL.h / 2, wallZC);
+wall.castShadow = true; wall.receiveShadow = true;
+scene.add(wall);
+// wall cap
+const cap = new THREE.Mesh(new THREE.BoxGeometry(WALL.t + 0.1, 0.08, WALL.zMax - WALL.zMin + 0.1), M.concrete);
+cap.position.set(0, WALL.h + 0.04, wallZC); cap.castShadow = true;
+scene.add(cap);
+
+// ---- indoor room ----
+const room = new THREE.Group(); scene.add(room);
+const floorMesh = new THREE.Mesh(new THREE.BoxGeometry(7, 0.14, 8), M.wood);
+floorMesh.position.set(-3.5, -0.07 + 0.001, 0);
+floorMesh.receiveShadow = true;
+room.add(floorMesh);
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(7, WALL.h, 0.22), M.plasterIn);
+backWall.position.set(-3.5, WALL.h / 2, -4.11);
+backWall.receiveShadow = true; backWall.castShadow = true;
+room.add(backWall);
+// window on back wall
+const winFrame = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.35, 0.1), M.darkMetal);
+winFrame.position.set(-4.3, 1.95, -3.99); room.add(winFrame);
+const winGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.15),
+  new THREE.MeshBasicMaterial({ color: 0xcfe8f7 }));
+winGlass.position.set(-4.3, 1.95, -3.93); room.add(winGlass);
+// rug
+const rug = new THREE.Mesh(new THREE.CircleGeometry(1.5, 40),
+  new THREE.MeshStandardMaterial({ color: 0x51616e, roughness: 1 }));
+rug.rotation.x = -Math.PI / 2; rug.position.set(-4, 0.012, 0.6); rug.receiveShadow = true;
+room.add(rug);
+// sofa
+const sofa = new THREE.Group();
+const sofaMat = new THREE.MeshStandardMaterial({ color: 0x7a8a96, roughness: 0.9 });
+const sBase = new THREE.Mesh(new RoundedBoxGeometry(2.1, 0.5, 0.95, 3, 0.09), sofaMat); sBase.position.y = 0.28;
+const sBack = new THREE.Mesh(new RoundedBoxGeometry(2.1, 0.65, 0.28, 3, 0.09), sofaMat); sBack.position.set(0, 0.72, -0.36);
+const sArmL = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.62, 0.95, 3, 0.09), sofaMat); sArmL.position.set(-0.94, 0.52, 0);
+const sArmR = sArmL.clone(); sArmR.position.x = 0.94;
+sofa.add(sBase, sBack, sArmL, sArmR);
+sofa.children.forEach(m => { m.castShadow = true; m.receiveShadow = true; });
+sofa.position.set(-4.4, 0, -2.6); sofa.rotation.y = 0.12;
+room.add(sofa, contactShadow(-4.4, -2.6, 3.2, 2.0, 0.75));
+// coffee table
+const table = new THREE.Mesh(new RoundedBoxGeometry(0.95, 0.34, 0.6, 3, 0.05),
+  new THREE.MeshStandardMaterial({ color: 0x6b503a, roughness: 0.6 }));
+table.position.set(-4.1, 0.17, -0.9); table.castShadow = true; table.receiveShadow = true;
+room.add(table);
+// floor lamp
+const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 1.7, 10), M.darkMetal);
+lampPole.position.set(-6.2, 0.85, -3.1); lampPole.castShadow = true;
+const lampShade = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 0.3, 16, 1, true),
+  new THREE.MeshStandardMaterial({ color: 0xf4e0bd, emissive: 0xffca7a, emissiveIntensity: 1.4, side: THREE.DoubleSide }));
+lampShade.position.set(-6.2, 1.78, -3.1);
+room.add(lampPole, lampShade);
+// plant (indoor)
+function plant(x, z, s = 1) {
+  const g = new THREE.Group();
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.11 * s, 0.2 * s, 12),
+    new THREE.MeshStandardMaterial({ color: 0x9a5f43, roughness: 0.9 }));
+  pot.position.y = 0.1 * s; pot.castShadow = true;
+  g.add(pot);
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x4d8f4f, roughness: 0.85 });
+  for (let i = 0; i < 5; i++) {
+    const l = new THREE.Mesh(new THREE.ConeGeometry(0.05 * s, 0.5 * s, 6), leafMat);
+    const a = i / 5 * Math.PI * 2;
+    l.position.set(Math.cos(a) * 0.06 * s, 0.4 * s, Math.sin(a) * 0.06 * s);
+    l.rotation.set(Math.sin(a) * 0.5, 0, Math.cos(a) * 0.5);
+    l.castShadow = true;
+    g.add(l);
+  }
+  g.position.set(x, 0, z);
+  return g;
+}
+room.add(plant(-6.4, 3.2, 1.3));
+
+// ---- outdoors dressing ----
+const outdoors = new THREE.Group(); scene.add(outdoors);
+// concrete pad for the split outdoor unit (added to splitGroup later so it
+// disappears with the system)
+const pad = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 2.3), M.concrete);
+pad.position.set(1.1, 0.035, 1.7); pad.receiveShadow = true; pad.castShadow = true;
+// paving path
+const path = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.04, 1.1), new THREE.MeshStandardMaterial({ color: 0xb5b0a6, roughness: 1 }));
+path.position.set(2.6, 0.02, -1.6); path.receiveShadow = true;
+outdoors.add(path);
+// tree
+const tree = new THREE.Group();
+const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 1.6, 10),
+  new THREE.MeshStandardMaterial({ color: 0x74553a, roughness: 1 }));
+trunk.position.y = 0.8; trunk.castShadow = true;
+tree.add(trunk);
+const foliage = new THREE.Group();
+const folMat = new THREE.MeshStandardMaterial({ color: 0x5c9b53, roughness: 0.95 });
+[[0, 2.0, 0, 0.85], [0.5, 1.7, 0.25, 0.55], [-0.45, 1.75, -0.2, 0.6]].forEach(([x, y, z, r]) => {
+  const s = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14), folMat);
+  s.position.set(x, y, z); s.castShadow = true;
+  foliage.add(s);
+});
+tree.add(foliage);
+tree.position.set(5.6, 0, -2.4);
+outdoors.add(tree, contactShadow(5.6, -2.4, 2.6, 2.6, 0.6));
+// shrubs along the wall
+const shrubMat = new THREE.MeshStandardMaterial({ color: 0x557f47, roughness: 1 });
+[[0.7, -1.2, 0.34], [0.85, -2.0, 0.42], [0.7, -2.8, 0.3], [0.9, -3.5, 0.38]].forEach(([x, z, r]) => {
+  const s = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), shrubMat);
+  s.position.set(x, r * 0.8, z); s.castShadow = true;
+  outdoors.add(s);
+});
+
+/* ============================================================
+   4. Reusable machine parts
+============================================================ */
+function axialFan(radius, blades = 4) {
+  // spins about local X (faces +X)
+  const g = new THREE.Group();
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, 0.05, 14), M.darkMetal);
+  hub.rotation.z = Math.PI / 2;
+  g.add(hub);
+  for (let i = 0; i < blades; i++) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.01, radius * 0.78, radius * 0.34), M.blade);
+    const holder = new THREE.Group();
+    b.position.y = radius * 0.55;
+    b.rotation.y = 0.6; // blade pitch
+    holder.rotation.x = (i / blades) * Math.PI * 2;
+    holder.add(b);
+    g.add(holder);
+  }
+  return g;
+}
+function crossflowFan(length, radius) {
+  // long roller, axis along local Z
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.5, radius * 0.5, length, 10), M.darkMetal);
+  core.rotation.x = Math.PI / 2;
+  g.add(core);
+  for (let i = 0; i < 8; i++) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.55, 0.008, length), M.blade);
+    const holder = new THREE.Group();
+    fin.position.x = radius * 0.72;
+    fin.rotation.z = 0.5;
+    holder.rotation.z = (i / 8) * Math.PI * 2;
+    holder.add(fin);
+    g.add(holder);
+  }
+  return g;
+}
+function tubeFromPoints(points, radius, material, closed = false) {
+  const curve = new THREE.CatmullRomCurve3(points, closed, 'catmullrom', 0.08);
+  const geo = new THREE.TubeGeometry(curve, Math.max(32, points.length * 10), radius, 8, closed);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.renderOrder = 3;
+  return mesh;
+}
+function coilSlab(w, h, d, emissiveMat) {
+  // finned heat-exchanger block: striped fins + emissive activity glow
+  const g = new THREE.Group();
+  const fins = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({
+    map: finTex, roughness: 0.55, metalness: 0.35,
+  }));
+  fins.castShadow = true;
+  const glow = new THREE.Mesh(new THREE.BoxGeometry(w * 1.02, h * 1.02, d * 1.02), emissiveMat);
+  g.add(fins, glow);
+  return g;
+}
+function coilGlowMat() {
+  return new THREE.MeshStandardMaterial({
+    color: 0x9aa4ac, roughness: 0.5, metalness: 0.3, transparent: true, opacity: 0.35,
+    emissive: 0x2288ff, emissiveIntensity: 0.6,
+  });
+}
+function compressorMesh(r, h) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x23282e, metalness: 0.6, roughness: 0.35, emissive: 0x000000 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 20), mat);
+  body.position.y = h / 2; body.castShadow = true;
+  const top = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+  top.position.y = h;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.03, r * 1.03, h * 0.18, 20),
+    new THREE.MeshStandardMaterial({ color: 0xff8a4d, emissive: 0xff6a2a, emissiveIntensity: 0.8, roughness: 0.4 }));
+  band.position.y = h * 0.55;
+  g.add(body, top, band);
+  g.userData.band = band;
+  return g;
+}
+function reversingValveMesh() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.26, 14), M.brass);
+  body.rotation.x = Math.PI / 2; // axis along Z
+  body.castShadow = true;
+  g.add(body);
+  for (const dz of [-0.08, 0, 0.08]) {
+    const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.07, 8), M.brass);
+    stub.position.set(0, -0.05, dz);
+    g.add(stub);
+  }
+  const stubTop = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.07, 8), M.brass);
+  stubTop.position.set(0, 0.05, 0);
+  g.add(stubTop);
+  const slider = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.09),
+    new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xffb347, emissiveIntensity: 1.2 }));
+  g.add(slider);
+  g.userData.slider = slider;
+  return g;
+}
+function expansionMesh() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new RoundedBoxGeometry(0.09, 0.11, 0.09, 2, 0.02), M.brass);
+  body.castShadow = true;
+  const capT = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.05, 10), M.darkMetal);
+  capT.position.y = 0.08;
+  g.add(body, capT);
+  return g;
+}
+function ribbedDuct(from, to, radius) {
+  const g = new THREE.Group();
+  const dir = to.clone().sub(from); const len = dir.length();
+  const mid = from.clone().add(to).multiplyScalar(0.5);
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 18), M.duct);
+  tube.castShadow = true;
+  g.add(tube);
+  for (let i = 1; i < 6; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(radius + 0.008, 0.008, 8, 20), M.darkMetal);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = -len / 2 + (len * i) / 6;
+    g.add(ring);
+  }
+  g.position.copy(mid);
+  g.quaternion.setFromUnitVectors(V3(0, 1, 0), dir.normalize());
+  return g;
+}
+
+/* ============================================================
+   5. SPLIT SYSTEM
+============================================================ */
+const splitGroup = new THREE.Group(); scene.add(splitGroup);
+const comp = {}; // registry of highlightable components
+
+// --- indoor wall unit ---
+const iu = new THREE.Group();
+const iuShell = new THREE.Mesh(new RoundedBoxGeometry(0.42, 0.52, 1.52, 4, 0.09), shellMat(0xf4f6f8));
+iuShell.castShadow = true;
+iu.add(iuShell);
+const iuBack = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.46, 1.44), M.plaster);
+iuBack.position.x = 0.17;
+iu.add(iuBack);
+// louver flap at bottom-front
+const louver = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.02, 1.3), new THREE.MeshStandardMaterial({ color: 0xdfe4e8, roughness: 0.5 }));
+louver.position.set(-0.16, -0.22, 0); louver.rotation.z = 0.7;
+iu.add(louver);
+// intake grille on top
+const iuGrille = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.015, 1.3), M.grille);
+iuGrille.position.set(0.0, 0.265, 0);
+iu.add(iuGrille);
+// status LED
+const led = new THREE.Mesh(new THREE.CircleGeometry(0.014, 10), new THREE.MeshBasicMaterial({ color: 0x66ffcc }));
+led.rotation.y = -Math.PI / 2; led.position.set(-0.215, -0.13, 0.55);
+iu.add(led);
+// crossflow fan inside
+const cfFan = crossflowFan(1.3, 0.085);
+cfFan.position.set(-0.06, -0.1, 0);
+iu.add(cfFan);
+// indoor coil block (slanted)
+const iCoilMat = coilGlowMat();
+const iCoil = coilSlab(0.1, 0.3, 1.34, iCoilMat);
+iCoil.position.set(0.02, 0.06, 0); iCoil.rotation.z = 0.35;
+iu.add(iCoil);
+iu.position.set(-0.39, 2.55, 1.4);
+splitGroup.add(iu);
+comp.indoorUnit = [iuShell];
+comp.indoorCoil = [iCoil.children[1]];
+
+// --- line set through the wall ---
+const sleevePl = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.55, 12), M.plaster);
+sleevePl.rotation.z = Math.PI / 2; sleevePl.position.set(0, 2.35, 1.99);
+splitGroup.add(sleevePl);
+
+// --- outdoor unit ---
+const ou = new THREE.Group();
+const ouW = 0.8, ouH = 1.05, ouL = 1.5;
+const ouShellMat = shellMat(0xdfe3e6);
+// panels (leave +x face for the fan grille, -x open toward coil)
+const ouTop = new THREE.Mesh(new THREE.BoxGeometry(ouW, 0.03, ouL), ouShellMat); ouTop.position.y = ouH / 2;
+const ouSideA = new THREE.Mesh(new THREE.BoxGeometry(ouW, ouH, 0.03), ouShellMat); ouSideA.position.z = ouL / 2;
+const ouSideB = new THREE.Mesh(new THREE.BoxGeometry(ouW, ouH, 0.03), ouShellMat); ouSideB.position.z = -ouL / 2;
+const ouFrame = new THREE.Mesh(new THREE.BoxGeometry(ouW, 0.06, ouL), M.darkMetal); ouFrame.position.y = -ouH / 2 + 0.03;
+ouFrame.castShadow = true;
+ou.add(ouTop, ouSideA, ouSideB, ouFrame);
+// fan ring + grille on +x face
+const fanRing = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.025, 10, 30), M.darkMetal);
+fanRing.rotation.y = Math.PI / 2; fanRing.position.set(ouW / 2, 0.05, 0);
+ou.add(fanRing);
+const ouFan = axialFan(0.33, 4);
+ouFan.position.set(ouW / 2 - 0.05, 0.05, 0);
+ou.add(ouFan);
+// grille bars
+for (let i = -3; i <= 3; i++) {
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.7, 0.02), M.darkMetal);
+  bar.position.set(ouW / 2 + 0.02, 0.05, i * 0.1);
+  ou.add(bar);
+}
+// outdoor coil (back face, toward wall)
+const oCoilMat = coilGlowMat();
+const oCoil = coilSlab(0.09, 0.92, 1.38, oCoilMat);
+oCoil.position.set(-ouW / 2 + 0.06, 0, 0);
+ou.add(oCoil);
+ou.position.set(1.05, 0.07 + ouH / 2, 1.7);
+splitGroup.add(pad, ou, contactShadow(1.05, 1.7, 2.0, 2.6, 0.7));
+comp.outdoorUnit = [ouTop, ouSideA, ouSideB];
+comp.outdoorCoil = [oCoil.children[1]];
+
+// compressor, valve, expansion inside outdoor unit (world coords)
+const compMesh = compressorMesh(0.14, 0.46);
+compMesh.position.set(1.05, 0.09, 2.15);
+splitGroup.add(compMesh);
+comp.compressor = [compMesh.children[0], compMesh.userData.band];
+
+const rvMesh = reversingValveMesh();
+rvMesh.position.set(1.0, 0.78, 1.95);
+splitGroup.add(rvMesh);
+comp.valve = [rvMesh.children[0], rvMesh.userData.slider];
+
+const exMesh = expansionMesh();
+exMesh.position.set(0.85, 0.36, 1.05);
+splitGroup.add(exMesh);
+comp.expansion = [exMesh.children[0]];
+
+// --- split refrigerant path (waypoints shared by tube + particles) ---
+const SP = {
+  compOut: V3(1.05, 0.56, 2.15),
+  compMid: V3(1.05, 0.3, 2.15),
+  compIn: V3(1.16, 0.44, 2.3),
+  valve: V3(1.0, 0.78, 1.95),
+  ocEntry: V3(0.84, 0.92, 2.18),
+  oc: [V3(0.7, 0.92, 2.1), V3(0.7, 0.92, 1.1), V3(0.7, 0.74, 1.1), V3(0.7, 0.74, 2.25), V3(0.7, 0.56, 2.25), V3(0.7, 0.56, 1.1), V3(0.7, 0.38, 1.1)],
+  exIn: V3(0.82, 0.4, 1.1),
+  ex: V3(0.85, 0.36, 1.05),
+  exOut: V3(0.78, 0.36, 1.16),
+  liq: [V3(0.6, 0.45, 1.5), V3(0.3, 0.64, 2.04), V3(0.26, 1.5, 2.05), V3(0.26, 2.32, 2.05), V3(0, 2.32, 2.04), V3(-0.3, 2.35, 2.02)],
+  ic: [V3(-0.4, 2.42, 2.0), V3(-0.4, 2.42, 0.78), V3(-0.4, 2.54, 0.78), V3(-0.4, 2.54, 2.0), V3(-0.4, 2.66, 2.0), V3(-0.4, 2.66, 0.78)],
+  gas: [V3(-0.36, 2.5, 0.72), V3(-0.32, 2.4, 1.93), V3(0, 2.4, 1.94), V3(0.3, 2.38, 1.95), V3(0.3, 1.5, 1.94), V3(0.3, 0.86, 1.93), V3(0.64, 0.84, 1.94)],
+};
+const rev = a => [...a].reverse();
+// visible pipework (positions only; drawn once, shared by both modes)
+const splitPipePts = [
+  SP.compOut, SP.valve, SP.ocEntry, ...SP.oc, SP.exIn, SP.ex, SP.exOut,
+  ...SP.liq, ...SP.ic, ...SP.gas, SP.valve.clone().add(V3(0.002, 0, 0.002)), SP.compIn, SP.compMid,
+];
+const splitPipe = tubeFromPoints(splitPipePts, 0.026, M.copper, true);
+splitGroup.add(splitPipe);
+comp.lineset = [splitPipe];
+
+// temp-annotated loops (t: 0 = coldest, 1 = hottest)
+function seg(pts, t0, t1) {
+  return pts.map((p, i) => ({ p, t: lerp(t0, t1, pts.length > 1 ? i / (pts.length - 1) : 0) }));
+}
+const splitCoolLoop = [
+  { p: SP.compOut, t: 1 }, { p: SP.valve, t: 1 }, { p: SP.ocEntry, t: 1 },
+  ...seg(SP.oc, 0.98, 0.62),
+  { p: SP.exIn, t: 0.6 }, { p: SP.ex, t: 0.55 }, { p: SP.exOut, t: 0.14 },
+  ...seg(SP.liq, 0.14, 0.15),
+  ...seg(SP.ic, 0.15, 0.3),
+  ...seg(SP.gas, 0.3, 0.31),
+  { p: SP.valve, t: 0.31 }, { p: SP.compIn, t: 0.31 }, { p: SP.compMid, t: 0.62 },
+];
+const splitHeatLoop = [
+  { p: SP.compOut, t: 1 }, { p: SP.valve, t: 1 },
+  ...seg(rev(SP.gas), 1, 0.99),
+  ...seg(rev(SP.ic), 0.98, 0.58),
+  ...seg(rev(SP.liq), 0.55, 0.53),
+  { p: SP.exOut, t: 0.52 }, { p: SP.ex, t: 0.45 }, { p: SP.exIn, t: 0.12 },
+  ...seg(rev(SP.oc), 0.12, 0.3),
+  { p: SP.ocEntry, t: 0.3 }, { p: SP.valve, t: 0.3 }, { p: SP.compIn, t: 0.3 }, { p: SP.compMid, t: 0.62 },
+];
+
+// condensate drain (small dark tube from indoor unit, through wall, down)
+const drainPts = [V3(-0.3, 2.3, 2.12), V3(0, 2.28, 2.14), V3(0.27, 2.24, 2.15), V3(0.27, 2.1, 2.16)];
+const drain = tubeFromPoints(drainPts, 0.014, M.darkMetal);
+splitGroup.add(drain);
+
+/* ============================================================
+   6. MONOBLOCK SYSTEM
+============================================================ */
+const monoGroup = new THREE.Group(); scene.add(monoGroup);
+const mono = {};
+
+const cab = new THREE.Group();
+const cabShellMat = shellMat(0xf2f4f6);
+const cabShell = new THREE.Mesh(new RoundedBoxGeometry(0.8, 1.9, 1.1, 4, 0.07), cabShellMat);
+cabShell.position.set(-0.58, 0.95, 0.3);
+cabShell.castShadow = true;
+cab.add(cabShell);
+// interior frame
+const cabFrame = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.05, 1.04), M.darkMetal);
+cabFrame.position.set(-0.58, 0.035, 0.3);
+cab.add(cabFrame);
+// intake grille front bottom, outlet grille front top
+const inGrille = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.32, 0.9), M.grille);
+inGrille.position.set(-0.985, 0.38, 0.3);
+const outGrille = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.28, 0.9), M.grille);
+outGrille.position.set(-0.985, 1.68, 0.3); outGrille.rotation.z = -0.18;
+cab.add(inGrille, outGrille);
+// indoor coil (front, upper)
+const mICoilMat = coilGlowMat();
+const mICoil = coilSlab(0.09, 0.52, 0.9, mICoilMat);
+mICoil.position.set(-0.88, 1.31, 0.3);
+cab.add(mICoil);
+// indoor crossflow fan above coil
+const mFanIn = crossflowFan(0.85, 0.075);
+mFanIn.position.set(-0.72, 1.62, 0.3);
+cab.add(mFanIn);
+// outdoor coil (back)
+const mOCoilMat = coilGlowMat();
+const mOCoil = coilSlab(0.09, 0.8, 0.9, mOCoilMat);
+mOCoil.position.set(-0.26, 0.95, 0.3);
+cab.add(mOCoil);
+// outdoor-air blower near exhaust duct
+const blower = new THREE.Group();
+const blowerBody = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.12, 16), M.darkMetal);
+blowerBody.rotation.z = Math.PI / 2;
+blower.add(blowerBody);
+const blowerFan = axialFan(0.1, 5);
+blower.add(blowerFan);
+blower.position.set(-0.35, 1.35, 0.05);
+cab.add(blower);
+// compressor + valve + expansion
+const mCompMesh = compressorMesh(0.15, 0.48);
+mCompMesh.position.set(-0.58, 0.06, 0.55);
+cab.add(mCompMesh);
+const mRvMesh = reversingValveMesh();
+mRvMesh.position.set(-0.58, 0.68, 0.3);
+cab.add(mRvMesh);
+const mExMesh = expansionMesh();
+mExMesh.position.set(-0.78, 0.72, 0.05);
+cab.add(mExMesh);
+monoGroup.add(cab, contactShadow(-0.6, 0.3, 1.6, 1.9, 0.7));
+mono.cabinet = [cabShell];
+mono.indoorCoil = [mICoil.children[1]];
+mono.outdoorCoil = [mOCoil.children[1]];
+mono.compressor = [mCompMesh.children[0], mCompMesh.userData.band];
+mono.valve = [mRvMesh.children[0], mRvMesh.userData.slider];
+mono.expansion = [mExMesh.children[0]];
+
+// ducts through the wall
+const intakeDuct = ribbedDuct(V3(-0.18, 1.35, 0.55), V3(0.5, 1.35, 0.55), 0.14);
+const exhaustDuct = ribbedDuct(V3(-0.18, 1.35, 0.05), V3(0.5, 1.35, 0.05), 0.14);
+monoGroup.add(intakeDuct, exhaustDuct);
+// outdoor grille caps + wall trim rings
+function ductCap(z) {
+  const g = new THREE.Group();
+  const capMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.165, 0.165, 0.05, 18), M.duct);
+  capMesh.rotation.z = Math.PI / 2;
+  g.add(capMesh);
+  for (let i = -2; i <= 2; i++) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.3), M.darkMetal);
+    bar.position.set(0.03, i * 0.055, 0);
+    g.add(bar);
+  }
+  g.position.set(0.5, 1.35, z);
+  return g;
+}
+monoGroup.add(ductCap(0.55), ductCap(0.05));
+[0.05, 0.55].forEach(z => {
+  const ringO = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.014, 8, 22), M.plaster);
+  ringO.rotation.y = Math.PI / 2; ringO.position.set(0.18, 1.35, z);
+  const ringI = ringO.clone(); ringI.position.x = -0.18;
+  monoGroup.add(ringO, ringI);
+});
+mono.intakeDuct = [intakeDuct.children[0]];
+mono.exhaustDuct = [exhaustDuct.children[0]];
+
+// --- mono refrigerant loop ---
+const MP = {
+  compOut: V3(-0.58, 0.62, 0.55),
+  compMid: V3(-0.58, 0.3, 0.55),
+  compIn: V3(-0.46, 0.4, 0.68),
+  valve: V3(-0.58, 0.68, 0.3),
+  oc: [V3(-0.26, 1.3, 0.68), V3(-0.26, 1.3, -0.08), V3(-0.26, 1.06, -0.08), V3(-0.26, 1.06, 0.68), V3(-0.26, 0.82, 0.68), V3(-0.26, 0.82, -0.08), V3(-0.26, 0.6, -0.08)],
+  ocEntry: V3(-0.4, 1.1, 0.5),
+  exIn: V3(-0.44, 0.62, 0.0),
+  ex: V3(-0.78, 0.72, 0.05),
+  exOut: V3(-0.84, 0.8, 0.05),
+  ic: [V3(-0.88, 1.1, -0.08), V3(-0.88, 1.1, 0.68), V3(-0.88, 1.31, 0.68), V3(-0.88, 1.31, -0.08), V3(-0.88, 1.52, -0.08), V3(-0.88, 1.52, 0.68)],
+  icBack: V3(-0.72, 1.05, 0.55),
+};
+const monoPipePts = [
+  MP.compOut, MP.valve, MP.ocEntry, ...MP.oc, MP.exIn, MP.ex, MP.exOut,
+  ...MP.ic, MP.icBack, MP.valve.clone().add(V3(0.002, 0.002, 0)), MP.compIn, MP.compMid,
+];
+const monoPipe = tubeFromPoints(monoPipePts, 0.018, M.copper, true);
+monoGroup.add(monoPipe);
+
+const monoCoolLoop = [
+  { p: MP.compOut, t: 1 }, { p: MP.valve, t: 1 }, { p: MP.ocEntry, t: 1 },
+  ...seg(MP.oc, 0.98, 0.62),
+  { p: MP.exIn, t: 0.6 }, { p: MP.ex, t: 0.55 }, { p: MP.exOut, t: 0.14 },
+  ...seg(MP.ic, 0.15, 0.3),
+  { p: MP.icBack, t: 0.31 }, { p: MP.valve, t: 0.31 }, { p: MP.compIn, t: 0.31 }, { p: MP.compMid, t: 0.62 },
+];
+const monoHeatLoop = [
+  { p: MP.compOut, t: 1 }, { p: MP.valve, t: 1 }, { p: MP.icBack, t: 1 },
+  ...seg(rev(MP.ic), 0.98, 0.58),
+  { p: MP.exOut, t: 0.55 }, { p: MP.ex, t: 0.45 }, { p: MP.exIn, t: 0.12 },
+  ...seg(rev(MP.oc), 0.12, 0.3),
+  { p: MP.ocEntry, t: 0.3 }, { p: MP.valve, t: 0.3 }, { p: MP.compIn, t: 0.3 }, { p: MP.compMid, t: 0.62 },
+];
+
+/* ============================================================
+   7. Particle engine (shared point-cloud shader)
+============================================================ */
+const clouds = [];
+const PVS = `
+  attribute float aSize; attribute float aAlpha; attribute vec3 aColor;
+  uniform float uScale;
+  varying float vA; varying vec3 vC;
+  void main(){
+    vC = aColor; vA = aAlpha;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = max(1.0, aSize * uScale / -mv.z);
+    gl_Position = projectionMatrix * mv;
+  }`;
+const PFS = `
+  uniform sampler2D uMap; uniform float uOpacity;
+  varying float vA; varying vec3 vC;
+  void main(){
+    vec4 t = texture2D(uMap, gl_PointCoord);
+    gl_FragColor = vec4(vC, vA * uOpacity) * t;
+    if (gl_FragColor.a < 0.003) discard;
+  }`;
+
+class PointCloud {
+  constructor(count, tex, blending = THREE.NormalBlending) {
+    this.count = count;
+    this.pos = new Float32Array(count * 3);
+    this.col = new Float32Array(count * 3);
+    this.alp = new Float32Array(count);
+    this.siz = new Float32Array(count);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha', new THREE.BufferAttribute(this.alp, 1).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(this.siz, 1).setUsage(THREE.DynamicDrawUsage));
+    this.geo = geo;
+    this.mat = new THREE.ShaderMaterial({
+      uniforms: { uMap: { value: tex }, uScale: { value: 600 }, uOpacity: { value: 1 } },
+      vertexShader: PVS, fragmentShader: PFS,
+      transparent: true, depthWrite: false, blending,
+    });
+    this.points = new THREE.Points(geo, this.mat);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 8;
+    clouds.push(this);
+  }
+  commit() {
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.aColor.needsUpdate = true;
+    this.geo.attributes.aAlpha.needsUpdate = true;
+    this.geo.attributes.aSize.needsUpdate = true;
+  }
+}
+function updateCloudScale() {
+  const h = renderer.domElement.height; // device px
+  const s = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  clouds.forEach(c => c.mat.uniforms.uScale.value = s);
+}
+
+// temperature color ramps
+const cCold = new THREE.Color(0x3f9dff), cMid = new THREE.Color(0xb06ab3), cHot = new THREE.Color(0xff6b35);
+const refTmp = new THREE.Color();
+function refrigColor(t, out) {
+  if (t < 0.5) out.lerpColors(cCold, cMid, t * 2);
+  else out.lerpColors(cMid, cHot, (t - 0.5) * 2);
+  return out;
+}
+const aCold = new THREE.Color(0x86cfff), aWarm = new THREE.Color(0xffc287);
+function airColor(t, out) { return out.lerpColors(aCold, aWarm, clamp(t, 0, 1)); }
+
+/* ---------- refrigerant flow ---------- */
+class RefrigerantFlow {
+  constructor(coolLoop, heatLoop, count = 110, size = 0.07) {
+    this.cloud = new PointCloud(count, dotTex);
+    this.tables = { cool: this.buildTable(coolLoop), heat: this.buildTable(heatLoop) };
+    this.isHeat = false;
+    this.u = new Float32Array(count);
+    for (let i = 0; i < count; i++) { this.u[i] = i / count; this.cloud.siz[i] = size * (0.85 + Math.random() * 0.3); this.cloud.alp[i] = 1; }
+    scene.add(this.cloud.points);
+  }
+  buildTable(loop) {
+    const pts = loop.map(w => w.p);
+    const curve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.08);
+    const M = 900, raw = [];
+    let len = 0, prev = curve.getPoint(0);
+    for (let k = 0; k <= M; k++) {
+      const u = k / M;
+      const p = curve.getPoint(u);
+      len += p.distanceTo(prev); prev = p;
+      // temp: waypoint i sits at u = i/n on a closed CatmullRom
+      const n = loop.length, x = u * n, i0 = Math.floor(x) % n, i1 = (i0 + 1) % n, f = x - Math.floor(x);
+      raw.push({ p, t: lerp(loop[i0].t, loop[i1].t, f), s: len });
+    }
+    // resample to equal arc-length
+    const N = 512, table = [];
+    let j = 0;
+    for (let k = 0; k < N; k++) {
+      const target = (k / N) * len;
+      while (j < raw.length - 2 && raw[j + 1].s < target) j++;
+      const a = raw[j], b = raw[j + 1];
+      const f = clamp((target - a.s) / Math.max(1e-6, b.s - a.s), 0, 1);
+      table.push({ p: a.p.clone().lerp(b.p, f), t: lerp(a.t, b.t, f) });
+    }
+    table.len = len;
+    return table;
+  }
+  update(dt, blend, sysK) {
+    const wantHeat = blend > 0.5;
+    if (wantHeat !== this.isHeat) this.isHeat = wantHeat;
+    const table = this.tables[this.isHeat ? 'heat' : 'cool'];
+    const dip = 0.15 + 0.85 * Math.abs(blend - 0.5) * 2; // slow & fade through the switch
+    const speed = (0.55 / table.len) * dip * 14 * MOTION; // ~ fraction of loop per second
+    const N = table.length;
+    for (let i = 0; i < this.cloud.count; i++) {
+      this.u[i] = (this.u[i] + dt * speed * simSpeed) % 1;
+      const x = this.u[i] * N, i0 = Math.floor(x) % N, i1 = (i0 + 1) % N, f = x - Math.floor(x);
+      const a = table[i0], b = table[i1];
+      const k = i * 3;
+      this.cloud.pos[k] = lerp(a.p.x, b.p.x, f);
+      this.cloud.pos[k + 1] = lerp(a.p.y, b.p.y, f);
+      this.cloud.pos[k + 2] = lerp(a.p.z, b.p.z, f);
+      refrigColor(lerp(a.t, b.t, f), refTmp);
+      this.cloud.col[k] = refTmp.r * 1.5; this.cloud.col[k + 1] = refTmp.g * 1.5; this.cloud.col[k + 2] = refTmp.b * 1.5;
+    }
+    this.cloud.mat.uniforms.uOpacity.value = sysK * dip;
+    this.cloud.points.visible = sysK > 0.02;
+    this.cloud.commit();
+  }
+}
+
+/* ---------- air streams ---------- */
+const airTmp = new THREE.Color();
+class AirStream {
+  // stops: [ [u, coolModeTemp, heatModeTemp], ... ]  temps 0..1 (cold..warm)
+  constructor(waypoints, { count = 80, size = 0.15, jitter = [0.15, 0.15, 0.6], speed = 0.16, stops, spreadEnd = 0 }) {
+    this.samples = new THREE.CatmullRomCurve3(waypoints).getSpacedPoints(140);
+    this.stops = stops;
+    this.speed = speed;
+    this.spreadEnd = spreadEnd;
+    this.cloud = new PointCloud(count, puffTex);
+    this.u = new Float32Array(count);
+    this.off = new Float32Array(count * 3);
+    this.sv = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      this.u[i] = Math.random();
+      this.off[i * 3] = (Math.random() - 0.5) * 2 * jitter[0];
+      this.off[i * 3 + 1] = (Math.random() - 0.5) * 2 * jitter[1];
+      this.off[i * 3 + 2] = (Math.random() - 0.5) * 2 * jitter[2];
+      this.sv[i] = 0.75 + Math.random() * 0.5;
+      this.cloud.siz[i] = size * (0.7 + Math.random() * 0.6);
+    }
+    scene.add(this.cloud.points);
+  }
+  tempAt(u, blend) {
+    const s = this.stops;
+    let a = s[0], b = s[s.length - 1];
+    for (let i = 0; i < s.length - 1; i++) if (u >= s[i][0] && u <= s[i + 1][0]) { a = s[i]; b = s[i + 1]; break; }
+    const f = clamp((u - a[0]) / Math.max(1e-5, b[0] - a[0]), 0, 1);
+    return lerp(lerp(a[1], b[1], f), lerp(a[2], b[2], f), blend);
+  }
+  update(dt, blend, sysK) {
+    const S = this.samples, n = S.length - 1;
+    for (let i = 0; i < this.cloud.count; i++) {
+      this.u[i] += dt * this.speed * this.sv[i] * simSpeed * MOTION;
+      if (this.u[i] > 1) this.u[i] -= 1;
+      const u = this.u[i];
+      const x = u * n, i0 = Math.floor(x), f = x - i0;
+      const a = S[i0], b = S[Math.min(i0 + 1, n)];
+      const spread = 1 + this.spreadEnd * smooth(0.55, 1, u);
+      const k = i * 3;
+      this.cloud.pos[k] = lerp(a.x, b.x, f) + this.off[k] * spread;
+      this.cloud.pos[k + 1] = lerp(a.y, b.y, f) + this.off[k + 1] * spread;
+      this.cloud.pos[k + 2] = lerp(a.z, b.z, f) + this.off[k + 2] * spread;
+      airColor(this.tempAt(u, blend), airTmp);
+      this.cloud.col[k] = airTmp.r; this.cloud.col[k + 1] = airTmp.g; this.cloud.col[k + 2] = airTmp.b;
+      this.cloud.alp[i] = 0.5 * smooth(0, 0.1, u) * smooth(1, 0.88, u);
+    }
+    this.cloud.mat.uniforms.uOpacity.value = sysK;
+    this.cloud.points.visible = sysK > 0.02;
+    this.cloud.commit();
+  }
+}
+
+// SPLIT air — indoor recirculation loop (never crosses the wall)
+const splitRoomAir = new AirStream(
+  [V3(-4.4, 1.7, 1.1), V3(-2.5, 2.4, 1.25), V3(-0.9, 2.95, 1.4), V3(-0.42, 2.62, 1.4), V3(-0.75, 2.2, 1.42), V3(-2.3, 1.15, 1.5), V3(-4.3, 0.65, 1.6)],
+  { count: 85, size: 0.17, jitter: [0.2, 0.22, 0.85], speed: 0.14, spreadEnd: 0.8,
+    stops: [[0, 0.75, 0.28], [0.42, 0.75, 0.28], [0.58, 0.12, 0.95], [1, 0.18, 0.9]] });
+// SPLIT air — outdoor stream through the outdoor unit
+const splitOutAir = new AirStream(
+  [V3(0.32, 0.5, 1.7), V3(0.66, 0.58, 1.7), V3(1.1, 0.6, 1.7), V3(1.6, 0.62, 1.7), V3(3.0, 0.75, 1.7), V3(4.8, 1.0, 1.7)],
+  { count: 70, size: 0.095, jitter: [0.06, 0.28, 0.55], speed: 0.3, spreadEnd: 1.2,
+    stops: [[0, 0.72, 0.22], [0.12, 0.72, 0.22], [0.3, 0.97, 0.03], [1, 0.95, 0.05]] });
+// MONO air — indoor recirculation through the cabinet front
+const monoRoomAir = new AirStream(
+  [V3(-3.9, 0.85, 0.3), V3(-2.3, 0.5, 0.3), V3(-1.15, 0.38, 0.3), V3(-0.86, 0.9, 0.3), V3(-0.88, 1.35, 0.3), V3(-1.15, 1.78, 0.3), V3(-2.3, 2.05, 0.35), V3(-3.8, 1.75, 0.4)],
+  { count: 85, size: 0.16, jitter: [0.12, 0.14, 0.42], speed: 0.13, spreadEnd: 1.0,
+    stops: [[0, 0.75, 0.28], [0.38, 0.75, 0.28], [0.56, 0.12, 0.95], [1, 0.18, 0.9]] });
+// MONO air — outdoor stream: in one duct, across the sealed coil, out the other
+const monoOutAir = new AirStream(
+  [V3(4.4, 1.7, 0.55), V3(2.5, 1.45, 0.55), V3(0.6, 1.35, 0.55), V3(-0.05, 1.35, 0.52), V3(-0.3, 1.05, 0.3), V3(-0.32, 1.3, 0.08), V3(-0.05, 1.35, 0.05), V3(0.6, 1.35, 0.05), V3(2.5, 1.5, 0.05), V3(4.5, 1.85, 0.05)],
+  { count: 80, size: 0.09, jitter: [0.05, 0.07, 0.06], speed: 0.16, spreadEnd: 2.2,
+    stops: [[0, 0.72, 0.22], [0.36, 0.72, 0.22], [0.52, 0.97, 0.03], [1, 0.95, 0.05]] });
+
+/* ---------- heat-energy embers ---------- */
+class HeatSystem {
+  constructor(count = 110) {
+    this.cloud = new PointCloud(count, glowTex, THREE.AdditiveBlending);
+    this.life = new Float32Array(count);
+    this.max = new Float32Array(count);
+    this.vel = new Float32Array(count * 3);
+    this.emitters = [];
+    this.acc = 0;
+    for (let i = 0; i < count; i++) this.life[i] = -1;
+    scene.add(this.cloud.points);
+  }
+  add(e) { this.emitters.push(e); } // { box:[x0,x1,y0,y1,z0,z1], vel:[x,y,z], rate(blend)=>n/s, sys:'split'|'mono'|'both', size }
+  spawn(e) {
+    for (let i = 0; i < this.cloud.count; i++) {
+      if (this.life[i] < 0) {
+        const k = i * 3, b = e.box;
+        this.cloud.pos[k] = lerp(b[0], b[1], Math.random());
+        this.cloud.pos[k + 1] = lerp(b[2], b[3], Math.random());
+        this.cloud.pos[k + 2] = lerp(b[4], b[5], Math.random());
+        this.vel[k] = e.vel[0] * (0.7 + Math.random() * 0.6);
+        this.vel[k + 1] = e.vel[1] * (0.7 + Math.random() * 0.6) + 0.08;
+        this.vel[k + 2] = e.vel[2] + (Math.random() - 0.5) * 0.15;
+        this.max[i] = this.life[i] = e.lifeT * (0.7 + Math.random() * 0.6);
+        this.cloud.siz[i] = (e.size || 0.14) * (0.7 + Math.random() * 0.7);
+        return;
+      }
+    }
+  }
+  update(dt, blend) {
+    this.acc += dt * simSpeed;
+    const step = 1 / 60;
+    while (this.acc > step) {
+      this.acc -= step;
+      for (const e of this.emitters) {
+        const sysW = e.sys === 'split' ? splitK : e.sys === 'mono' ? monoK : 1;
+        const r = e.rate(blend) * sysW * MOTION;
+        if (Math.random() < r * step) this.spawn(e);
+      }
+    }
+    for (let i = 0; i < this.cloud.count; i++) {
+      if (this.life[i] < 0) { this.cloud.alp[i] = 0; continue; }
+      this.life[i] -= dt * simSpeed;
+      const k = i * 3;
+      this.cloud.pos[k] += this.vel[k] * dt * simSpeed;
+      this.cloud.pos[k + 1] += this.vel[k + 1] * dt * simSpeed;
+      this.cloud.pos[k + 2] += this.vel[k + 2] * dt * simSpeed;
+      const f = clamp(this.life[i] / this.max[i], 0, 1);
+      const a = Math.sin(f * Math.PI);
+      this.cloud.alp[i] = a * 0.85;
+      this.cloud.col[k] = 1.9 * a + 0.4; this.cloud.col[k + 1] = 0.85 * a + 0.15; this.cloud.col[k + 2] = 0.3 * a;
+    }
+    this.cloud.commit();
+  }
+}
+const heat = new HeatSystem(120);
+// split — cooling: absorb indoors, reject outdoors
+heat.add({ sys: 'split', box: [-1.7, -0.7, 2.2, 2.9, 0.9, 1.9], vel: [0.85, 0.1, 0], lifeT: 1.3, rate: b => (1 - b) * 16 });
+heat.add({ sys: 'split', box: [1.5, 1.9, 0.35, 0.95, 1.2, 2.2], vel: [1.5, 0.35, 0], lifeT: 1.4, size: 0.17, rate: b => (1 - b) * 16 });
+// split — heating: absorb outdoors, reject indoors
+heat.add({ sys: 'split', box: [0.25, 0.55, 0.3, 1.0, 1.0, 2.3], vel: [0.55, 0.05, 0], lifeT: 1.2, rate: b => b * 16 });
+heat.add({ sys: 'split', box: [-1.3, -0.6, 1.8, 2.5, 0.9, 1.9], vel: [-0.95, -0.2, 0], lifeT: 1.4, size: 0.17, rate: b => b * 16 });
+// split compressor shimmer
+heat.add({ sys: 'split', box: [0.95, 1.15, 0.55, 0.65, 2.05, 2.25], vel: [0, 0.4, 0], lifeT: 0.9, size: 0.09, rate: () => 4 });
+// mono — cooling: absorb at front coil, reject out the exhaust duct
+heat.add({ sys: 'mono', box: [-1.6, -1.05, 0.9, 1.6, -0.1, 0.7], vel: [0.6, 0.05, 0], lifeT: 1.2, rate: b => (1 - b) * 16 });
+heat.add({ sys: 'mono', box: [0.7, 1.3, 1.2, 1.55, -0.05, 0.15], vel: [1.6, 0.3, 0], lifeT: 1.3, size: 0.16, rate: b => (1 - b) * 16 });
+// mono — heating: absorb at intake duct / outdoor coil, reject into the room
+heat.add({ sys: 'mono', box: [0.6, 1.4, 1.2, 1.6, 0.45, 0.68], vel: [-0.9, 0, 0], lifeT: 1.1, rate: b => b * 16 });
+heat.add({ sys: 'mono', box: [-1.6, -1.05, 1.5, 2.0, -0.1, 0.7], vel: [-0.85, 0.15, 0], lifeT: 1.4, size: 0.16, rate: b => b * 16 });
+// mono compressor shimmer
+heat.add({ sys: 'mono', box: [-0.7, -0.45, 0.6, 0.7, 0.45, 0.68], vel: [0, 0.35, 0], lifeT: 0.9, size: 0.08, rate: () => 4 });
+
+/* ---------- condensate drips ---------- */
+class Drips {
+  constructor() {
+    this.cloud = new PointCloud(22, dotTex);
+    this.vel = new Float32Array(22);
+    this.live = new Float32Array(22).fill(-1);
+    this.acc = 0;
+    this.emitters = []; // {p:V3, rate(blend), sys}
+    scene.add(this.cloud.points);
+  }
+  update(dt, blend) {
+    this.acc += dt * simSpeed;
+    for (const e of this.emitters) {
+      const sysW = e.sys === 'split' ? splitK : monoK;
+      const r = e.rate(blend) * sysW;
+      if (this.acc > 0.016 && Math.random() < r * 0.016) {
+        for (let i = 0; i < 22; i++) if (this.live[i] < 0) {
+          const k = i * 3;
+          this.cloud.pos[k] = e.p.x + (Math.random() - 0.5) * 0.05;
+          this.cloud.pos[k + 1] = e.p.y;
+          this.cloud.pos[k + 2] = e.p.z + (Math.random() - 0.5) * 0.05;
+          this.vel[i] = 0; this.live[i] = 1;
+          this.cloud.siz[i] = 0.045;
+          this.cloud.col[k] = 0.75; this.cloud.col[k + 1] = 0.9; this.cloud.col[k + 2] = 1;
+          break;
+        }
+      }
+    }
+    if (this.acc > 0.016) this.acc = 0;
+    for (let i = 0; i < 22; i++) {
+      if (this.live[i] < 0) { this.cloud.alp[i] = 0; continue; }
+      const k = i * 3;
+      this.vel[i] += 3.2 * dt * simSpeed;
+      this.cloud.pos[k + 1] -= this.vel[i] * dt * simSpeed;
+      this.cloud.alp[i] = 0.85;
+      if (this.cloud.pos[k + 1] < 0.03) this.live[i] = -1;
+    }
+    this.cloud.commit();
+  }
+}
+const drips = new Drips();
+drips.emitters.push({ p: V3(0.27, 2.06, 2.16), sys: 'split', rate: b => (1 - b) * 2.2 }); // cooling: drain outside
+drips.emitters.push({ p: V3(1.05, 0.09, 1.95), sys: 'split', rate: b => b * 1.4 });        // heating: defrost water under outdoor unit
+
+/* ---------- snow (heating mode = winter outdoors) ---------- */
+const snow = new PointCloud(170, dotTex);
+{
+  for (let i = 0; i < 170; i++) {
+    const k = i * 3;
+    snow.pos[k] = 0.4 + Math.random() * 9;
+    snow.pos[k + 1] = Math.random() * 6.5;
+    snow.pos[k + 2] = -4.5 + Math.random() * 9;
+    snow.col[k] = snow.col[k + 1] = snow.col[k + 2] = 0.95;
+    snow.siz[i] = 0.05 + Math.random() * 0.04;
+    snow.alp[i] = 0.8;
+  }
+  scene.add(snow.points);
+}
+function updateSnow(dt, blend) {
+  snow.mat.uniforms.uOpacity.value = blend * 0.9;
+  snow.points.visible = blend > 0.03;
+  if (!snow.points.visible) return;
+  for (let i = 0; i < 170; i++) {
+    const k = i * 3;
+    snow.pos[k + 1] -= (0.5 + (i % 5) * 0.08) * dt * simSpeed * MOTION;
+    snow.pos[k] += Math.sin(time * 0.8 + i) * 0.12 * dt;
+    if (snow.pos[k + 1] < 0.02) snow.pos[k + 1] = 6.5;
+  }
+  snow.geo.attributes.position.needsUpdate = true;
+}
+
+const refrigSplit = new RefrigerantFlow(splitCoolLoop, splitHeatLoop, 120, 0.075);
+const refrigMono = new RefrigerantFlow(monoCoolLoop, monoHeatLoop, 90, 0.06);
+
+/* ============================================================
+   8. Heat-flow arc over the wall
+============================================================ */
+function heatArc(points) {
+  const curve = new THREE.CatmullRomCurve3(points);
+  const geo = new THREE.TubeGeometry(curve, 60, 0.055, 10, false);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uDir: { value: 1 }, uOp: { value: 1 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `
+      varying vec2 vUv; uniform float uTime, uDir, uOp;
+      void main(){
+        float d = fract(vUv.x * 9.0 - uTime * uDir * 1.6);
+        float dash = smoothstep(0.0, 0.28, d) * smoothstep(0.62, 0.34, d);
+        float ends = smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x);
+        vec3 col = mix(vec3(1.0, 0.62, 0.25), vec3(1.0, 0.85, 0.5), dash);
+        gl_FragColor = vec4(col * 1.6, dash * ends * 0.8 * uOp * abs(uDir));
+      }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 7;
+  return mesh;
+}
+const arcSplit = heatArc([V3(-1.7, 2.85, 1.55), V3(-0.4, 4.0, 1.6), V3(0.9, 4.05, 1.65), V3(2.0, 2.9, 1.7)]);
+const arcMono = heatArc([V3(-0.9, 2.5, 0.3), V3(0.0, 3.7, 0.3), V3(1.0, 3.6, 0.3), V3(1.8, 2.4, 0.3)]);
+scene.add(arcSplit, arcMono);
+
+/* ============================================================
+   9. HTML labels with leader lines
+============================================================ */
+const labelsBox = document.getElementById('labels');
+const leadersSvg = document.getElementById('leaders');
+leadersSvg.setAttribute('width', '100%'); leadersSvg.setAttribute('height', '100%');
+const labels = [];
+function addLabel(text, anchor, dx, dy, opts = {}) {
+  const el = document.createElement('div');
+  el.className = 'lbl' + (opts.hot ? ' hotd' : '');
+  el.innerHTML = `<span class="d"></span>${text}`;
+  labelsBox.appendChild(el);
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  leadersSvg.appendChild(line);
+  labels.push({ anchor, dx, dy, el, line, sys: opts.sys || 'both', when: opts.when || null, inner: !!opts.inner });
+}
+// split labels
+addLabel('Indoor unit', V3(-0.5, 2.86, 1.4), -78, -46, { sys: 'split' });
+addLabel('Indoor coil · evaporator/condenser', V3(-0.4, 2.5, 0.8), -118, 40, { sys: 'split', inner: true });
+addLabel('Refrigerant lines', V3(0.28, 1.75, 2.0), 56, -74, { sys: 'split' });
+addLabel('Outdoor unit', V3(1.2, 1.14, 1.55), 124, -12, { sys: 'split' });
+addLabel('Compressor', V3(1.05, 0.4, 2.2), 116, 46, { sys: 'split', inner: true });
+addLabel('Reversing valve', V3(1.0, 0.8, 1.95), 140, -26, { sys: 'split', hot: true, inner: true });
+addLabel('Expansion valve', V3(0.85, 0.36, 1.05), 46, 74, { sys: 'split', inner: true });
+addLabel('Outdoor coil', V3(0.7, 0.72, 1.25), -14, -86, { sys: 'split' });
+addLabel('Condensate drain', V3(0.27, 1.5, 2.16), 76, 58, { sys: 'split', when: () => modeBlend < 0.5 });
+addLabel('Heat moved across the wall', V3(0.25, 4.1, 1.62), 0, -26, { sys: 'split', hot: true });
+// mono labels
+addLabel('Monoblock cabinet', V3(-0.62, 1.93, 0.3), -104, -44, { sys: 'mono' });
+addLabel('Indoor coil', V3(-0.9, 1.35, 0.75), -120, -30, { sys: 'mono', inner: true });
+addLabel('Outdoor coil (sealed)', V3(-0.26, 0.88, 0.75), -70, 78, { sys: 'mono', inner: true });
+addLabel('Compressor', V3(-0.58, 0.28, 0.6), 88, 62, { sys: 'mono', inner: true });
+addLabel('Reversing valve', V3(-0.58, 0.68, 0.3), 122, 6, { sys: 'mono', hot: true, inner: true });
+addLabel('Expansion valve', V3(-0.8, 0.74, 0.02), -60, 84, { sys: 'mono', inner: true });
+addLabel('Outdoor-air intake', V3(0.56, 1.44, 0.58), 96, -34, { sys: 'mono' });
+addLabel('Exhaust (heat out)', V3(0.56, 1.42, 0.02), 108, 38, { sys: 'mono', hot: true });
+addLabel('Heat moved across the wall', V3(0.4, 3.7, 0.3), 0, -26, { sys: 'mono', hot: true });
+
+const projTmp = new THREE.Vector3();
+const labelRay = new THREE.Raycaster();
+const rayDir = new THREE.Vector3();
+function anchorOccluded(anchor) {
+  // dim labels whose anchor hides behind the dividing wall
+  rayDir.copy(anchor).sub(camera.position);
+  const dist = rayDir.length();
+  labelRay.set(camera.position, rayDir.normalize());
+  labelRay.far = dist - 0.05;
+  return labelRay.intersectObject(wall, false).length > 0;
+}
+function updateLabels() {
+  const w = innerWidth, h = innerHeight;
+  for (const L of labels) {
+    const k = L.sys === 'split' ? splitK : L.sys === 'mono' ? monoK : 1;
+    const extra = L.when ? (L.when() ? 1 : 0) : 1;
+    let vis = k * extra;
+    if (L.inner) vis *= lerp(0.3, 1, cutK);
+    if (vis >= 0.05 && anchorOccluded(L.anchor)) vis *= 0.3;
+    if (vis < 0.05) { L.el.style.opacity = 0; L.el.style.visibility = 'hidden'; L.line.setAttribute('opacity', 0); continue; }
+    projTmp.copy(L.anchor).project(camera);
+    if (projTmp.z > 1 || projTmp.z < -1) { L.el.style.visibility = 'hidden'; L.line.setAttribute('opacity', 0); continue; }
+    const sx = (projTmp.x * 0.5 + 0.5) * w, sy = (-projTmp.y * 0.5 + 0.5) * h;
+    const lx = sx + L.dx, ly = sy + L.dy;
+    L.el.style.visibility = 'visible';
+    L.el.style.opacity = vis;
+    L.el.style.transform = `translate(${lx}px, ${ly}px) translate(-50%,-50%)`;
+    L.line.setAttribute('x1', sx); L.line.setAttribute('y1', sy);
+    L.line.setAttribute('x2', lx); L.line.setAttribute('y2', ly);
+    L.line.setAttribute('opacity', vis * 0.8);
+  }
+}
+
+/* ============================================================
+   10. Camera tweening + highlight
+============================================================ */
+let camTween = null;
+function flyTo(pos, tgt, dur = 1.4) {
+  if (REDUCED || dur <= 0) {
+    camera.position.copy(pos); controls.target.copy(tgt);
+    camTween = null;
+    return;
+  }
+  camTween = {
+    t: 0, dur,
+    p0: camera.position.clone(), p1: pos.clone(),
+    g0: controls.target.clone(), g1: tgt.clone(),
+  };
+}
+renderer.domElement.addEventListener('pointerdown', () => { camTween = null; });
+const CAMS = {
+  wide: [HOME.pos, HOME.tgt],
+  indoorUnit: [V3(-3.9, 3.3, 5.2), V3(-0.6, 2.5, 1.4)],
+  outdoorUnit: [V3(4.4, 2.5, 5.6), V3(1.0, 0.7, 1.8)],
+  compressor: [V3(3.0, 1.6, 4.8), V3(1.05, 0.5, 2.1)],
+  valve: [V3(3.2, 2.2, 4.4), V3(1.0, 0.8, 1.95)],
+  expansion: [V3(3.1, 1.3, 3.3), V3(0.85, 0.4, 1.05)],
+  lineset: [V3(3.1, 2.9, 6.2), V3(0.1, 1.8, 1.9)],
+  monoCab: [V3(-4.0, 2.7, 4.1), V3(-0.6, 1.05, 0.3)],
+  monoCoilIn: [V3(-3.5, 2.1, 3.0), V3(-0.85, 1.3, 0.3)],
+  monoOutCoil: [V3(-3.3, 2.3, 3.5), V3(-0.3, 1.0, 0.3)],
+  monoComp: [V3(-3.1, 1.3, 3.2), V3(-0.6, 0.45, 0.5)],
+  monoValve: [V3(-3.0, 1.6, 2.8), V3(-0.58, 0.68, 0.3)],
+  monoExp: [V3(-3.2, 1.7, 2.3), V3(-0.78, 0.72, 0.05)],
+  monoDucts: [V3(5.2, 2.4, 5.0), V3(0.3, 1.5, 0.3)],
+};
+
+let highlighted = [];
+const emiBase = new Map();
+function setHighlight(meshes) {
+  for (const m of highlighted) {
+    if (m.material && emiBase.has(m)) m.material.emissiveIntensity = emiBase.get(m);
+  }
+  highlighted = meshes.filter(Boolean);
+  for (const m of highlighted) {
+    if (m.material && m.material.emissive && !emiBase.has(m)) emiBase.set(m, m.material.emissiveIntensity ?? 0);
+  }
+}
+function pulseHighlight() {
+  const p = 0.9 + Math.sin(time * 5) * 0.6;
+  for (const m of highlighted) {
+    if (m.material && m.material.emissive) {
+      const base = emiBase.get(m) ?? 0;
+      m.material.emissiveIntensity = Math.max(base, 0.4) + p;
+    }
+  }
+}
+
+/* ============================================================
+   11. Guided tutorial
+============================================================ */
+const tutEl = document.getElementById('tutorial');
+const tutTitle = document.getElementById('tutTitle');
+const tutBody = document.getElementById('tutBody');
+const tutStepEl = document.getElementById('tutStep');
+const tutDots = document.getElementById('tutDots');
+const reg = () => state.system === 'split' ? comp : mono;
+
+function buildSteps() {
+  const split = state.system === 'split', cool = state.mode === 'cool';
+  const s = [];
+  s.push(split ? {
+    t: 'Two separate air loops',
+    b: 'The indoor fan recirculates room air only — it never leaves the room. The outdoor fan blows outdoor air across the outdoor unit. No air crosses the wall: only two slim refrigerant pipes do.',
+    cam: 'wide', hi: ['indoorUnit', 'outdoorUnit'],
+  } : {
+    t: 'Two air loops, one cabinet',
+    b: 'Room air recirculates through the front of the cabinet and stays indoors. A completely separate outdoor-air stream is pulled in through one wall duct, sweeps the sealed circuit, and leaves through the other.',
+    cam: 'wide', hi: ['cabinet', 'intakeDuct', 'exhaustDuct'],
+  });
+  s.push(cool ? {
+    t: 'Heat enters the refrigerant here',
+    b: split
+      ? 'Warm room air blows across the cold indoor coil (the evaporator). The air gives up heat — so it returns cooler — and that heat boils the liquid refrigerant into vapor. Room moisture condenses on the coil and drips away through the drain.'
+      : 'Warm room air crosses the cold indoor coil at the front of the cabinet: it gives up heat and comes out cooler, while the refrigerant boils into vapor. Condensate collects in a tray and is flung into the exhaust air.',
+    cam: split ? 'indoorUnit' : 'monoCoilIn', hi: ['indoorCoil'],
+  } : {
+    t: 'Heat enters the refrigerant here',
+    b: split
+      ? 'Even cold winter air holds heat. The outdoor coil runs colder than that air, so heat flows from outdoor air into the boiling refrigerant — and the fan blows the air out slightly colder.'
+      : 'Even cold outdoor air holds heat. Ducted in from outside, it crosses the sealed outdoor coil, which runs colder still: heat flows into the boiling refrigerant, and the chilled air is ducted straight back out.',
+    cam: split ? 'outdoorUnit' : 'monoOutCoil', hi: ['outdoorCoil'],
+  });
+  s.push({
+    t: 'The compressor pumps heat uphill',
+    b: 'Watch the dots turn red: the compressor squeezes the vapor to high pressure, which also makes it hot — hotter than the air it must dump heat into. This is where the system spends electricity: moving heat, never “making cold”.',
+    cam: split ? 'compressor' : 'monoComp', hi: ['compressor'],
+  });
+  s.push(cool ? {
+    t: 'Heat leaves the refrigerant here',
+    b: split
+      ? 'The hot, high-pressure vapor condenses in the outdoor coil, and the big fan dumps that heat into the outdoors — the exhaust air leaves hotter than ambient. Your room’s heat now lives outside.'
+      : 'The hot vapor condenses in the coil sitting in the outdoor-air path. The blower pushes that heat out through the exhaust duct — the room’s heat leaves the building inside a jet of hot air.',
+    cam: split ? 'outdoorUnit' : 'monoDucts', hi: split ? ['outdoorCoil'] : ['outdoorCoil', 'exhaustDuct'],
+  } : {
+    t: 'Heat leaves the refrigerant here',
+    b: split
+      ? 'Hot vapor now condenses in the indoor coil, releasing the harvested outdoor heat into the room air blowing across it. The same unit has become a heater — same parts, opposite roles.'
+      : 'Hot vapor now condenses in the indoor coil at the front, warming the recirculating room air. The heat harvested from the ducted outdoor stream is released into the room.',
+    cam: split ? 'indoorUnit' : 'monoCoilIn', hi: ['indoorCoil'],
+  });
+  s.push({
+    t: 'The expansion valve resets the cycle',
+    b: 'Warm liquid refrigerant squeezes through a tiny restriction. Its pressure — and with it, its temperature — plunges, leaving it cold enough to soak up heat all over again. The loop repeats, several times a minute.',
+    cam: split ? 'expansion' : 'monoExp', hi: ['expansion'],
+  });
+  s.push({
+    t: 'The reversing valve makes it reversible',
+    b: cool
+      ? 'Flip to Heating and this valve re-routes the compressor’s hot discharge to the indoor coil instead. The two coils trade jobs, refrigerant flows the other way, and heat is pumped indoors.'
+      : 'Right now this valve sends the hot discharge to the indoor coil, pumping outdoor heat into the room. Flip to Cooling and the coils trade jobs again — one machine, both directions.',
+    cam: split ? 'valve' : 'monoValve', hi: ['valve'],
+  });
+  s.push(split ? {
+    t: 'Why “split”?',
+    b: 'The circuit is split in two: the quiet coil indoors; the compressor and heat-dump coil outdoors. Only two slim refrigerant lines cross the wall, through one small hole. Switch to Monoblock to see the other approach.',
+    cam: 'lineset', hi: ['lineset'],
+  } : {
+    t: 'Why “monoblock”?',
+    b: 'The entire sealed circuit lives in one indoor cabinet — nothing to install outside. The trade-off: outdoor air must be ducted in and back out through two wall openings, so the circuit has somewhere to grab or dump heat.',
+    cam: 'monoDucts', hi: ['intakeDuct', 'exhaustDuct', 'cabinet'],
+  });
+  return s;
+}
+let steps = buildSteps();
+
+function renderTutorial(fly = true) {
+  steps = buildSteps();
+  state.tutIndex = clamp(state.tutIndex, 0, steps.length - 1);
+  const st = steps[state.tutIndex];
+  tutStepEl.textContent = `${state.tutIndex + 1} / ${steps.length}`;
+  tutTitle.textContent = st.t;
+  tutBody.textContent = st.b;
+  tutDots.innerHTML = steps.map((_, i) => `<i class="${i === state.tutIndex ? 'on' : ''}"></i>`).join('');
+  document.getElementById('tutBack').disabled = state.tutIndex === 0;
+  document.getElementById('tutNext').textContent = state.tutIndex === steps.length - 1 ? 'Done ✓' : 'Next →';
+  if (state.tutOpen) {
+    const r = reg();
+    setHighlight(st.hi.flatMap(n => r[n] || []));
+    if (fly) { const c = CAMS[st.cam]; flyTo(c[0], c[1]); }
+  }
+}
+function openTutorial(idx = 0, fly = true) {
+  state.tutOpen = true; state.tutIndex = idx;
+  tutEl.classList.remove('hidden');
+  renderTutorial(fly);
+}
+function closeTutorial() {
+  state.tutOpen = false;
+  tutEl.classList.add('hidden');
+  setHighlight([]);
+}
+document.getElementById('tutNext').addEventListener('click', () => {
+  if (state.tutIndex >= steps.length - 1) { closeTutorial(); flyTo(HOME.pos, HOME.tgt); }
+  else { state.tutIndex++; renderTutorial(); }
+});
+document.getElementById('tutBack').addEventListener('click', () => { if (state.tutIndex > 0) { state.tutIndex--; renderTutorial(); } });
+document.getElementById('tutClose').addEventListener('click', closeTutorial);
+
+/* ============================================================
+   12. UI wiring, status, temps
+============================================================ */
+const el = id => document.getElementById(id);
+const btnSplit = el('btnSplit'), btnMono = el('btnMono'), btnCool = el('btnCool'), btnHeat = el('btnHeat');
+const btnPlay = el('btnPlay'), btnCut = el('btnCut');
+
+let indoorTemp = 26, outdoorTemp = 32;
+function tempTargets() {
+  return state.mode === 'cool' ? { in: 21.5, out: 32 } : { in: 21.5, out: 4 };
+}
+function refreshStatus() {
+  const split = state.system === 'split', cool = state.mode === 'cool';
+  el('stateText').textContent =
+    `${state.playing ? 'Running' : 'Paused'} — ${split ? 'Split' : 'Monoblock'} · ${cool ? 'Cooling' : 'Heating'}`;
+  el('stateDot').classList.toggle('paused', !state.playing);
+  if (cool) {
+    el('heatIn').innerHTML = '<b>Indoors</b> — room air gives heat to the indoor coil';
+    el('heatOut').innerHTML = split
+      ? '<b>Outdoors</b> — the outdoor coil dumps it into outside air'
+      : '<b>Outdoors</b> — hot air is pushed out through the exhaust duct';
+  } else {
+    el('heatIn').innerHTML = split
+      ? '<b>Outdoors</b> — the outdoor coil harvests heat from cold air'
+      : '<b>Outdoors</b> — ducted outdoor air gives heat to the sealed coil';
+    el('heatOut').innerHTML = '<b>Indoors</b> — the indoor coil releases it into room air';
+  }
+}
+function setSystem(sys) {
+  if (state.system === sys) return;
+  state.system = sys;
+  btnSplit.setAttribute('aria-pressed', sys === 'split');
+  btnMono.setAttribute('aria-pressed', sys === 'mono');
+  refreshStatus();
+  if (state.tutOpen) renderTutorial();
+}
+function setMode(m) {
+  if (state.mode === m) return;
+  state.mode = m;
+  modeTarget = m === 'heat' ? 1 : 0;
+  btnCool.setAttribute('aria-pressed', m === 'cool');
+  btnHeat.setAttribute('aria-pressed', m === 'heat');
+  refreshStatus();
+  if (state.tutOpen) renderTutorial();
+}
+function setPlaying(p) {
+  state.playing = p;
+  btnPlay.setAttribute('aria-pressed', p);
+  el('playTxt').textContent = p ? 'Pause' : 'Play';
+  btnPlay.querySelector('.ic').textContent = p ? '⏸' : '▶';
+  refreshStatus();
+}
+function setCutaway(c) {
+  state.cutaway = c;
+  btnCut.setAttribute('aria-pressed', c);
+}
+btnSplit.addEventListener('click', () => setSystem('split'));
+btnMono.addEventListener('click', () => setSystem('mono'));
+btnCool.addEventListener('click', () => setMode('cool'));
+btnHeat.addEventListener('click', () => setMode('heat'));
+btnPlay.addEventListener('click', () => setPlaying(!state.playing));
+btnCut.addEventListener('click', () => setCutaway(!state.cutaway));
+el('btnReset').addEventListener('click', () => flyTo(HOME.pos, HOME.tgt));
+el('btnGuide').addEventListener('click', () => openTutorial(0));
+
+window.addEventListener('keydown', (e) => {
+  if (e.target && /^(input|textarea|select|button|summary)$/i.test(e.target.tagName)) return;
+  switch (e.key) {
+    case ' ': e.preventDefault(); setPlaying(!state.playing); break;
+    case 'r': case 'R': flyTo(HOME.pos, HOME.tgt); break;
+    case 'g': case 'G': openTutorial(0); break;
+    case 'x': case 'X': setCutaway(!state.cutaway); break;
+    case '1': setSystem('split'); break;
+    case '2': setSystem('mono'); break;
+    case 'c': case 'C': setMode('cool'); break;
+    case 'h': case 'H': setMode('heat'); break;
+    case 'ArrowRight': if (state.tutOpen) { e.preventDefault(); el('tutNext').click(); } break;
+    case 'ArrowLeft': if (state.tutOpen) { e.preventDefault(); el('tutBack').click(); } break;
+    case 'Escape': if (state.tutOpen) closeTutorial(); break;
+  }
+});
+
+// collapse legend by default on small screens
+if (window.matchMedia('(max-width: 880px)').matches) el('legend').removeAttribute('open');
+
+/* ============================================================
+   13. Season / mode environment blending
+============================================================ */
+const ENV = {
+  cool: {
+    skyTop: new THREE.Color(0x3f8fd8), skyHor: new THREE.Color(0xdff0f8), warmAmt: 0.55,
+    sun: new THREE.Color(0xfff0da), sunI: 1.7, hemi: 0.75,
+    ground: new THREE.Color(0x6da95e), fog: new THREE.Color(0xcfe4f2),
+    foliage: new THREE.Color(0x5c9b53), shrub: new THREE.Color(0x557f47),
+  },
+  heat: {
+    skyTop: new THREE.Color(0x7793ad), skyHor: new THREE.Color(0xe4e9ee), warmAmt: 0.18,
+    sun: new THREE.Color(0xdfe8ff), sunI: 1.05, hemi: 0.6,
+    ground: new THREE.Color(0xaebbb4), fog: new THREE.Color(0xd6dee6),
+    foliage: new THREE.Color(0x6f7f68), shrub: new THREE.Color(0x6d7c64),
+  },
+};
+function applyEnv(b) {
+  skyU.top.value.lerpColors(ENV.cool.skyTop, ENV.heat.skyTop, b);
+  skyU.hor.value.lerpColors(ENV.cool.skyHor, ENV.heat.skyHor, b);
+  skyU.warmAmt.value = lerp(ENV.cool.warmAmt, ENV.heat.warmAmt, b);
+  sun.color.lerpColors(ENV.cool.sun, ENV.heat.sun, b);
+  sun.intensity = lerp(ENV.cool.sunI, ENV.heat.sunI, b);
+  hemi.intensity = lerp(ENV.cool.hemi, ENV.heat.hemi, b);
+  groundMat.color.lerpColors(ENV.cool.ground, ENV.heat.ground, b);
+  scene.fog.color.lerpColors(ENV.cool.fog, ENV.heat.fog, b);
+  folMat.color.lerpColors(ENV.cool.foliage, ENV.heat.foliage, b);
+  shrubMat.color.lerpColors(ENV.cool.shrub, ENV.heat.shrub, b);
+  sunGlow.material.opacity = lerp(0.85, 0.4, b);
+}
+
+// coil emissive colors: evaporator = icy blue, condenser = warm orange
+const emiCold = new THREE.Color(0x2aa7ff), emiHot = new THREE.Color(0xff5a1f);
+function coilColors(b) {
+  // indoor coil: cold in cooling (b=0), hot in heating (b=1)
+  iCoilMat.emissive.lerpColors(emiCold, emiHot, b);
+  mICoilMat.emissive.lerpColors(emiCold, emiHot, b);
+  oCoilMat.emissive.lerpColors(emiHot, emiCold, b);
+  mOCoilMat.emissive.lerpColors(emiHot, emiCold, b);
+  const pulse = 0.55 + Math.sin(time * 2.4) * 0.15;
+  [iCoilMat, mICoilMat, oCoilMat, mOCoilMat].forEach(m => {
+    if (!highlighted.includes(m)) m.emissiveIntensity = pulse;
+  });
+}
+
+/* ============================================================
+   14. Resize / DPI
+============================================================ */
+function onResize() {
+  const w = innerWidth, h = innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  updateCloudScale();
+}
+window.addEventListener('resize', onResize);
+updateCloudScale();
+
+/* ============================================================
+   15. Main loop
+============================================================ */
+const clock = new THREE.Clock();
+const tgtMin = V3(-4.5, 0.3, -3.2), tgtMax = V3(4.5, 3.6, 3.2);
+let statusTimer = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  time += dt;
+
+  // eased global factors
+  simSpeed += (state.playing ? 1 - simSpeed : -simSpeed) * Math.min(1, dt * 5);
+  modeBlend += (modeTarget - modeBlend) * (1 - Math.exp(-dt * 2.0));
+  const sTgt = state.system === 'split' ? 1 : 0;
+  splitK += (sTgt - splitK) * (1 - Math.exp(-dt * 5));
+  monoK += ((1 - sTgt) - monoK) * (1 - Math.exp(-dt * 5));
+  cutK += ((state.cutaway ? 1 : 0) - cutK) * (1 - Math.exp(-dt * 6));
+
+  // system crossfade (groups fold into the wall base)
+  splitGroup.visible = splitK > 0.01;
+  monoGroup.visible = monoK > 0.01;
+  splitGroup.scale.setScalar(Math.max(0.001, easeInOut(splitK)));
+  monoGroup.scale.setScalar(Math.max(0.001, easeInOut(monoK)));
+
+  // cutaway shells
+  const shellOp = lerp(1, 0, cutK);
+  for (const m of shellMats) {
+    m.opacity = lerp(m.userData.glassOpacity, 1, shellOp);
+    const solid = shellOp > 0.96;
+    if (m.transparent === solid) { m.transparent = !solid; m.depthWrite = solid; m.needsUpdate = false; }
+  }
+
+  // camera tween
+  if (camTween) {
+    camTween.t += dt / camTween.dur;
+    const k = easeInOut(clamp(camTween.t, 0, 1));
+    camera.position.lerpVectors(camTween.p0, camTween.p1, k);
+    controls.target.lerpVectors(camTween.g0, camTween.g1, k);
+    if (camTween.t >= 1) camTween = null;
+  }
+  controls.target.clamp(tgtMin, tgtMax);
+  controls.update();
+
+  // machinery motion
+  const spin = simSpeed * MOTION;
+  ouFan.rotation.x -= dt * 10 * spin * (0.4 + 0.6 * splitK);
+  cfFan.rotation.z += dt * 12 * spin;
+  mFanIn.rotation.z += dt * 12 * spin;
+  blowerFan.rotation.x -= dt * 14 * spin;
+  compMesh.position.y = 0.09 + Math.sin(time * 26) * 0.0035 * spin;
+  mCompMesh.position.y = 0.06 + Math.sin(time * 26) * 0.0035 * spin;
+  rvMesh.userData.slider.position.z = lerp(0.055, -0.055, modeBlend);
+  mRvMesh.userData.slider.position.z = lerp(0.055, -0.055, modeBlend);
+  louver.rotation.z = 0.7 + Math.sin(time * 0.7) * 0.1 * spin;
+  foliage.rotation.z = Math.sin(time * 0.5) * 0.02 * MOTION;
+  lampShade.material.emissiveIntensity = 1.3 + Math.sin(time * 1.3) * 0.1;
+
+  // particles & effects
+  refrigSplit.update(dt, modeBlend, splitK);
+  refrigMono.update(dt, modeBlend, monoK);
+  splitRoomAir.update(dt, modeBlend, splitK);
+  splitOutAir.update(dt, modeBlend, splitK);
+  monoRoomAir.update(dt, modeBlend, monoK);
+  monoOutAir.update(dt, modeBlend, monoK);
+  heat.update(dt, modeBlend);
+  drips.update(dt, modeBlend);
+  updateSnow(dt, modeBlend);
+
+  // heat arcs
+  const dashDir = lerp(1, -1, modeBlend);
+  for (const [arc, k] of [[arcSplit, splitK], [arcMono, monoK]]) {
+    arc.material.uniforms.uTime.value = time * simSpeed * MOTION + (arc.material.uniforms.uTime.userTime || 0);
+    arc.material.uniforms.uDir.value = dashDir;
+    arc.material.uniforms.uOp.value = k * simSpeed;
+    arc.visible = k > 0.02;
+  }
+
+  // environment + coils
+  applyEnv(modeBlend);
+  coilColors(modeBlend);
+  pulseHighlight();
+
+  // temperatures drift toward mode targets
+  const tt = tempTargets();
+  outdoorTemp += (tt.out - outdoorTemp) * Math.min(1, dt * 0.8);
+  indoorTemp += (tt.in - indoorTemp) * Math.min(1, dt * 0.06 * simSpeed);
+  statusTimer += dt;
+  if (statusTimer > 0.25) {
+    statusTimer = 0;
+    el('tInV').textContent = (indoorTemp + Math.sin(time * 0.4) * 0.05).toFixed(1);
+    el('tOutV').textContent = (outdoorTemp + Math.sin(time * 0.3 + 2) * 0.05).toFixed(1);
+    el('tIn').querySelector('.v').style.color = state.mode === 'cool' ? 'var(--cold)' : 'var(--hot)';
+    el('tOut').querySelector('.v').style.color = state.mode === 'cool' ? 'var(--hot)' : 'var(--cold)';
+  }
+
+  updateLabels();
+  composer.render();
+
+  if (!window.__fable5Started) {
+    window.__fable5Started = true;
+    document.getElementById('loading').classList.add('done');
+    if (!REDUCED) flyTo(HOME.pos, HOME.tgt, 2.2);
+    setTimeout(() => { if (!state.tutOpen) openTutorial(0, false); }, 1400);
+  }
+}
+refreshStatus();
+animate();
+</script>
+</body>
+</html>
