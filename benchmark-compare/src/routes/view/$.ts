@@ -10,7 +10,7 @@ export const Route = createFileRoute("/view/$")({
         if (!asset) return new Response("Not found", { status: 404 })
         return new Response(asset.body, {
           headers: {
-            "cache-control": "no-cache",
+            "cache-control": "no-store, max-age=0",
             "content-type": asset.contentType,
           },
         })

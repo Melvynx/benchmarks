@@ -20,6 +20,7 @@ const legacyYoutubeResults = new Set([
 ]);
 
 const taskExceptions = new Map([
+  ["saveit-now-landing", new Set(["base-repo"])],
   ["thumbfast", new Set(["base-repo"])],
   [
     "openclaw-benchmark",

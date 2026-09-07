@@ -19,9 +19,11 @@ workbench.
 
 Historical result directories are evidence. Do not rename or rewrite them.
 
-Two task directories intentionally contain source material in addition to dated
+Three task directories intentionally contain source material in addition to dated
 results:
 
+- `benchmarks/saveit-now-landing/base-repo/` is the isolated historical Vite
+  landing page and campaign-image seed copied into each SaveIt.now run.
 - `benchmarks/thumbfast/base-repo/` is the seed copied into each Thumbfast run.
 - `benchmarks/openclaw-benchmark/` is the OpenClaw CLI evaluation suite itself;
   its dated children are recorded runs of that suite.
@@ -91,6 +93,14 @@ Run an enabled Markdown matrix:
 Every real run must have a session ID, parseable transcript, a captured final response,
 and task-appropriate build/runtime verification. A successful process exit alone
 is not a successful benchmark.
+
+Capturing a run writes `screenshot.png` plus a downscaled `thumbnail.webp` that
+the `/runs` list uses to preview each application. Backfill older runs, or
+rebuild after replacing screenshots, with:
+
+```bash
+pnpm build:thumbnails
+```
 
 ## Validation
 

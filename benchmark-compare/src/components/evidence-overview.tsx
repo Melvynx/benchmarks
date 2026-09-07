@@ -2,11 +2,16 @@ import { ExternalLinkIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { IntegrityReview } from "@/components/integrity-review"
+import { ModelReview } from "@/components/model-review"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { TranscriptAnalysis } from "@/components/transcript-phase-chart"
 import type { IntegrityAnalysis } from "@/lib/integrity-analysis"
+import type { ModelReview as ModelReviewData } from "@/lib/model-review"
 import { estimateModelCost, getModelPricing } from "@/lib/model-pricing"
-import type { SessionUsage } from "@/lib/session-usage"
+import {
+  usageDurationLabel,
+  type SessionUsage,
+} from "@/lib/session-usage"
 import { cn } from "@/lib/utils"
 
 const phases = [
@@ -69,19 +74,23 @@ export function EvidenceOverview({
   model,
   date,
   effort,
-  duration,
+  activeDuration,
+  wallDuration,
   usage,
   analysis,
   integrity,
+  review,
 }: {
   id: string
   model: string
   date: string
   effort: string
-  duration: string
+  activeDuration: string
+  wallDuration: string
   usage: SessionUsage | null
   analysis: TranscriptAnalysis | null
   integrity: IntegrityAnalysis | null
+  review: ModelReviewData | null
 }) {
   const sectionId = id.replaceAll("/", "-")
   const pricing = getModelPricing(model, date)
@@ -99,8 +108,10 @@ export function EvidenceOverview({
     usage?.processed_input_tokens ?? null
   )
   const pricedLines = estimate?.lines.filter((line) => line.tokens > 0) ?? []
-  const runTime = duration.replace(/^Time:\s*/, "")
+  const activeTime = activeDuration.replace(/^Time:\s*/, "")
+  const wallTime = wallDuration.replace(/^Time:\s*/, "")
   const apiTime = elapsedLabel(usage?.duration_api_ms)
+  const apiTimeLabel = usageDurationLabel(model)
 
   return (
     <ScrollArea className="h-full">
@@ -117,16 +128,30 @@ export function EvidenceOverview({
           </div>
           <dl className="ml-auto flex items-baseline gap-4 font-mono tabular-nums">
             <div className="flex items-baseline gap-2">
-              <dt className="text-[11px] text-muted-foreground">Run time</dt>
-              <dd className="text-lg font-semibold">{runTime}</dd>
+              <dt className="text-[11px] text-muted-foreground">Active time</dt>
+              <dd className="text-lg font-semibold">{activeTime}</dd>
             </div>
             {apiTime && (
               <div className="flex items-baseline gap-2 border-l pl-4">
-                <dt className="text-[11px] text-muted-foreground">API time</dt>
+                <dt
+                  className="text-[11px] text-muted-foreground"
+                  title={
+                    apiTimeLabel === "Cursor session"
+                      ? "End-to-end Cursor agent duration, including tool calls and shell-command waits."
+                      : undefined
+                  }
+                >
+                  {apiTimeLabel}
+                </dt>
                 <dd className="text-sm font-medium">{apiTime}</dd>
               </div>
             )}
           </dl>
+          {apiTime && apiTimeLabel === "Cursor session" && (
+            <p className="basis-full text-right text-[11px] text-muted-foreground">
+              Wall time {wallTime} · background-process waits excluded from active time
+            </p>
+          )}
         </div>
 
         <div className="overview-primary-grid grid overflow-hidden rounded-xl border bg-card">
@@ -181,8 +206,12 @@ export function EvidenceOverview({
                   <div className="max-w-[52ch] space-y-1 text-pretty">
                     <p>
                       Rates per MTok: input {costLabel(pricing?.rates.input ?? null)},
-                      cache {costLabel(pricing?.rates.cacheRead ?? null)}, output{" "}
-                      {costLabel(pricing?.rates.output ?? null)}.
+                      cache read {costLabel(pricing?.rates.cacheRead ?? null)}, cache
+                      write {costLabel(pricing?.rates.cacheWrite ?? null)}
+                      {pricing?.rates.cacheWrite1h
+                        ? ` (${costLabel(pricing.rates.cacheWrite1h)} at the 1 hour TTL)`
+                        : ""}
+                      , output {costLabel(pricing?.rates.output ?? null)}.
                     </p>
                     <p>{estimate.pricing.note}</p>
                   </div>
@@ -380,6 +409,7 @@ export function EvidenceOverview({
         </section>
 
         <IntegrityReview id={id} analysis={integrity} />
+        <ModelReview id={id} review={review} />
       </div>
     </ScrollArea>
   )

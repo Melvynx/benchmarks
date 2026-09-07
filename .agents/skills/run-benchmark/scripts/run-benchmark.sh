@@ -16,16 +16,17 @@ EFFORT="medium"
 DRY_RUN=0
 SMOKE=0
 BENCHMARK_ID=""
+STANDALONE=0
 
 usage() {
-  echo "Usage: $0 --model MODEL --harness codex|ccx|cc|cckimi|cursor-agent --tasks TASK[,TASK...] [--effort LEVEL] [--benchmark-id ID] [--dry-run|--smoke]"
+  echo "Usage: $0 --model MODEL --harness codex|ccx|cc|cckimi|cursor-agent|opencode --tasks TASK[,TASK...] [--effort LEVEL] [--benchmark-id ID] [--dry-run|--smoke]"
 }
 
 task_type() {
   case "$1" in
     3d-sponge-bob|air-conditioning-understanding|bouncing-ball|car-crash|distributed-systems-playground|elysian-taste-challenge|little-red-riding-hood-film|living-identity-system|one-button-boss-fight|orbital-rescue-digital-twin|pentest|rocket-launch|the-last-signal) echo standalone-html ;;
     earthquake-explorer|figma-clone|gmail-clone|simulation-life|timezone-checker|youtube-thumbnail) echo web-app ;;
-    thumbfast) echo cloned-web-app ;;
+    saveit-now-landing|thumbfast) echo cloned-web-app ;;
     openclaw-benchmark) echo cli ;;
     *) return 1 ;;
   esac
@@ -48,6 +49,7 @@ task_wording() {
     orbital-rescue-digital-twin) echo "Build a cinematic, deterministic autonomous orbital-rescue and docking digital twin as a standalone Three.js experience." ;;
     pentest) echo "Perform the authorized black-box web security assessment described by the canonical prompt and present the verified results in a standalone HTML report." ;;
     rocket-launch) echo "Build a cinematic interactive rocket-launch simulation as a standalone HTML experience." ;;
+    saveit-now-landing) echo "Redesign the supplied SaveIt.now landing page using the bundled campaign artwork and product brief." ;;
     simulation-life) echo "Build an interactive artificial-life simulation with observable agents, controls, and emergent behavior." ;;
     thumbfast) echo "Implement the supplied feature request in the seeded Thumbfast repository and integrate it with existing product flows. Read the repository instructions before editing." ;;
     the-last-signal) echo "Create The Last Signal as a short interactive visual story in three acts with two distinct endings." ;;
@@ -75,6 +77,7 @@ prompt_slug() {
     orbital-rescue-digital-twin) echo orbital-rescue-digital-twin ;;
     pentest) echo pentest ;;
     rocket-launch) echo rocket-launch-animation ;;
+    saveit-now-landing) echo saveit-now-landing ;;
     simulation-life) echo ecosystem-evolution-simulator ;;
     thumbfast) echo thumbfast-drawing-inspiration-editor ;;
     the-last-signal) echo the-last-signal ;;
@@ -122,7 +125,7 @@ PY
 }
 
 list_tasks() {
-  for task in 3d-sponge-bob air-conditioning-understanding bouncing-ball car-crash distributed-systems-playground earthquake-explorer elysian-taste-challenge figma-clone gmail-clone little-red-riding-hood-film living-identity-system one-button-boss-fight orbital-rescue-digital-twin pentest rocket-launch simulation-life thumbfast the-last-signal timezone-checker youtube-thumbnail openclaw-benchmark; do
+  for task in 3d-sponge-bob air-conditioning-understanding bouncing-ball car-crash distributed-systems-playground earthquake-explorer elysian-taste-challenge figma-clone gmail-clone little-red-riding-hood-film living-identity-system one-button-boss-fight orbital-rescue-digital-twin pentest rocket-launch saveit-now-landing simulation-life thumbfast the-last-signal timezone-checker youtube-thumbnail openclaw-benchmark; do
     printf '%-20s %s\n' "$task" "$(task_type "$task")"
   done
 }
@@ -144,6 +147,7 @@ done
 
 if [[ -z "$BENCHMARK_ID" ]]; then
   BENCHMARK_ID="$(generate_benchmark_id)"
+  STANDALONE=1
 fi
 valid_benchmark_id "$BENCHMARK_ID" || {
   echo "Invalid benchmark ID: $BENCHMARK_ID" >&2
@@ -151,7 +155,7 @@ valid_benchmark_id "$BENCHMARK_ID" || {
 }
 
 [[ -n "$MODEL" && -n "$HARNESS" ]] || { usage >&2; exit 2; }
-[[ "$HARNESS" == codex || "$HARNESS" == ccx || "$HARNESS" == cc || "$HARNESS" == cckimi || "$HARNESS" == cursor-agent ]] || { echo "Unsupported harness: $HARNESS" >&2; exit 2; }
+[[ "$HARNESS" == codex || "$HARNESS" == ccx || "$HARNESS" == cc || "$HARNESS" == cckimi || "$HARNESS" == cursor-agent || "$HARNESS" == opencode ]] || { echo "Unsupported harness: $HARNESS" >&2; exit 2; }
 [[ -n "$TASKS" || "$SMOKE" == 1 ]] || { echo "--tasks is required unless --smoke is used" >&2; exit 2; }
 model_lower="$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')"
 if [[ "$HARNESS" == cc && "$model_lower" == gpt* ]]; then
@@ -165,11 +169,19 @@ elif [[ "$HARNESS" == cc ]]; then
   zsh -lic 'command -v claude >/dev/null' || { echo "Claude Code is not installed (expected cc alias backed by claude)" >&2; exit 127; }
 elif [[ "$HARNESS" == cckimi ]]; then
   zsh -lic 'alias cckimi >/dev/null 2>&1' || { echo "cckimi alias is not available in the zsh login environment" >&2; exit 127; }
+elif [[ "$HARNESS" == opencode ]]; then
+  command -v opencode >/dev/null || [[ -x "$HOME/.opencode/bin/opencode" ]] || { echo "Harness not installed: opencode" >&2; exit 127; }
 else
   command -v "$HARNESS" >/dev/null || { echo "Harness not installed: $HARNESS" >&2; exit 127; }
 fi
 JQ_BIN="$(type -P jq || true)"
 [[ -n "$JQ_BIN" ]] || { echo "jq is required" >&2; exit 127; }
+
+# A plan runner already marked the group before fanning out; only a direct
+# invocation announces itself to the live dashboard.
+if [[ "$STANDALONE" == 1 && "$DRY_RUN" == 0 && "$SMOKE" == 0 ]]; then
+  "$ROOT/scripts/start-benchmark-live.sh" "$BENCHMARK_ID" || true
+fi
 
 slug="$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-|-$//g')"
 app_date="$(date -u +%Y-%m-%d)"
@@ -192,8 +204,8 @@ mkdir -p "$ROOT/.benchmark-output-locks"
 
 case "$HARNESS" in
   codex|ccx) port_base=9100 ;;
-  cc|cckimi) port_base=9200 ;;
-  cursor-agent) port_base=9300 ;;
+  cc) port_base=9200 ;;
+  cckimi|cursor-agent|opencode) port_base=9300 ;;
 esac
 
 if [[ "$SMOKE" == 1 ]]; then TASKS="harness-smoke"; fi
@@ -284,6 +296,7 @@ for index in "${!task_list[@]}"; do
   [[ "$DRY_RUN" == 1 ]] || mkdir -p "$app_dir"
   printf '%s\n' "$app_dir" > "$data_dir/app-path.txt"
   if [[ "$DRY_RUN" == 0 && "$task" == thumbfast ]]; then cp -R "$BENCHMARKS_DIR/thumbfast/base-repo/." "$app_dir/"; fi
+  if [[ "$DRY_RUN" == 0 && "$task" == saveit-now-landing ]]; then cp -R "$BENCHMARKS_DIR/saveit-now-landing/base-repo/." "$app_dir/"; fi
   if [[ "$DRY_RUN" == 0 && "$task" == openclaw-benchmark ]]; then
     for seed_item in package.json tsconfig.json src benchmarks; do
       cp -R "$BENCHMARKS_DIR/openclaw-benchmark/$seed_item" "$app_dir/"
@@ -390,6 +403,22 @@ $checks_line"
       if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
       if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.type == "result") | .result // .text // empty' "$transcript" | tail -1 > "$final" || true; fi
       ;;
+    opencode)
+      opencode_bin="$(command -v opencode || true)"
+      [[ -n "$opencode_bin" ]] || opencode_bin="$HOME/.opencode/bin/opencode"
+      printf '%q ' "$opencode_bin" run --format json --auto --model "$MODEL" "$prompt" > "$command_file"
+      printf '\n' >> "$command_file"
+      if [[ "$DRY_RUN" == 1 ]]; then
+        printf '%s\n' '<captured-at-runtime>' > "$session_file"
+      else
+        (cd "$app_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?
+        if [[ -s "$transcript" ]]; then
+          "$JQ_BIN" -r 'select(.sessionID != null) | .sessionID' "$transcript" | head -1 > "$session_file" || true
+          "$JQ_BIN" -r 'select(.type == "text") | .part.text // empty' "$transcript" | awk 'NF { line = $0 } END { if (line) print line }' > "$final" || true
+        fi
+        [[ -s "$session_file" ]] || : > "$session_file"
+      fi
+      ;;
   esac
 
   if [[ "$DRY_RUN" == 0 ]]; then
@@ -410,6 +439,11 @@ $checks_line"
     cc) printf '%q ' cc --resume "$session_id" > "$resume_file" ;;
     cckimi) printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$resume_file"; printf '%q ' cckimi --resume "$session_id" >> "$resume_file" ;;
     cursor-agent) printf '%q ' cursor-agent --resume "$session_id" > "$resume_file" ;;
+    opencode)
+      opencode_bin="$(command -v opencode || true)"
+      [[ -n "$opencode_bin" ]] || opencode_bin="$HOME/.opencode/bin/opencode"
+      printf '%q ' "$opencode_bin" run --session "$session_id" --auto > "$resume_file"
+      ;;
   esac
   printf '\n' >> "$resume_file"
   printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' 'jq . "$dir/transcript.jsonl"' > "$view_file"

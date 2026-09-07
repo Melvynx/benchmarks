@@ -9,17 +9,33 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as RunRouteImport } from './routes/run'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RunsIndexRouteImport } from './routes/runs/index'
 import { Route as PromptsIndexRouteImport } from './routes/prompts/index'
 import { Route as ViewSplatRouteImport } from './routes/view/$'
+import { Route as RunsIdRouteImport } from './routes/runs/$id'
 import { Route as ApiCatalogRouteImport } from './routes/api/catalog'
 import { Route as PromptsNameIndexRouteImport } from './routes/prompts/$name/index'
+import { Route as ApiRunsIndexRouteImport } from './routes/api/runs/index'
 import { Route as PromptsNameVersionRouteImport } from './routes/prompts/$name/$version'
+import { Route as ApiRunsIdRouteImport } from './routes/api/runs/$id'
 import { Route as ApiEvidenceSplatRouteImport } from './routes/api/evidence/$'
+import { Route as ApiRunThumbRunIdTaskRouteImport } from './routes/api/run-thumb/$runId.$task'
 
+const RunRoute = RunRouteImport.update({
+  id: '/run',
+  path: '/run',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RunsIndexRoute = RunsIndexRouteImport.update({
+  id: '/runs/',
+  path: '/runs/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PromptsIndexRoute = PromptsIndexRouteImport.update({
@@ -32,6 +48,11 @@ const ViewSplatRoute = ViewSplatRouteImport.update({
   path: '/view/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RunsIdRoute = RunsIdRouteImport.update({
+  id: '/runs/$id',
+  path: '/runs/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCatalogRoute = ApiCatalogRouteImport.update({
   id: '/api/catalog',
   path: '/api/catalog',
@@ -42,9 +63,19 @@ const PromptsNameIndexRoute = PromptsNameIndexRouteImport.update({
   path: '/prompts/$name/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRunsIndexRoute = ApiRunsIndexRouteImport.update({
+  id: '/api/runs/',
+  path: '/api/runs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PromptsNameVersionRoute = PromptsNameVersionRouteImport.update({
   id: '/prompts/$name/$version',
   path: '/prompts/$name/$version',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRunsIdRoute = ApiRunsIdRouteImport.update({
+  id: '/api/runs/$id',
+  path: '/api/runs/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiEvidenceSplatRoute = ApiEvidenceSplatRouteImport.update({
@@ -52,82 +83,143 @@ const ApiEvidenceSplatRoute = ApiEvidenceSplatRouteImport.update({
   path: '/api/evidence/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRunThumbRunIdTaskRoute = ApiRunThumbRunIdTaskRouteImport.update({
+  id: '/api/run-thumb/$runId/$task',
+  path: '/api/run-thumb/$runId/$task',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/run': typeof RunRoute
   '/api/catalog': typeof ApiCatalogRoute
+  '/runs/$id': typeof RunsIdRoute
   '/view/$': typeof ViewSplatRoute
   '/prompts/': typeof PromptsIndexRoute
+  '/runs/': typeof RunsIndexRoute
   '/api/evidence/$': typeof ApiEvidenceSplatRoute
+  '/api/runs/$id': typeof ApiRunsIdRoute
   '/prompts/$name/$version': typeof PromptsNameVersionRoute
+  '/api/runs/': typeof ApiRunsIndexRoute
   '/prompts/$name/': typeof PromptsNameIndexRoute
+  '/api/run-thumb/$runId/$task': typeof ApiRunThumbRunIdTaskRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/run': typeof RunRoute
   '/api/catalog': typeof ApiCatalogRoute
+  '/runs/$id': typeof RunsIdRoute
   '/view/$': typeof ViewSplatRoute
   '/prompts': typeof PromptsIndexRoute
+  '/runs': typeof RunsIndexRoute
   '/api/evidence/$': typeof ApiEvidenceSplatRoute
+  '/api/runs/$id': typeof ApiRunsIdRoute
   '/prompts/$name/$version': typeof PromptsNameVersionRoute
+  '/api/runs': typeof ApiRunsIndexRoute
   '/prompts/$name': typeof PromptsNameIndexRoute
+  '/api/run-thumb/$runId/$task': typeof ApiRunThumbRunIdTaskRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/run': typeof RunRoute
   '/api/catalog': typeof ApiCatalogRoute
+  '/runs/$id': typeof RunsIdRoute
   '/view/$': typeof ViewSplatRoute
   '/prompts/': typeof PromptsIndexRoute
+  '/runs/': typeof RunsIndexRoute
   '/api/evidence/$': typeof ApiEvidenceSplatRoute
+  '/api/runs/$id': typeof ApiRunsIdRoute
   '/prompts/$name/$version': typeof PromptsNameVersionRoute
+  '/api/runs/': typeof ApiRunsIndexRoute
   '/prompts/$name/': typeof PromptsNameIndexRoute
+  '/api/run-thumb/$runId/$task': typeof ApiRunThumbRunIdTaskRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/run'
     | '/api/catalog'
+    | '/runs/$id'
     | '/view/$'
     | '/prompts/'
+    | '/runs/'
     | '/api/evidence/$'
+    | '/api/runs/$id'
     | '/prompts/$name/$version'
+    | '/api/runs/'
     | '/prompts/$name/'
+    | '/api/run-thumb/$runId/$task'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/run'
     | '/api/catalog'
+    | '/runs/$id'
     | '/view/$'
     | '/prompts'
+    | '/runs'
     | '/api/evidence/$'
+    | '/api/runs/$id'
     | '/prompts/$name/$version'
+    | '/api/runs'
     | '/prompts/$name'
+    | '/api/run-thumb/$runId/$task'
   id:
     | '__root__'
     | '/'
+    | '/run'
     | '/api/catalog'
+    | '/runs/$id'
     | '/view/$'
     | '/prompts/'
+    | '/runs/'
     | '/api/evidence/$'
+    | '/api/runs/$id'
     | '/prompts/$name/$version'
+    | '/api/runs/'
     | '/prompts/$name/'
+    | '/api/run-thumb/$runId/$task'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  RunRoute: typeof RunRoute
   ApiCatalogRoute: typeof ApiCatalogRoute
+  RunsIdRoute: typeof RunsIdRoute
   ViewSplatRoute: typeof ViewSplatRoute
   PromptsIndexRoute: typeof PromptsIndexRoute
+  RunsIndexRoute: typeof RunsIndexRoute
   ApiEvidenceSplatRoute: typeof ApiEvidenceSplatRoute
+  ApiRunsIdRoute: typeof ApiRunsIdRoute
   PromptsNameVersionRoute: typeof PromptsNameVersionRoute
+  ApiRunsIndexRoute: typeof ApiRunsIndexRoute
   PromptsNameIndexRoute: typeof PromptsNameIndexRoute
+  ApiRunThumbRunIdTaskRoute: typeof ApiRunThumbRunIdTaskRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/run': {
+      id: '/run'
+      path: '/run'
+      fullPath: '/run'
+      preLoaderRoute: typeof RunRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/runs/': {
+      id: '/runs/'
+      path: '/runs'
+      fullPath: '/runs/'
+      preLoaderRoute: typeof RunsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/prompts/': {
@@ -144,6 +236,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ViewSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/runs/$id': {
+      id: '/runs/$id'
+      path: '/runs/$id'
+      fullPath: '/runs/$id'
+      preLoaderRoute: typeof RunsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/catalog': {
       id: '/api/catalog'
       path: '/api/catalog'
@@ -158,11 +257,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PromptsNameIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/runs/': {
+      id: '/api/runs/'
+      path: '/api/runs'
+      fullPath: '/api/runs/'
+      preLoaderRoute: typeof ApiRunsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/prompts/$name/$version': {
       id: '/prompts/$name/$version'
       path: '/prompts/$name/$version'
       fullPath: '/prompts/$name/$version'
       preLoaderRoute: typeof PromptsNameVersionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/runs/$id': {
+      id: '/api/runs/$id'
+      path: '/api/runs/$id'
+      fullPath: '/api/runs/$id'
+      preLoaderRoute: typeof ApiRunsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/evidence/$': {
@@ -172,17 +285,30 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiEvidenceSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/run-thumb/$runId/$task': {
+      id: '/api/run-thumb/$runId/$task'
+      path: '/api/run-thumb/$runId/$task'
+      fullPath: '/api/run-thumb/$runId/$task'
+      preLoaderRoute: typeof ApiRunThumbRunIdTaskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  RunRoute: RunRoute,
   ApiCatalogRoute: ApiCatalogRoute,
+  RunsIdRoute: RunsIdRoute,
   ViewSplatRoute: ViewSplatRoute,
   PromptsIndexRoute: PromptsIndexRoute,
+  RunsIndexRoute: RunsIndexRoute,
   ApiEvidenceSplatRoute: ApiEvidenceSplatRoute,
+  ApiRunsIdRoute: ApiRunsIdRoute,
   PromptsNameVersionRoute: PromptsNameVersionRoute,
+  ApiRunsIndexRoute: ApiRunsIndexRoute,
   PromptsNameIndexRoute: PromptsNameIndexRoute,
+  ApiRunThumbRunIdTaskRoute: ApiRunThumbRunIdTaskRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

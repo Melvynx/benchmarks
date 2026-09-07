@@ -1,4 +1,6 @@
-const effortLabels = {
+// A run records whatever effort its harness accepted, so the lookup is open at
+// the type level and an unknown level degrades to a placeholder.
+const effortLabels: Record<string, string | undefined> = {
   minimal: "Minimal",
   low: "Low",
   medium: "Medium",
@@ -6,12 +8,10 @@ const effortLabels = {
   xhigh: "X-High",
   max: "Max",
   ultra: "Ultra",
-} as const
+}
 
 export function effortLabel(effort: string) {
-  const normalizedEffort = effort.trim().toLowerCase()
-  const label =
-    effortLabels[normalizedEffort as keyof typeof effortLabels] ?? "-"
+  const label = effortLabels[effort.trim().toLowerCase()] ?? "-"
 
   return `Thinking: ${label}`
 }

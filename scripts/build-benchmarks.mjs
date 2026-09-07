@@ -28,9 +28,26 @@ function repositoryPath(path) {
   return relative(root, path).split("\\").join("/");
 }
 
+const DEV_SOURCE = /(?:src|href)=["']([^"']*\/?src\/[^"']+)["']/gi;
+
+function referencedDevSources(html) {
+  return [...html.matchAll(DEV_SOURCE)].map((match) =>
+    match[1].replace(/^\//, "").split("?")[0],
+  );
+}
+
 function needsCompiledOutput(directory) {
   const html = readFileSync(join(directory, "index.html"), "utf8");
-  return /(?:src|href)=["'][^"']*\/?src\//i.test(html);
+  return referencedDevSources(html).length > 0;
+}
+
+function hasUnbuildableDevSources(directory) {
+  const htmlPath = join(directory, "index.html");
+  if (!existsSync(htmlPath)) return false;
+  const html = readFileSync(htmlPath, "utf8");
+  return referencedDevSources(html).some(
+    (relative) => !existsSync(join(directory, relative)),
+  );
 }
 
 function failedResultIds() {
@@ -85,7 +102,7 @@ function discoverTargets() {
       if (!packageJson.scripts?.build) continue;
 
       const id = `${task.name}/${result.name}`;
-      if (failed.has(id)) continue;
+      if (failed.has(id) || hasUnbuildableDevSources(directory)) continue;
 
       targets.push({
         directory,

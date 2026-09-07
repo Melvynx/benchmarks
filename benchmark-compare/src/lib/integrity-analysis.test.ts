@@ -97,6 +97,88 @@ describe("analyzeIntegrityTranscript", () => {
     })
   })
 
+  it("parses cursor-agent thinking and tool calls, including this-repo sibling reads", () => {
+    const analysis = analyzeIntegrityTranscript(
+      [
+        JSON.stringify({
+          type: "thinking",
+          subtype: "delta",
+          text: "I will inspect the current app first.",
+        }),
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "started",
+          tool_call: {
+            readToolCall: {
+              path: "/Users/melvynx/Developer/agent-benchmarks/benchmarks/timezone-checker/2026-08-20-cursor-agent-gemini-3-7-flash-high-2/index.html",
+            },
+          },
+        }),
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "completed",
+          tool_call: {
+            readToolCall: {
+              path: "/Users/melvynx/Developer/agent-benchmarks/benchmarks/timezone-checker/2026-08-20-cursor-agent-gemini-3-7-flash-high-2/index.html",
+            },
+          },
+        }),
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "started",
+          tool_call: {
+            editToolCall: {
+              path: "/Users/melvynx/Developer/agent-benchmarks/benchmarks/timezone-checker/2026-09-03-cursor-agent-gemini-3-8-flash-high/src/App.tsx",
+            },
+          },
+        }),
+      ].join("\n"),
+      "/Users/melvynx/Developer/agent-benchmarks/benchmarks/timezone-checker/2026-09-03-cursor-agent-gemini-3-8-flash-high"
+    )
+
+    expect(analysis).toMatchObject({
+      status: "complete",
+      risk_level: "high",
+      prior_result_access: { detected: true, evidence_count: 1 },
+      workflow: { file_changes: 1 },
+    })
+    expect(analysis?.workflow.top_tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["Read", "Edit"])
+    )
+  })
+
+  it("does not treat agent-benchmarks repo paths as prior-result access", () => {
+    const analysis = analyzeIntegrityTranscript(
+      [
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "started",
+          tool_call: {
+            readToolCall: {
+              path: "/Users/melvynx/Developer/agent-benchmarks/.agents/rules/benchmark-runs.md",
+            },
+          },
+        }),
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "started",
+          tool_call: {
+            grepToolCall: {
+              pattern: "gemini-3",
+              path: "/Users/melvynx/Developer/agent-benchmarks/benchmark-compare/src/lib",
+            },
+          },
+        }),
+      ].join("\n"),
+      "/Users/melvynx/Developer/agent-benchmarks/benchmarks/timezone-checker/2026-09-03-cursor-agent-gemini-3-8-flash-high"
+    )
+
+    expect(analysis?.prior_result_access).toEqual({
+      detected: false,
+      evidence_count: 0,
+    })
+  })
+
   it("does not treat a file URL for the current app as prior-result access", () => {
     const analysis = analyzeIntegrityTranscript(
       JSON.stringify({

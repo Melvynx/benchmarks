@@ -148,8 +148,23 @@ PY
         fi
       fi
     fi
-    if [[ "$harness" == ccx || "$harness" == cc || "$harness" == cckimi || "$harness" == cursor-agent ]]; then
+    if [[ "$harness" == cursor-agent ]]; then
+      "$JQ_BIN" -e --arg model "$model" '
+        def slug:
+          ascii_downcase
+          | gsub("[^a-z0-9]+"; "-")
+          | sub("^-"; "")
+          | sub("-$"; "");
+        select(
+          .type=="system"
+          and .subtype=="init"
+          and ((.model | slug) == ($model | slug))
+        )
+      ' "$data_dir/transcript.jsonl" >/dev/null || fail "transcript model mismatch: $data_dir"
+    elif [[ "$harness" == ccx || "$harness" == cc || "$harness" == cckimi ]]; then
       "$JQ_BIN" -e --arg model "$model" 'select(.type=="system" and .subtype=="init" and .model==$model)' "$data_dir/transcript.jsonl" >/dev/null || fail "transcript model mismatch: $data_dir"
+    elif [[ "$harness" == opencode ]]; then
+      "$JQ_BIN" -e 'select(.sessionID != null)' "$data_dir/transcript.jsonl" >/dev/null || fail "transcript session missing: $data_dir"
     fi
     port="$($JQ_BIN -r '.port // empty' "$data_dir/metadata.json")"
     if [[ -n "$port" ]]; then

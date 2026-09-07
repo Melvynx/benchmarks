@@ -3,9 +3,15 @@ import { describe, expect, it } from "vitest"
 import {
   parsePersistedSessionUsage,
   parseSessionUsageTranscript,
+  usageDurationLabel,
 } from "./session-usage"
 
 describe("parseSessionUsageTranscript", () => {
+  it("labels Cursor duration as end-to-end session time", () => {
+    expect(usageDurationLabel("cursor-grok-4.6-high")).toBe("Cursor session")
+    expect(usageDurationLabel("gpt-5.6-sol")).toBe("API time")
+  })
+
   it("normalizes Codex usage without double-counting cached input", () => {
     const usage = parseSessionUsageTranscript(
       JSON.stringify({

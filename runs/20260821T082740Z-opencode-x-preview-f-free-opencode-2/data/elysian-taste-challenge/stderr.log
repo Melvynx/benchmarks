@@ -1,0 +1,3 @@
+[91m[1mError: [0mUnexpected error
+
+database is locked

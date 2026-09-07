@@ -4,7 +4,7 @@ This repository compares coding models on reproducible visual, application, and 
 
 ## Commands
 
-- `.agents/skills/run-benchmark/scripts/run-benchmark.sh --model <model> --harness <codex|ccx|cc|cursor-agent> --tasks <task[,task...]>` - create and execute a recorded benchmark run
+- `.agents/skills/run-benchmark/scripts/run-benchmark.sh --model <model> --harness <codex|ccx|cc|cursor-agent|opencode> --tasks <task[,task...]>` - create and execute a recorded benchmark run
 - `.agents/skills/run-benchmark/scripts/run-benchmark-plan.sh benchmark-plans/<plan>.md` - execute every enabled row in an editable Markdown benchmark plan
 - `.agents/skills/run-benchmark/scripts/verify-benchmark-run.sh runs/<run-id>...` - build and HTTP-probe completed apps
 - `.agents/skills/run-benchmark/scripts/validate-benchmark-run.sh runs/<run-id>...` - enforce layout, naming, prompt, model, port, transcript, screenshot, and runtime evidence

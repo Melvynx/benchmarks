@@ -1,0 +1,1635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#120C0A" />
+  <title>Cursor Grok 4.6</title>
+  <style>
+    :root {
+      --void: #120C0A;
+      --cinder: #2A1812;
+      --brick: #4A2A1E;
+      --ember: #FF4D18;
+      --honey: #FFB030;
+      --silica: #7EE0D6;
+      --ash: #D7C7B4;
+      --iron: #9A9288;
+      --line: rgba(215, 199, 180, 0.18);
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--void);
+    }
+
+    body {
+      color: var(--ash);
+      font-family: "Avenir Next Condensed", "Futura", "Century Gothic", "Trebuchet MS", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      overscroll-behavior: none;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      color: inherit;
+      font: inherit;
+      background: none;
+    }
+
+    button:focus-visible,
+    canvas:focus-visible {
+      outline: 3px solid var(--silica);
+      outline-offset: 3px;
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      width: 100%;
+      height: 100dvh;
+      min-height: 0;
+      padding:
+        max(10px, env(safe-area-inset-top))
+        max(12px, env(safe-area-inset-right))
+        max(10px, env(safe-area-inset-bottom))
+        max(12px, env(safe-area-inset-left));
+      gap: 8px;
+      background:
+        radial-gradient(ellipse at 50% 18%, rgba(255, 77, 24, 0.16), transparent 42%),
+        radial-gradient(ellipse at 50% 100%, rgba(126, 224, 214, 0.08), transparent 36%),
+        linear-gradient(180deg, #1A0F0C 0%, #120C0A 48%, #0C0908 100%);
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 40px;
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--ash);
+      font-family: Palatino, "Palatino Linotype", "Palatino LT STD", "Book Antiqua", Georgia, serif;
+      font-size: clamp(1rem, 2.4vw, 1.35rem);
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      line-height: 1.1;
+      white-space: nowrap;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .control {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(42, 24, 18, 0.72);
+      color: var(--ash);
+      cursor: pointer;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: transform 140ms var(--ease), background 180ms ease, border-color 180ms ease, color 180ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .control:hover:not(:disabled) {
+      border-color: rgba(255, 176, 48, 0.55);
+      background: rgba(74, 42, 30, 0.9);
+      color: #fff4e4;
+    }
+
+    .control:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
+
+    .control:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+
+    .control[aria-pressed="true"] {
+      border-color: var(--silica);
+      color: var(--silica);
+      box-shadow: inset 0 0 0 1px rgba(126, 224, 214, 0.25);
+    }
+
+    .hud {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 10px;
+      min-height: 34px;
+    }
+
+    .meter {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .meter.player { justify-items: end; }
+
+    .meter-label {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.64rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--iron);
+    }
+
+    .meter.player .meter-label { flex-direction: row-reverse; }
+
+    .track {
+      position: relative;
+      height: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(215, 199, 180, 0.22);
+      border-radius: 99px;
+      background: rgba(18, 12, 10, 0.7);
+    }
+
+    .meter.player .track { width: min(100%, 180px); }
+
+    .fill {
+      height: 100%;
+      width: 100%;
+      transform-origin: left center;
+      transform: scaleX(1);
+      background: linear-gradient(90deg, #FF4D18, #FFB030);
+    }
+
+    .meter.player .fill {
+      transform-origin: right center;
+      background: linear-gradient(90deg, #5AD1C6, #C7FFF6);
+    }
+
+    .phase {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--honey);
+      font-size: 0.62rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .pips { display: flex; gap: 5px; }
+
+    .pip {
+      width: 7px;
+      height: 7px;
+      border: 1px solid rgba(215, 199, 180, 0.28);
+      border-radius: 50%;
+      background: transparent;
+    }
+
+    .pip.on { background: var(--honey); border-color: var(--honey); box-shadow: 0 0 8px rgba(255, 176, 48, 0.7); }
+
+    .stage {
+      position: relative;
+      min-height: 0;
+      border: 1px solid rgba(215, 199, 180, 0.12);
+      border-radius: 18px;
+      overflow: hidden;
+      background: #0B0706;
+      box-shadow: inset 0 0 80px rgba(255, 77, 24, 0.08);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .instruction, .banner {
+      position: absolute;
+      left: 50%;
+      z-index: 2;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    .instruction {
+      bottom: 18px;
+      width: min(92%, 36rem);
+      transform: translateX(-50%);
+      color: var(--ash);
+      font-size: clamp(0.86rem, 2.2vw, 1.05rem);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-shadow: 0 2px 16px #120C0A;
+    }
+
+    .banner {
+      top: 50%;
+      width: min(90%, 28rem);
+      padding: 18px 20px 16px;
+      border: 1px solid rgba(255, 176, 48, 0.28);
+      border-radius: 16px;
+      background: rgba(18, 12, 10, 0.82);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+    }
+
+    .banner[hidden], .instruction[hidden] { display: none; }
+
+    .banner h2 {
+      margin: 0 0 6px;
+      color: var(--honey);
+      font-family: Palatino, "Palatino Linotype", Georgia, serif;
+      font-size: 1.35rem;
+      font-weight: 500;
+    }
+
+    .banner p {
+      margin: 0;
+      color: var(--ash);
+      font-size: 0.92rem;
+      line-height: 1.35;
+    }
+
+    .combo {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      z-index: 2;
+      color: var(--silica);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-shadow: 0 2px 10px #120C0A;
+      pointer-events: none;
+    }
+
+    @media (max-width: 720px) {
+      header { flex-direction: column; align-items: stretch; }
+      .controls { justify-content: flex-start; }
+      .hud { grid-template-columns: 1fr; gap: 8px; }
+      .meter.player { justify-items: start; }
+      .meter.player .meter-label { flex-direction: row; }
+      .meter.player .fill { transform-origin: left center; }
+      .phase { flex-direction: row; justify-content: space-between; }
+      .instruction { bottom: 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .control { transition: none; }
+      .fill { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Cursor Grok 4.6</h1>
+      <div class="controls">
+        <button type="button" class="control" id="btn-start">Start</button>
+        <button type="button" class="control" id="btn-pause" disabled>Pause</button>
+        <button type="button" class="control" id="btn-restart">Restart</button>
+        <button type="button" class="control" id="btn-demo" aria-pressed="false">Demo</button>
+        <button type="button" class="control" id="btn-mute" aria-pressed="false">Mute</button>
+      </div>
+    </header>
+    <div class="hud">
+      <div class="meter boss">
+        <div class="meter-label">
+          <span id="boss-name">Vitrifex</span>
+          <span id="boss-hp">210</span>
+        </div>
+        <div class="track" aria-hidden="true"><div class="fill" id="boss-fill"></div></div>
+      </div>
+      <div class="phase">
+        <span id="phase-label">Gather</span>
+        <div class="pips" aria-hidden="true">
+          <span class="pip on" id="pip-1"></span>
+          <span class="pip" id="pip-2"></span>
+          <span class="pip" id="pip-3"></span>
+        </div>
+      </div>
+      <div class="meter player">
+        <div class="meter-label">
+          <span>Cinder</span>
+          <span id="player-hp">3</span>
+        </div>
+        <div class="track" aria-hidden="true"><div class="fill" id="player-fill"></div></div>
+      </div>
+    </div>
+    <div class="stage">
+      <canvas id="arena" tabindex="0" role="img" aria-label="Kiln arena. Temper as the glass blooms."></canvas>
+      <div class="combo" id="combo" hidden></div>
+      <p class="instruction" id="instruction">Temper as the glass blooms.</p>
+      <div class="banner" id="banner" hidden>
+        <h2 id="banner-title"></h2>
+        <p id="banner-body"></p>
+      </div>
+    </div>
+  </div>
+  <script>
+(function () {
+  "use strict";
+
+  const DT = 16;
+  const PLAYER_MAX = 3;
+  const BOSS_MAX = 210;
+  const PHASE2_HP = 140;
+  const PHASE3_HP = 70;
+  const INTRO = 900;
+  const ACTIVE = 110;
+  const RECOVER = 250;
+  const INVULN = 420;
+  const BUFFER = 90;
+  const PHASE_SHIFT = 1100;
+  const PHASE_NAMES = ["Gather", "Blow", "Anneal"];
+  const BOSS_NAME = "Vitrifex";
+
+  const TELEGRAPH = { lance: 880, drip: 760, ribbon: 1080, ring: 960, nova: 1360 };
+  const GAP = { lance: 1680, drip: 1560, ribbon: 1960, double: 2140, ring: 1760, nova: 2480 };
+  const BOSS_DMG = { lance: 6, drip: 5, ribbon: 9, ring: 10, nova: 22 };
+  const EARLY = { lance: 150, drip: 140, ribbon: 170, ring: 160, nova: 180 };
+  const LATE = { lance: 70, drip: 70, ribbon: 80, ring: 80, nova: 90 };
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0;
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function r3(n) {
+    return Math.round(n * 1000) / 1000;
+  }
+
+  function clamp(n, a, b) {
+    return n < a ? a : n > b ? b : n;
+  }
+
+  class Sim {
+    constructor(seed) {
+      this.reset(seed);
+    }
+
+    reset(seed) {
+      const s = seed === undefined || seed === null || seed === "" ? 1 : (seed | 0);
+      this.seed = s;
+      this.rng = mulberry32(s);
+      this.t = 0;
+      this.acc = 0;
+      this.started = false;
+      this.paused = false;
+      this.demo = false;
+      this.outcome = null;
+      this.phase = 1;
+      this.phaseShiftUntil = 0;
+      this.nextSpawnAt = INTRO;
+      this.novaUsed = false;
+      this.attackSeq = 0;
+      this.attacks = [];
+      this.events = [];
+      this.pressLog = [];
+      this.combo = 0;
+      this.bestCombo = 0;
+      this.score = 0;
+      this.tempers = 0;
+      this.perfects = 0;
+      this.whiffs = 0;
+      this.hits = 0;
+      this.player = {
+        hp: PLAYER_MAX,
+        maxHp: PLAYER_MAX,
+        x: 0,
+        y: 228,
+        temperUntil: 0,
+        recoverUntil: 0,
+        invulnUntil: 0,
+        bufferUntil: -1,
+        lastPress: -9999
+      };
+      this.boss = {
+        name: BOSS_NAME,
+        hp: BOSS_MAX,
+        maxHp: BOSS_MAX,
+        staggerUntil: 0
+      };
+      return this.snapshot();
+    }
+
+    start() {
+      if (this.outcome) return this.snapshot();
+      this.started = true;
+      this.paused = false;
+      return this.snapshot();
+    }
+
+    setDemo(enabled) {
+      this.demo = !!enabled;
+      if (this.demo) {
+        if (this.outcome) this.reset(this.seed);
+        this.demo = true;
+        this.started = true;
+        this.paused = false;
+      }
+      return this.snapshot();
+    }
+
+    press() {
+      if (!this.started && !this.outcome) {
+        this.start();
+        return this.snapshot();
+      }
+      if (!this.started || this.paused || this.outcome) return this.snapshot();
+      const p = this.player;
+      if (this.t < p.recoverUntil) {
+        p.bufferUntil = this.t + BUFFER;
+        return this.snapshot();
+      }
+      this._temper();
+      return this.snapshot();
+    }
+
+    _temper() {
+      const p = this.player;
+      p.lastPress = this.t;
+      p.temperUntil = this.t + ACTIVE;
+      p.recoverUntil = this.t + ACTIVE + RECOVER;
+      p.bufferUntil = -1;
+      this.tempers += 1;
+      this.pressLog.push(this.t);
+      this.events.push({ type: "temper", t: this.t, x: p.x, y: p.y });
+
+      let hit = null;
+      let best = 1e9;
+      for (let i = 0; i < this.attacks.length; i++) {
+        const a = this.attacks[i];
+        if (a.resolved) continue;
+        if (this.t < a.windowStart - 40 || this.t > a.windowEnd + 20) continue;
+        const dist = Math.abs(this.t - a.impactTime);
+        if (dist < best) {
+          best = dist;
+          hit = a;
+        }
+      }
+      if (!hit) {
+        this.whiffs += 1;
+        this.combo = 0;
+        return;
+      }
+      this._parry(hit);
+    }
+
+    _parry(a) {
+      a.resolved = true;
+      a.parried = true;
+      const perfect = this.t >= a.impactTime - 48 && this.t <= a.impactTime + 28;
+      a.perfect = perfect;
+      this.combo += 1;
+      if (this.combo > this.bestCombo) this.bestCombo = this.combo;
+      this.score += (perfect ? 180 : 110) + this.combo * 12;
+      if (perfect) this.perfects += 1;
+      this.boss.hp = Math.max(0, this.boss.hp - BOSS_DMG[a.kind]);
+      this.boss.staggerUntil = this.t + (perfect ? 180 : 110);
+      this.events.push({
+        type: "parry",
+        t: this.t,
+        kind: a.kind,
+        perfect: perfect,
+        x: this.player.x,
+        y: this.player.y,
+        phase: this.phase
+      });
+      this._checkPhase();
+      if (this.boss.hp <= 0) this._end("success");
+    }
+
+    _checkPhase() {
+      const next = this.boss.hp <= PHASE3_HP ? 3 : this.boss.hp <= PHASE2_HP ? 2 : 1;
+      if (next > this.phase) {
+        this.phase = next;
+        this.phaseShiftUntil = this.t + PHASE_SHIFT;
+        this.nextSpawnAt = this.phaseShiftUntil + 200;
+        for (let i = 0; i < this.attacks.length; i++) {
+          const a = this.attacks[i];
+          if (!a.resolved) {
+            a.resolved = true;
+            a.fizzled = true;
+          }
+        }
+        this.events.push({ type: "phase", t: this.t, phase: this.phase });
+      }
+    }
+
+    _end(outcome) {
+      this.outcome = outcome;
+      this.events.push({ type: outcome, t: this.t });
+    }
+
+    _pickKind() {
+      const r = this.rng();
+      if (this.phase === 1) return r < 0.72 ? "lance" : "drip";
+      if (this.phase === 2) {
+        if (r < 0.38) return "ribbon";
+        if (r < 0.78) return "double";
+        return "lance";
+      }
+      if (!this.novaUsed && this.boss.hp <= 28) {
+        this.novaUsed = true;
+        return "nova";
+      }
+      return r < 0.7 ? "ring" : "lance";
+    }
+
+    _pushAttack(kind, delay) {
+      const tel = TELEGRAPH[kind];
+      const impactTime = this.t + delay + tel;
+      const id = ++this.attackSeq;
+      const side = this.rng() < 0.5 ? -1 : 1;
+      this.attacks.push({
+        id: id,
+        kind: kind,
+        spawnTime: this.t + delay,
+        telegraphStart: this.t + delay,
+        impactTime: impactTime,
+        windowStart: impactTime - EARLY[kind],
+        windowEnd: impactTime + LATE[kind],
+        resolved: false,
+        parried: false,
+        perfect: false,
+        fizzled: false,
+        side: side,
+        dripX: this.player.x + (this.rng() - 0.5) * 36
+      });
+    }
+
+    _spawn() {
+      if (this.t < this.nextSpawnAt || this.t < this.phaseShiftUntil) return;
+      const kind = this._pickKind();
+      if (kind === "double") {
+        this._pushAttack("lance", 0);
+        this._pushAttack("lance", 480);
+        this.nextSpawnAt = this.t + GAP.double + Math.floor(this.rng() * 180);
+      } else {
+        this._pushAttack(kind, 0);
+        this.nextSpawnAt = this.t + GAP[kind] + Math.floor(this.rng() * 160);
+      }
+    }
+
+    _demoThink() {
+      if (!this.demo || this.paused || this.outcome) return;
+      if (this.t < this.player.recoverUntil) return;
+      for (let i = 0; i < this.attacks.length; i++) {
+        const a = this.attacks[i];
+        if (a.resolved) continue;
+        const pressAt = a.impactTime - 40;
+        if (this.t >= pressAt && this.t < pressAt + DT) {
+          this._temper();
+          return;
+        }
+      }
+    }
+
+    _resolve() {
+      const p = this.player;
+      for (let i = 0; i < this.attacks.length; i++) {
+        const a = this.attacks[i];
+        if (a.resolved) continue;
+        if (this.t < a.impactTime) continue;
+        a.resolved = true;
+        a.parried = false;
+        if (p.invulnUntil > this.t) continue;
+        p.hp -= 1;
+        p.invulnUntil = this.t + INVULN;
+        this.combo = 0;
+        this.hits += 1;
+        this.events.push({ type: "hit", t: this.t, kind: a.kind, x: p.x, y: p.y });
+        if (p.hp <= 0) {
+          p.hp = 0;
+          this._end("failure");
+          return;
+        }
+      }
+    }
+
+    tick() {
+      if (this.outcome) return;
+      if (this.player.bufferUntil >= 0 && this.t >= this.player.recoverUntil && this.t <= this.player.bufferUntil) {
+        this._temper();
+      }
+      if (this.outcome) return;
+      this._demoThink();
+      if (this.outcome) return;
+      this.t += DT;
+      this._spawn();
+      this._resolve();
+    }
+
+    step(milliseconds) {
+      const ms = Number(milliseconds);
+      if (!Number.isFinite(ms) || ms <= 0) return this.snapshot();
+      if (this.paused || !this.started || this.outcome) return this.snapshot();
+      this.acc += ms;
+      let guard = 0;
+      while (this.acc >= DT && guard++ < 12000) {
+        this.acc -= DT;
+        this.tick();
+        if (this.paused || this.outcome) {
+          this.acc = 0;
+          break;
+        }
+      }
+      return this.snapshot();
+    }
+
+    snapshot() {
+      const p = this.player;
+      const active = [];
+      for (let i = 0; i < this.attacks.length; i++) {
+        const a = this.attacks[i];
+        if (a.resolved || this.t < a.telegraphStart) continue;
+        active.push({
+          id: a.id,
+          kind: a.kind,
+          impactIn: r3(a.impactTime - this.t),
+          windowStart: a.windowStart,
+          windowEnd: a.windowEnd
+        });
+      }
+      return {
+        simulationTime: this.t,
+        phase: this.phase,
+        started: this.started,
+        paused: this.paused,
+        demo: this.demo,
+        seed: this.seed,
+        outcome: this.outcome,
+        player: {
+          hp: p.hp,
+          maxHp: p.maxHp,
+          x: r3(p.x),
+          y: r3(p.y),
+          tempering: this.t < p.temperUntil,
+          invuln: this.t < p.invulnUntil,
+          recoverMs: Math.max(0, p.recoverUntil - this.t)
+        },
+        boss: {
+          name: this.boss.name,
+          hp: this.boss.hp,
+          maxHp: this.boss.maxHp,
+          staggering: this.t < this.boss.staggerUntil
+        },
+        attacks: active,
+        score: {
+          value: this.score,
+          combo: this.combo,
+          bestCombo: this.bestCombo,
+          tempers: this.tempers,
+          perfects: this.perfects,
+          whiffs: this.whiffs,
+          hits: this.hits
+        }
+      };
+    }
+  }
+
+  function runSelfTest() {
+    const tests = [];
+    const check = (name, fn) => {
+      try {
+        const detail = fn();
+        tests.push({ name: name, passed: true, detail: detail || "ok" });
+      } catch (err) {
+        tests.push({ name: name, passed: false, detail: String(err && err.message ? err.message : err) });
+      }
+    };
+
+    const runDemo = (seed, maxMs) => {
+      const s = new Sim(seed);
+      s.setDemo(true);
+      const phases = new Set([s.phase]);
+      for (let t = 0; t < maxMs && !s.outcome; t += DT) {
+        s.step(DT);
+        phases.add(s.phase);
+        s.events.length = 0;
+      }
+      return { sim: s, phases: phases };
+    };
+
+    const demo = runDemo(4242, 100000);
+
+    check("deterministic reset", () => {
+      const a = new Sim(1234);
+      a.setDemo(true);
+      a.step(30000);
+      a.events.length = 0;
+      const b = new Sim(999);
+      b.step(5000);
+      b.reset(1234);
+      b.setDemo(true);
+      b.step(30000);
+      b.events.length = 0;
+      if (JSON.stringify(a.snapshot()) !== JSON.stringify(b.snapshot())) {
+        throw new Error("same seed + same inputs diverged");
+      }
+      return "identical snapshots after 30 s";
+    });
+
+    check("pause behavior", () => {
+      const s = new Sim(7);
+      s.start();
+      s.step(3000);
+      const t0 = s.t;
+      s.paused = true;
+      s.step(2000);
+      if (s.t !== t0) throw new Error("time advanced while paused");
+      s.paused = false;
+      s.step(160);
+      if (s.t <= t0) throw new Error("time did not resume");
+      return "frozen while paused, resumes after";
+    });
+
+    check("phase progression", () => {
+      if (!demo.phases.has(2) || !demo.phases.has(3)) {
+        throw new Error("phases seen: " + Array.from(demo.phases).join(","));
+      }
+      return "phases 1 → 2 → 3 reached";
+    });
+
+    check("finite numeric state", () => {
+      const bad = [];
+      const walk = (o, p) => {
+        if (typeof o === "number") {
+          if (!Number.isFinite(o)) bad.push(p);
+        } else if (Array.isArray(o)) {
+          o.forEach((v, i) => walk(v, p + "[" + i + "]"));
+        } else if (o && typeof o === "object") {
+          for (const k in o) walk(o[k], p + "." + k);
+        }
+      };
+      walk(demo.sim.snapshot(), "win");
+      const mid = new Sim(11);
+      mid.setDemo(true);
+      mid.step(20000);
+      walk(mid.snapshot(), "mid");
+      if (bad.length) throw new Error("non-finite at " + bad.join(", "));
+      return "all snapshot numbers finite";
+    });
+
+    check("reachable success state", () => {
+      if (demo.sim.outcome !== "success") throw new Error("demo outcome: " + demo.sim.outcome);
+      if (demo.sim.t < 40000 || demo.sim.t > 80000) throw new Error("duration " + demo.sim.t);
+      return "success at " + (demo.sim.t / 1000).toFixed(1) + " s";
+    });
+
+    check("reachable failure state", () => {
+      const s = new Sim(4242);
+      s.start();
+      for (let t = 0; t < 60000 && !s.outcome; t += DT) {
+        s.step(DT);
+        s.events.length = 0;
+      }
+      if (s.outcome !== "failure") throw new Error("no-input outcome: " + s.outcome);
+      return "failure at " + (s.t / 1000).toFixed(1) + " s without input";
+    });
+
+    check("restart", () => {
+      const fresh = new Sim(9);
+      const s = new Sim(9);
+      s.setDemo(true);
+      s.step(25000);
+      s.events.length = 0;
+      s.reset(9);
+      if (JSON.stringify(s.snapshot()) !== JSON.stringify(fresh.snapshot())) {
+        throw new Error("reset state differs from fresh state");
+      }
+      s.start();
+      fresh.start();
+      s.step(4000);
+      fresh.step(4000);
+      if (JSON.stringify(s.snapshot()) !== JSON.stringify(fresh.snapshot())) {
+        throw new Error("post-reset evolution differs");
+      }
+      return "reset ≡ fresh encounter";
+    });
+
+    check("demo uses the normal gameplay state", () => {
+      const d = demo.sim;
+      if (d.tempers < 8) throw new Error("demo barely interacted: " + d.tempers + " tempers");
+      const log = d.pressLog.slice();
+      const r = new Sim(4242);
+      r.start();
+      let i = 0;
+      while (!r.outcome && r.t < d.t + 1000) {
+        while (i < log.length && log[i] < r.t) i++;
+        if (i < log.length && log[i] === r.t) {
+          r.press();
+          i++;
+        }
+        r.step(DT);
+        r.events.length = 0;
+      }
+      const a = d.snapshot();
+      const b = r.snapshot();
+      a.demo = false;
+      b.demo = false;
+      if (JSON.stringify(a) !== JSON.stringify(b)) {
+        throw new Error("manual replay of demo inputs diverged");
+      }
+      return "demo inputs replayed manually → identical result (" + d.tempers + " tempers)";
+    });
+
+    return { passed: tests.every((t) => t.passed), tests: tests };
+  }
+
+  const live = new Sim(1);
+  const canvas = document.getElementById("arena");
+  const ctx = canvas.getContext("2d");
+  const ui = {
+    start: document.getElementById("btn-start"),
+    pause: document.getElementById("btn-pause"),
+    restart: document.getElementById("btn-restart"),
+    demo: document.getElementById("btn-demo"),
+    mute: document.getElementById("btn-mute"),
+    bossName: document.getElementById("boss-name"),
+    bossHp: document.getElementById("boss-hp"),
+    bossFill: document.getElementById("boss-fill"),
+    playerHp: document.getElementById("player-hp"),
+    playerFill: document.getElementById("player-fill"),
+    phase: document.getElementById("phase-label"),
+    pips: [
+      document.getElementById("pip-1"),
+      document.getElementById("pip-2"),
+      document.getElementById("pip-3")
+    ],
+    instruction: document.getElementById("instruction"),
+    banner: document.getElementById("banner"),
+    bannerTitle: document.getElementById("banner-title"),
+    bannerBody: document.getElementById("banner-body"),
+    combo: document.getElementById("combo")
+  };
+
+  let reduced = false;
+  try {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reduced = mq.matches;
+    mq.addEventListener("change", (e) => { reduced = e.matches; });
+  } catch (e) {}
+
+  const audio = {
+    ctx: null,
+    master: null,
+    muted: false,
+    ensure: function () {
+      if (this.muted) return null;
+      if (!this.ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        this.ctx = new AC();
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.2;
+        this.master.connect(this.ctx.destination);
+      }
+      if (this.ctx.state === "suspended") this.ctx.resume();
+      return this.ctx;
+    },
+    tone: function (freq, dur, type, gain, slide) {
+      const ac = this.ensure();
+      if (!ac) return;
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = type || "sine";
+      o.frequency.setValueAtTime(freq, ac.currentTime);
+      if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, slide), ac.currentTime + dur);
+      g.gain.setValueAtTime(gain || 0.12, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0008, ac.currentTime + dur);
+      o.connect(g);
+      g.connect(this.master);
+      o.start();
+      o.stop(ac.currentTime + dur + 0.02);
+    },
+    noise: function (dur, gain) {
+      const ac = this.ensure();
+      if (!ac) return;
+      const n = Math.floor(ac.sampleRate * dur);
+      const buf = ac.createBuffer(1, n, ac.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      const src = ac.createBufferSource();
+      const g = ac.createGain();
+      const f = ac.createBiquadFilter();
+      src.buffer = buf;
+      f.type = "highpass";
+      f.frequency.value = 900;
+      g.gain.setValueAtTime(gain || 0.08, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0008, ac.currentTime + dur);
+      src.connect(f);
+      f.connect(g);
+      g.connect(this.master);
+      src.start();
+    }
+  };
+
+  function playEvent(ev) {
+    if (audio.muted || reduced && ev.type === "temper") return;
+    if (ev.type === "temper") {
+      audio.tone(140, 0.08, "triangle", 0.1, 70);
+      audio.noise(0.07, 0.05);
+    } else if (ev.type === "parry") {
+      audio.tone(ev.perfect ? 1640 : 1180, 0.16, "sine", 0.14, 420);
+      audio.tone(ev.perfect ? 2460 : 1760, 0.12, "triangle", 0.08);
+      audio.noise(0.09, 0.07);
+    } else if (ev.type === "hit") {
+      audio.tone(90, 0.22, "sawtooth", 0.12, 40);
+      audio.noise(0.14, 0.1);
+    } else if (ev.type === "phase") {
+      audio.tone(220, 0.4, "sine", 0.1, 440);
+    } else if (ev.type === "success") {
+      audio.tone(520, 0.5, "sine", 0.12, 880);
+    } else if (ev.type === "failure") {
+      audio.tone(180, 0.55, "triangle", 0.12, 70);
+    }
+  }
+
+  const fx = [];
+  let camX = 0;
+  let camY = 0;
+  let camPunch = 1;
+  let flash = 0;
+  let demoHold = 0;
+  let lastUi = "";
+
+  function spawnFx(ev) {
+    if (ev.type === "temper") {
+      fx.push({ kind: "ring", x: ev.x, y: ev.y, t: 0, life: 280, r0: 18, r1: 120, color: "#7EE0D6" });
+    } else if (ev.type === "parry") {
+      const n = reduced ? 6 : 16;
+      for (let i = 0; i < n; i++) {
+        const ang = (i / n) * Math.PI * 2 + (ev.perfect ? 0.2 : 0);
+        fx.push({
+          kind: "shard",
+          x: ev.x,
+          y: ev.y - 20,
+          vx: Math.cos(ang) * (2.4 + (i % 3)),
+          vy: Math.sin(ang) * (2.4 + (i % 3)) - 1.2,
+          t: 0,
+          life: 420 + (i % 5) * 40,
+          color: ev.perfect ? "#7EE0D6" : "#FFB030"
+        });
+      }
+      fx.push({ kind: "burst", x: ev.x, y: ev.y - 24, t: 0, life: 220, color: ev.perfect ? "#C7FFF6" : "#FFB030" });
+      if (!reduced) {
+        camY = ev.perfect ? 7 : 4;
+        camPunch = ev.perfect ? 1.045 : 1.025;
+        flash = ev.perfect ? 0.28 : 0.16;
+      }
+    } else if (ev.type === "hit") {
+      fx.push({ kind: "burst", x: ev.x, y: ev.y, t: 0, life: 260, color: "#FF4D18" });
+      if (!reduced) {
+        camX = 8;
+        flash = 0.22;
+      }
+    } else if (ev.type === "phase") {
+      fx.push({ kind: "ring", x: 0, y: -40, t: 0, life: 700, r0: 40, r1: 280, color: "#FFB030" });
+      if (!reduced) camPunch = 1.06;
+    }
+  }
+
+  function drainEvents() {
+    const list = live.events;
+    for (let i = 0; i < list.length; i++) {
+      spawnFx(list[i]);
+      playEvent(list[i]);
+    }
+    list.length = 0;
+  }
+
+  let brickCache = { seed: null, bricks: [] };
+  function bricksFor(seed) {
+    if (brickCache.seed === seed) return brickCache.bricks;
+    const rng = mulberry32(seed ^ 0xA5A5);
+    const bricks = [];
+    for (let ring = 0; ring < 7; ring++) {
+      const rad = 86 + ring * 38;
+      const count = 10 + ring * 4;
+      for (let i = 0; i < count; i++) {
+        bricks.push({
+          a: (i / count) * Math.PI * 2 + ring * 0.08,
+          r: rad,
+          w: (Math.PI * 2) / count * 0.86,
+          h: 16 + rng() * 6,
+          shade: 0.08 + rng() * 0.18
+        });
+      }
+    }
+    brickCache = { seed: seed, bricks: bricks };
+    return bricks;
+  }
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.floor(rect.width * dpr));
+    const h = Math.max(1, Math.floor(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function drawGlassBody(g, t, phase, hpRatio, stagger, telegraph) {
+    g.save();
+    const breathe = reduced ? 0 : Math.sin(t / 380) * 4;
+    const rec = stagger > 0 ? Math.sin(t / 30) * 5 : 0;
+    g.translate(rec, -86 + breathe * 0.2);
+    if (stagger > 0) g.rotate(Math.sin(t / 28) * 0.028);
+
+    const skirt = g.createLinearGradient(0, 70, 0, 150);
+    skirt.addColorStop(0, "#4E8A82");
+    skirt.addColorStop(1, "#1A2C2A");
+    g.fillStyle = skirt;
+    g.beginPath();
+    g.moveTo(-52, 78);
+    g.quadraticCurveTo(-110, 128, -88, 148);
+    g.lineTo(88, 148);
+    g.quadraticCurveTo(110, 128, 52, 78);
+    g.closePath();
+    g.fill();
+
+    const body = g.createLinearGradient(0, -170, 0, 90);
+    body.addColorStop(0, phase >= 3 ? "#FFE7B0" : "#E6C48A");
+    body.addColorStop(0.28, phase >= 2 ? "#D26532" : "#C48A4A");
+    body.addColorStop(0.58, "#3F746E");
+    body.addColorStop(1, "#16302C");
+    g.fillStyle = body;
+    g.beginPath();
+    g.moveTo(0, -96);
+    g.bezierCurveTo(48, -88, 82, -20, 74, 36);
+    g.bezierCurveTo(66, 88, 36, 108, 0, 112);
+    g.bezierCurveTo(-36, 108, -66, 88, -74, 36);
+    g.bezierCurveTo(-82, -20, -48, -88, 0, -96);
+    g.fill();
+
+    g.globalAlpha = 0.38;
+    g.fillStyle = "#F7F2E4";
+    g.beginPath();
+    g.ellipse(-24, -8, 14, 58, -0.28, 0, Math.PI * 2);
+    g.fill();
+    g.globalAlpha = 1;
+
+    const coreR = 26 + (phase >= 3 ? 8 : 0) + (reduced ? 0 : Math.sin(t / 140) * 3);
+    const core = g.createRadialGradient(0, 18, 3, 0, 18, coreR + 22);
+    core.addColorStop(0, "#FFF4C8");
+    core.addColorStop(0.32, "#FF4D18");
+    core.addColorStop(1, "rgba(255, 77, 24, 0)");
+    g.fillStyle = core;
+    g.beginPath();
+    g.arc(0, 18, coreR + 22, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#FFB030";
+    g.beginPath();
+    g.arc(0, 18, coreR * (0.5 + (1 - hpRatio) * 0.22), 0, Math.PI * 2);
+    g.fill();
+
+    g.strokeStyle = "rgba(18, 12, 10, 0.5)";
+    g.lineWidth = 2.5;
+    g.beginPath();
+    g.moveTo(5, -90);
+    g.quadraticCurveTo(12, 10, 3, 108);
+    g.stroke();
+
+    const armLift = -8 - telegraph * 86;
+    const handY = 70 + telegraph * -96;
+    g.lineCap = "round";
+    g.strokeStyle = "#8FD4CC";
+    g.lineWidth = 9;
+    g.beginPath();
+    g.moveTo(-68, 8);
+    g.quadraticCurveTo(-158, armLift, -124, handY);
+    g.moveTo(68, 8);
+    g.quadraticCurveTo(158, armLift + 8, 124, handY + 4);
+    g.stroke();
+    g.fillStyle = telegraph > 0.55 ? "#FF4D18" : "#C7FFF6";
+    g.beginPath();
+    g.arc(-124, handY, 8 + telegraph * 6, 0, Math.PI * 2);
+    g.arc(124, handY + 4, 8 + telegraph * 6, 0, Math.PI * 2);
+    g.fill();
+
+    g.fillStyle = phase >= 3 ? "#FFD27A" : "#D7B07A";
+    g.beginPath();
+    g.moveTo(-36, -88);
+    g.quadraticCurveTo(-48, -150, -22, -188);
+    g.quadraticCurveTo(-8, -168, -10, -118);
+    g.lineTo(10, -118);
+    g.quadraticCurveTo(8, -168, 22, -188);
+    g.quadraticCurveTo(48, -150, 36, -88);
+    g.closePath();
+    g.fill();
+    for (let i = -2; i <= 2; i++) {
+      const hh = 34 + (2 - Math.abs(i)) * 18;
+      g.beginPath();
+      g.moveTo(i * 11 - 4, -170);
+      g.quadraticCurveTo(i * 14, -170 - hh, i * 7, -176 - hh);
+      g.quadraticCurveTo(i * 18, -160 - hh * 0.45, i * 11 + 6, -168);
+      g.fill();
+    }
+
+    g.fillStyle = "#C9A36A";
+    g.beginPath();
+    g.ellipse(0, -128, 34, 28, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#1A100C";
+    const eye = 4.2 + telegraph * 5;
+    g.beginPath();
+    g.ellipse(-13, -130, 8, eye, 0, 0, Math.PI * 2);
+    g.ellipse(13, -130, 8, eye, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = telegraph > 0.45 ? "#FF4D18" : "#7EE0D6";
+    g.beginPath();
+    g.arc(-13, -130, 2.2 + telegraph * 2.2, 0, Math.PI * 2);
+    g.arc(13, -130, 2.2 + telegraph * 2.2, 0, Math.PI * 2);
+    g.fill();
+
+    g.restore();
+  }
+
+  function drawPlayer(g, sim, tel) {
+    const p = sim.player;
+    const tempering = sim.t < p.temperUntil;
+    const squash = tempering && !reduced ? 0.78 : 1;
+    const stretch = tempering && !reduced ? 1.18 : 1;
+    g.save();
+    g.translate(p.x, p.y);
+    if (sim.t < p.invulnUntil && !reduced && Math.floor(sim.t / 50) % 2 === 0) g.globalAlpha = 0.45;
+    g.scale(1.28 * stretch, 1.28 * squash);
+    g.fillStyle = "#2A2420";
+    g.beginPath();
+    g.moveTo(-16, 18);
+    g.lineTo(16, 18);
+    g.lineTo(12, -10);
+    g.lineTo(-12, -10);
+    g.closePath();
+    g.fill();
+    g.fillStyle = "#6A625A";
+    g.beginPath();
+    g.ellipse(0, -18, 14, 12, 0, 0, Math.PI * 2);
+    g.fill();
+    const visor = g.createLinearGradient(-10, -20, 10, -14);
+    visor.addColorStop(0, tempering ? "#C7FFF6" : "#FF4D18");
+    visor.addColorStop(1, tempering ? "#7EE0D6" : "#FFB030");
+    g.fillStyle = visor;
+    g.fillRect(-9, -20, 18, 5);
+    g.strokeStyle = "#C4B8A8";
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(10, -6);
+    g.lineTo(26, -28 - (tempering ? 10 : 0));
+    g.stroke();
+    g.fillStyle = tempering ? "#7EE0D6" : "#FFB030";
+    g.beginPath();
+    g.arc(26, -28 - (tempering ? 10 : 0), 5, 0, Math.PI * 2);
+    g.fill();
+    if (tel > 0) {
+      g.strokeStyle = "rgba(255, 77, 24, " + (0.25 + tel * 0.55) + ")";
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(0, 4, 26 + tel * 10, 0, Math.PI * 2);
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  function attackProgress(a, t) {
+    const span = a.impactTime - a.telegraphStart;
+    return clamp((t - a.telegraphStart) / Math.max(1, span), 0, 1);
+  }
+
+  function drawAttack(g, a, t) {
+    if (a.resolved || t < a.telegraphStart) return;
+    const u = attackProgress(a, t);
+    const hot = u * u;
+    if (a.kind === "lance") {
+      const x2 = 18 * a.side;
+      const y2 = 210;
+      g.strokeStyle = "rgba(255, 176, 48, " + (0.2 + hot * 0.7) + ")";
+      g.lineWidth = 2 + hot * 5;
+      g.beginPath();
+      g.moveTo(a.side * 118, -40);
+      g.lineTo(x2, y2 * u);
+      g.stroke();
+      g.fillStyle = hot > 0.72 ? "#FF4D18" : "#7EE0D6";
+      g.beginPath();
+      g.moveTo(x2, y2 * u);
+      g.lineTo(x2 - 7, y2 * u - 22);
+      g.lineTo(x2 + 7, y2 * u - 22);
+      g.closePath();
+      g.fill();
+    } else if (a.kind === "drip") {
+      const y = lerp(-160, 210, u);
+      g.fillStyle = hot > 0.7 ? "#FF4D18" : "#C45A2A";
+      g.beginPath();
+      g.ellipse(a.dripX, y, 8 + hot * 6, 12 + hot * 10, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "rgba(126, 224, 214, " + (0.3 + hot * 0.5) + ")";
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(a.dripX, 228, 22 + (1 - u) * 16, 0, Math.PI * 2);
+      g.stroke();
+    } else if (a.kind === "ribbon") {
+      g.lineCap = "round";
+      g.strokeStyle = "rgba(255, 77, 24, " + (0.18 + hot * 0.55) + ")";
+      g.lineWidth = 16;
+      g.beginPath();
+      g.moveTo(-210, 40);
+      g.quadraticCurveTo(a.side * 40, 120 + u * 80, 20, 228);
+      g.stroke();
+      const px = lerp(-210, 20, u);
+      const py = lerp(40, 228, u * u);
+      g.fillStyle = "#FFB030";
+      g.beginPath();
+      g.arc(px, py, 14, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "rgba(126, 224, 214, 0.7)";
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(0, 228, 34, Math.PI * 0.15, Math.PI * 0.85);
+      g.stroke();
+    } else if (a.kind === "ring") {
+      const r = lerp(40, 250, u);
+      g.strokeStyle = hot > 0.75 ? "rgba(255, 77, 24, 0.9)" : "rgba(126, 224, 214, 0.7)";
+      g.lineWidth = 8 + hot * 6;
+      g.beginPath();
+      g.arc(0, -40, r, 0, Math.PI * 2);
+      g.stroke();
+    } else if (a.kind === "nova") {
+      g.fillStyle = "rgba(255, 241, 194, " + (hot * 0.18) + ")";
+      g.beginPath();
+      g.arc(0, -36, 40 + u * 260, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "rgba(255, 77, 24, " + (0.3 + hot * 0.6) + ")";
+      g.lineWidth = 3;
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2 + u;
+        g.beginPath();
+        g.moveTo(Math.cos(ang) * 30, -36 + Math.sin(ang) * 30);
+        g.lineTo(Math.cos(ang) * (80 + u * 180), -36 + Math.sin(ang) * (80 + u * 180));
+        g.stroke();
+      }
+    }
+  }
+
+  function drawFx(g, dt) {
+    for (let i = fx.length - 1; i >= 0; i--) {
+      const p = fx[i];
+      p.t += dt;
+      const u = p.t / p.life;
+      if (u >= 1) {
+        fx.splice(i, 1);
+        continue;
+      }
+      if (p.kind === "ring") {
+        const r = lerp(p.r0, p.r1, u);
+        g.strokeStyle = p.color;
+        g.globalAlpha = 1 - u;
+        g.lineWidth = 3 * (1 - u);
+        g.beginPath();
+        g.arc(p.x, p.y, r, 0, Math.PI * 2);
+        g.stroke();
+        g.globalAlpha = 1;
+      } else if (p.kind === "shard") {
+        p.x += p.vx * dt * 0.06;
+        p.y += p.vy * dt * 0.06;
+        p.vy += 0.08;
+        g.fillStyle = p.color;
+        g.globalAlpha = 1 - u;
+        g.beginPath();
+        g.moveTo(p.x, p.y);
+        g.lineTo(p.x + 5, p.y + 9);
+        g.lineTo(p.x - 4, p.y + 7);
+        g.closePath();
+        g.fill();
+        g.globalAlpha = 1;
+      } else if (p.kind === "burst") {
+        g.fillStyle = p.color;
+        g.globalAlpha = (1 - u) * 0.35;
+        g.beginPath();
+        g.arc(p.x, p.y, 12 + u * 70, 0, Math.PI * 2);
+        g.fill();
+        g.globalAlpha = 1;
+      }
+    }
+  }
+
+  function nearestTelegraph(sim) {
+    let best = 0;
+    for (let i = 0; i < sim.attacks.length; i++) {
+      const a = sim.attacks[i];
+      if (a.resolved || sim.t < a.telegraphStart) continue;
+      best = Math.max(best, attackProgress(a, sim.t));
+    }
+    return best;
+  }
+
+  function render(now) {
+    resize();
+    const w = canvas.width;
+    const h = canvas.height;
+    const g = ctx;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, w, h);
+
+    const scale = Math.min(w, h) / 800;
+    const cx = w / 2;
+    const cy = h / 2 + 28 * scale;
+
+    if (!reduced) {
+      camX *= 0.82;
+      camY *= 0.82;
+      camPunch += (1 - camPunch) * 0.12;
+      flash *= 0.86;
+    } else {
+      camX = camY = 0;
+      camPunch = 1;
+      flash = 0;
+    }
+
+    g.fillStyle = "#120C0A";
+    g.fillRect(0, 0, w, h);
+
+    g.save();
+    g.translate(cx + camX * scale, cy + camY * scale);
+    g.scale(scale * camPunch, scale * camPunch);
+
+    const tVis = live.started ? live.t : now * 0.06;
+    const hpRatio = live.boss.hp / live.boss.maxHp;
+    const phase = live.phase;
+
+    const well = g.createRadialGradient(0, 40, 20, 0, 40, 340);
+    well.addColorStop(0, phase >= 3 ? "#3A1A10" : "#2A1610");
+    well.addColorStop(0.55, "#1A100C");
+    well.addColorStop(1, "#0B0706");
+    g.fillStyle = well;
+    g.beginPath();
+    g.arc(0, 40, 340, 0, Math.PI * 2);
+    g.fill();
+
+    const bricks = bricksFor(live.seed);
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i];
+      g.strokeStyle = "rgba(74, 42, 30, " + (0.35 + b.shade) + ")";
+      g.lineWidth = b.h * 0.35;
+      g.beginPath();
+      g.arc(0, 40, b.r, b.a, b.a + b.w);
+      g.stroke();
+    }
+
+    g.strokeStyle = "rgba(255, 176, 48, 0.18)";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(0, 40, 268, 0, Math.PI * 2);
+    g.stroke();
+    g.strokeStyle = "rgba(126, 224, 214, 0.22)";
+    g.lineWidth = 3;
+    g.beginPath();
+    g.arc(0, 228, 46, 0, Math.PI * 2);
+    g.stroke();
+
+    if (!reduced) {
+      g.globalAlpha = 0.35;
+      for (let i = 0; i < 18; i++) {
+        const seed = (i * 97 + live.seed) % 1000;
+        const px = ((seed * 13) % 280) - 140;
+        const py = 220 - ((tVis * 0.04 + seed) % 280);
+        g.fillStyle = i % 3 === 0 ? "#FFB030" : "#FF4D18";
+        g.beginPath();
+        g.arc(px, py, 1.4, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+    }
+
+    const tel = nearestTelegraph(live);
+    const stagger = Math.max(0, live.boss.staggerUntil - live.t);
+    drawGlassBody(g, tVis, phase, hpRatio, stagger, tel);
+
+    for (let i = 0; i < live.attacks.length; i++) drawAttack(g, live.attacks[i], live.t);
+
+    drawPlayer(g, live, tel);
+    drawFx(g, 16);
+
+    g.restore();
+
+    if (flash > 0.02) {
+      g.fillStyle = "rgba(255, 241, 194, " + flash + ")";
+      g.fillRect(0, 0, w, h);
+    }
+
+    const vig = g.createRadialGradient(cx, cy, Math.min(w, h) * 0.25, cx, cy, Math.max(w, h) * 0.72);
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(8,5,4,0.55)");
+    g.fillStyle = vig;
+    g.fillRect(0, 0, w, h);
+  }
+
+  function syncUi() {
+    const s = live.snapshot();
+    const key = [
+      s.started, s.paused, s.demo, s.outcome, s.phase, s.player.hp, s.boss.hp, s.score.combo, audio.muted
+    ].join("|");
+    if (key === lastUi) return;
+    lastUi = key;
+
+    ui.bossName.textContent = BOSS_NAME;
+    ui.bossHp.textContent = String(s.boss.hp);
+    ui.bossFill.style.transform = "scaleX(" + (s.boss.hp / s.boss.maxHp) + ")";
+    ui.playerHp.textContent = String(s.player.hp);
+    ui.playerFill.style.transform = "scaleX(" + (s.player.hp / s.player.maxHp) + ")";
+    ui.phase.textContent = PHASE_NAMES[s.phase - 1];
+    for (let i = 0; i < 3; i++) ui.pips[i].classList.toggle("on", i < s.phase);
+
+    ui.start.disabled = !!(s.started && !s.outcome);
+    ui.pause.disabled = !s.started || !!s.outcome;
+    ui.pause.textContent = s.paused ? "Resume" : "Pause";
+    ui.demo.setAttribute("aria-pressed", s.demo ? "true" : "false");
+    ui.mute.setAttribute("aria-pressed", audio.muted ? "true" : "false");
+    ui.mute.textContent = audio.muted ? "Unmute" : "Mute";
+
+    ui.instruction.hidden = !!(s.started && !s.outcome);
+    if (!s.started && !s.outcome) ui.instruction.textContent = "Temper as the glass blooms.";
+
+    if (s.score.combo >= 2 && s.started && !s.outcome) {
+      ui.combo.hidden = false;
+      ui.combo.textContent = "x" + s.score.combo;
+    } else {
+      ui.combo.hidden = true;
+    }
+
+    if (s.outcome === "success") {
+      ui.banner.hidden = false;
+      ui.bannerTitle.textContent = "Annealed";
+      ui.bannerBody.textContent = "Vitrifex cools to still glass. Restart to temper the kiln again.";
+    } else if (s.outcome === "failure") {
+      ui.banner.hidden = false;
+      ui.bannerTitle.textContent = "Slag";
+      ui.bannerBody.textContent = "The gather swallowed you. Temper the bloom, not the aftershock.";
+    } else {
+      ui.banner.hidden = true;
+    }
+  }
+
+  let last = performance.now();
+  let hiddenPause = false;
+
+  function frame(now) {
+    const raw = now - last;
+    last = now;
+    const dt = Math.min(raw, 48);
+    if (!document.hidden) {
+      if (live.started && !live.paused && !live.outcome) live.step(dt);
+      if (live.demo && live.outcome) {
+        demoHold += dt;
+        if (demoHold > 2200) {
+          demoHold = 0;
+          const seed = live.seed;
+          live.reset(seed);
+          live.setDemo(true);
+        }
+      } else {
+        demoHold = 0;
+      }
+    }
+    drainEvents();
+    render(now);
+    syncUi();
+    requestAnimationFrame(frame);
+  }
+
+  function onPress(ev) {
+    if (ev && ev.target && ev.target.closest && ev.target.closest("button")) return;
+    audio.ensure();
+    live.press();
+    syncUi();
+  }
+
+  ui.start.addEventListener("click", () => {
+    audio.ensure();
+    live.demo = false;
+    live.start();
+    canvas.focus();
+    syncUi();
+  });
+  ui.pause.addEventListener("click", () => {
+    if (!live.started || live.outcome) return;
+    live.paused = !live.paused;
+    syncUi();
+  });
+  ui.restart.addEventListener("click", () => {
+    const seed = live.seed;
+    const demo = live.demo;
+    live.reset(seed);
+    if (demo) live.setDemo(true);
+    syncUi();
+  });
+  ui.demo.addEventListener("click", () => {
+    audio.ensure();
+    if (live.demo && live.started && !live.outcome) {
+      live.demo = false;
+      live.paused = true;
+    } else {
+      live.reset(live.seed);
+      live.setDemo(true);
+    }
+    syncUi();
+  });
+  ui.mute.addEventListener("click", () => {
+    audio.muted = !audio.muted;
+    if (!audio.muted) audio.ensure();
+    else if (audio.ctx && audio.ctx.state === "running") audio.ctx.suspend();
+    syncUi();
+  });
+
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button && e.button !== 0) return;
+    e.preventDefault();
+    onPress(e);
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space" || e.key === " ") {
+      const tag = e.target && e.target.tagName;
+      if (tag === "BUTTON") return;
+      e.preventDefault();
+      if (!e.repeat) onPress(e);
+    } else if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+      if (live.started && !live.outcome) {
+        live.paused = !live.paused;
+        syncUi();
+      }
+    }
+  });
+
+  window.addEventListener("resize", resize);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (live.started && !live.paused && !live.outcome) {
+        live.paused = true;
+        hiddenPause = true;
+      }
+    } else {
+      last = performance.now();
+      if (hiddenPause) {
+        live.paused = false;
+        hiddenPause = false;
+      }
+    }
+  });
+
+  window.__BOSS_FIGHT__ = {
+    reset: function (seed) { return live.reset(seed); },
+    start: function () { return live.start(); },
+    setDemo: function (enabled) { return live.setDemo(enabled); },
+    press: function () { return live.press(); },
+    step: function (ms) { return live.step(ms); },
+    snapshot: function () { return live.snapshot(); },
+    runSelfTest: runSelfTest
+  };
+
+  resize();
+  syncUi();
+  requestAnimationFrame(frame);
+})();
+  </script>
+</body>
+</html>

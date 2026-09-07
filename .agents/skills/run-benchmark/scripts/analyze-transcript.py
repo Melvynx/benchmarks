@@ -88,9 +88,105 @@ def extract_message(record: dict[str, Any]) -> Iterable[tuple[str, str, str]]:
     return extracted
 
 
+def extract_opencode(record: dict[str, Any]) -> Iterable[tuple[str, str, str]]:
+    event_type = record.get("type")
+    part = record.get("part") or {}
+    if not isinstance(part, dict):
+        part = {}
+    if event_type == "text":
+        return [("text", "", str(part.get("text") or ""))]
+    if event_type == "tool_use":
+        state = part.get("state") if isinstance(part.get("state"), dict) else {}
+        return [
+            (
+                "tool",
+                str(part.get("tool") or ""),
+                compact_json(state.get("input") or {}),
+            )
+        ]
+    return []
+
+
+CURSOR_TOOL_ALIASES = {
+    "shellToolCall": "bash",
+    "readToolCall": "read",
+    "editToolCall": "edit",
+    "writeToolCall": "write",
+    "globToolCall": "glob",
+    "grepToolCall": "grep",
+    "deleteToolCall": "delete",
+    "updateTodosToolCall": "todowrite",
+    "webSearchToolCall": "web_search",
+    "webFetchToolCall": "web_fetch",
+    "lsToolCall": "glob",
+}
+
+
+def cursor_tool_name(kind: str) -> str:
+    if kind in CURSOR_TOOL_ALIASES:
+        return CURSOR_TOOL_ALIASES[kind]
+    base = kind.removesuffix("ToolCall") if kind.endswith("ToolCall") else kind
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", base).lower()
+
+
+def cursor_tool_text(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return compact_json(payload)
+    args = payload["args"] if isinstance(payload.get("args"), dict) else payload
+    parts: list[str] = []
+    for key in (
+        "command",
+        "path",
+        "globPattern",
+        "pattern",
+        "query",
+        "url",
+        "targetDirectory",
+    ):
+        value = args.get(key)
+        if value:
+            parts.append(str(value))
+    if args.get("todos"):
+        parts.append(compact_json(args["todos"]))
+    if parts:
+        return " ".join(parts)
+    skipped = {
+        "parsingResult",
+        "streamContent",
+        "toolCallId",
+        "simpleCommands",
+        "fileOutputThreshold",
+    }
+    return compact_json({key: value for key, value in args.items() if key not in skipped})
+
+
+def extract_cursor_agent(record: dict[str, Any]) -> Iterable[tuple[str, str, str]]:
+    record_type = record.get("type")
+    if record_type == "thinking":
+        text = str(record.get("text") or "")
+        return [("thinking", "", text)] if text else []
+    if record_type != "tool_call" or record.get("subtype") != "started":
+        return []
+    tool_call = record.get("tool_call")
+    if not isinstance(tool_call, dict):
+        return []
+    kind = next((key for key in tool_call if str(key).endswith("ToolCall")), "")
+    if not kind:
+        return []
+    return [("tool", cursor_tool_name(kind), cursor_tool_text(tool_call.get(kind)))]
+
+
 def extract_segments(record: dict[str, Any]) -> Iterable[tuple[str, str, str]]:
+    cursor = list(extract_cursor_agent(record))
+    if cursor:
+        return cursor
     codex = list(extract_codex(record))
-    return codex if codex else extract_message(record)
+    if codex:
+        return codex
+    opencode = list(extract_opencode(record))
+    if opencode:
+        return opencode
+    return extract_message(record)
 
 
 def score_text(text: str) -> dict[str, int]:
@@ -105,7 +201,7 @@ def score_text(text: str) -> dict[str, int]:
 def classify(kind: str, tool_name: str, text: str, current_phase: str) -> str:
     name = tool_name.lower()
     combined = f"{tool_name} {text}".strip()
-    if name in {"file_change", "edit", "write", "notebookedit"}:
+    if name in {"file_change", "edit", "write", "notebookedit", "delete"}:
         return "implementation"
     if name in {"taskcreate", "todowrite", "todo_list", "update_plan"}:
         return "planning"

@@ -1,5 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router"
 import {
+  ActivityIcon,
   CalendarDaysIcon,
   Columns2Icon,
   CopyIcon,
@@ -67,8 +68,12 @@ import { TranscriptViewer } from "@/components/transcript-viewer"
 import { EvidenceOverview } from "@/components/evidence-overview"
 import { getBenchmarkCatalog } from "@/lib/catalog"
 import { effortLabel } from "@/lib/effort-label"
-import type { SessionUsage } from "@/lib/session-usage"
+import {
+  usageDurationLabel,
+  type SessionUsage,
+} from "@/lib/session-usage"
 import type { IntegrityAnalysis } from "@/lib/integrity-analysis"
+import type { ModelReview } from "@/lib/model-review"
 
 const integerFormatter = new Intl.NumberFormat("en")
 const currencyFormatter = new Intl.NumberFormat("en", {
@@ -428,13 +433,22 @@ function BenchmarkCompare() {
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Select up to four generated apps.
               </p>
-              <Link
-                to="/prompts"
-                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary"
-              >
-                <FileTextIcon className="size-3.5" />
-                Browse prompts
-              </Link>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <Link
+                  to="/prompts"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary"
+                >
+                  <FileTextIcon className="size-3.5" />
+                  Browse prompts
+                </Link>
+                <Link
+                  to="/runs"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary"
+                >
+                  <ActivityIcon className="size-3.5" />
+                  Runs
+                </Link>
+              </div>
             </div>
           </div>
           <FieldGroup className="grid grid-cols-2 gap-2">
@@ -921,16 +935,23 @@ function BenchmarkCompare() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label={`${evidenceIdSet.has(entry.id) ? "Show app" : "Show transcript"} for ${entry.model}`}
-                      aria-pressed={evidenceIdSet.has(entry.id)}
+                      aria-label={`${evidenceIdSet.has(entry.id) && entry.hasPreview ? "Show app" : "Show transcript"} for ${entry.model}`}
+                      aria-pressed={
+                        evidenceIdSet.has(entry.id) || !entry.hasPreview
+                      }
                       title={
-                        evidenceIdSet.has(entry.id) ? "Show app" : "Transcript"
+                        !entry.hasPreview
+                          ? "Transcript (no static preview recorded)"
+                          : evidenceIdSet.has(entry.id)
+                            ? "Show app"
+                            : "Transcript"
                       }
                       className={
-                        evidenceIdSet.has(entry.id)
+                        evidenceIdSet.has(entry.id) || !entry.hasPreview
                           ? "bg-secondary text-foreground"
                           : undefined
                       }
+                      disabled={!entry.hasPreview}
                       onClick={() => toggleEvidence(entry.id)}
                     >
                       <FileTextIcon />
@@ -948,7 +969,7 @@ function BenchmarkCompare() {
                     </Button>
                   </div>
                   <CardContent className="min-h-0 min-w-0 flex-1 overflow-hidden p-0">
-                    {evidenceIdSet.has(entry.id) ? (
+                    {evidenceIdSet.has(entry.id) || !entry.hasPreview ? (
                       <EvidencePanel entry={entry} />
                     ) : (
                       <iframe
@@ -979,6 +1000,7 @@ type Evidence = {
   evidencePath: string
   effort: string
   durationMs: number | null
+  activeDurationMs: number | null
   benchmarkId: string
   final: string
   prompt: string
@@ -989,6 +1011,7 @@ type Evidence = {
   transcriptPaths: string[]
   transcriptAnalysis: TranscriptAnalysis | null
   integrityAnalysis: IntegrityAnalysis | null
+  modelReview: ModelReview | null
   transcriptOriginalBytes: number
   sessionUsage: SessionUsage | null
 }
@@ -1072,10 +1095,14 @@ function EvidencePanel({
               model={entry.model}
               date={entry.date}
               effort={effortLabel(evidence.effort || entry.effort)}
-              duration={durationLabel(evidence.durationMs ?? entry.durationMs)}
+              activeDuration={durationLabel(
+                evidence.activeDurationMs ?? evidence.durationMs ?? entry.durationMs
+              )}
+              wallDuration={durationLabel(evidence.durationMs ?? entry.durationMs)}
               usage={evidence.sessionUsage}
               analysis={evidence.transcriptAnalysis}
               integrity={evidence.integrityAnalysis}
+              review={evidence.modelReview}
             />
           </TabsContent>
           <TabsContent value="transcript" className="min-h-0 flex-1">
@@ -1083,7 +1110,7 @@ function EvidencePanel({
               <TranscriptViewer
                 transcript={evidence.transcript}
                 prompt={evidence.prompt}
-                durationMs={evidence.durationMs}
+                durationMs={evidence.activeDurationMs ?? evidence.durationMs}
               />
             ) : (
               <Empty>
@@ -1152,6 +1179,18 @@ function ExtendedEvidence({
   const usage = evidence.sessionUsage
   const details = [
     [
+      "Wall time",
+      evidence.durationMs === null
+        ? null
+        : durationLabel(evidence.durationMs).replace("Time: ", ""),
+    ],
+    [
+      "Active transcript time",
+      evidence.activeDurationMs === null
+        ? null
+        : durationLabel(evidence.activeDurationMs).replace("Time: ", ""),
+    ],
+    [
       "Cache creation",
       usage?.cache_creation_input_tokens === null ||
       usage?.cache_creation_input_tokens === undefined
@@ -1171,7 +1210,7 @@ function ExtendedEvidence({
         : tokenLabel(usage.num_turns),
     ],
     [
-      "API time",
+      usageDurationLabel(entry.model),
       usage?.duration_api_ms === null || usage?.duration_api_ms === undefined
         ? null
         : durationLabel(usage.duration_api_ms).replace("Time: ", ""),

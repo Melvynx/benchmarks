@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Cursor Grok 4.6</title>
+  <style>
+    :root {
+      --night: oklch(0.125 0.018 52);
+      --umbra: oklch(0.08 0.016 48);
+      --bone: oklch(0.93 0.022 88);
+      --corona: oklch(0.86 0.13 68);
+      --flare: oklch(0.67 0.18 44);
+      --oxide: oklch(0.46 0.045 162);
+      --velvet: oklch(0.36 0.11 22);
+      --line: color-mix(in oklch, var(--corona) 22%, transparent);
+      --display: Georgia, "Palatino Linotype", Palatino, "Times New Roman", serif;
+      --plate: "Arial Narrow", "Gill Sans", "Trebuchet MS", "Segoe UI", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --chrome: 58px;
+      --dock: 52px;
+      --ease: cubic-bezier(.16, 1, .3, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--umbra);
+      color: var(--bone);
+      font-family: var(--plate);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input { font: inherit; color: inherit; }
+    button {
+      background: none;
+      border: 0;
+      cursor: pointer;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    canvas:focus-visible {
+      outline: 2px solid var(--corona);
+      outline-offset: 3px;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .skip {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 40;
+      padding: 8px 12px;
+      background: var(--corona);
+      color: var(--umbra);
+      transform: translateY(-160%);
+    }
+    .skip:focus { transform: none; }
+
+    .app {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-rows: var(--chrome) minmax(0, 1fr) var(--dock);
+    }
+
+    .mast {
+      display: grid;
+      grid-template-columns: minmax(140px, .9fr) minmax(280px, 1.6fr) minmax(168px, .9fr);
+      align-items: stretch;
+      border-bottom: 1px solid var(--line);
+      background: var(--night);
+      z-index: 8;
+    }
+
+    .model-name {
+      margin: 0;
+      padding: 0 clamp(12px, 2vw, 28px);
+      display: flex;
+      align-items: center;
+      font-family: var(--display);
+      font-size: clamp(16px, 1.5vw, 22px);
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      color: var(--bone);
+      white-space: nowrap;
+    }
+
+    .modes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-inline: 1px solid var(--line);
+    }
+    .mode-btn {
+      position: relative;
+      min-width: 0;
+      padding: 0 8px;
+      font-size: clamp(13px, 1.3vw, 18px);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: color-mix(in oklch, var(--bone) 55%, var(--oxide));
+      overflow: hidden;
+    }
+    .mode-btn + .mode-btn { border-left: 1px solid var(--line); }
+    .mode-btn::after {
+      content: "";
+      position: absolute;
+      left: 18%;
+      right: 18%;
+      bottom: 0;
+      height: 2px;
+      background: var(--corona);
+      transform: scaleX(0);
+      transform-origin: center;
+      transition: transform 420ms var(--ease);
+    }
+    .mode-btn:hover { color: var(--bone); }
+    .mode-btn[aria-selected="true"] { color: var(--bone); }
+    .mode-btn[aria-selected="true"]::after { transform: scaleX(1); }
+
+    .seeds {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      padding: 0 clamp(10px, 1.8vw, 22px);
+    }
+    .seed-label {
+      margin-right: 4px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: color-mix(in oklch, var(--bone) 50%, var(--oxide));
+    }
+    .seed-btn {
+      min-width: 36px;
+      height: 28px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: color-mix(in oklch, var(--bone) 70%, var(--corona));
+    }
+    .seed-btn[aria-pressed="true"] {
+      background: var(--corona);
+      color: var(--umbra);
+      border-color: var(--corona);
+    }
+
+    .stage {
+      position: relative;
+      min-height: 0;
+      background: var(--umbra);
+      overflow: hidden;
+    }
+
+    .expression {
+      display: none;
+      width: 100%;
+      height: 100%;
+    }
+    .expression.is-active { display: flex; }
+
+    .poster-stage {
+      align-items: center;
+      justify-content: center;
+      padding: clamp(8px, 2vh, 28px);
+      background:
+        repeating-linear-gradient(
+          90deg,
+          transparent 0 47px,
+          color-mix(in oklch, var(--oxide) 18%, transparent) 47px 48px
+        );
+    }
+    .poster-frame {
+      position: relative;
+      flex: 0 0 auto;
+      background: var(--night);
+      box-shadow:
+        0 0 0 1px color-mix(in oklch, var(--corona) 28%, transparent),
+        0 28px 90px oklch(0.04 0.02 48 / 0.85);
+    }
+    .poster-frame canvas,
+    .fill-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .motion-stage,
+    .instrument-stage {
+      position: relative;
+    }
+    .fill-canvas {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    .wipe {
+      pointer-events: none;
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      display: flex;
+      justify-content: center;
+    }
+    .wipe span {
+      width: 2px;
+      height: 100%;
+      background: var(--corona);
+      transform: scaleX(0);
+      opacity: 0;
+    }
+    .wipe.run span {
+      animation: slitwipe 720ms var(--ease);
+    }
+    @keyframes slitwipe {
+      0% { transform: scaleX(0); opacity: 1; }
+      28% { transform: scaleX(18); opacity: 1; }
+      100% { transform: scaleX(0); opacity: 0; }
+    }
+
+    .dock {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: center;
+      border-top: 1px solid var(--line);
+      background: var(--night);
+      z-index: 8;
+    }
+    .transport, .hint {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 0 clamp(12px, 2vw, 28px);
+      height: 100%;
+    }
+    body[data-mode="motion"] .transport { display: flex; }
+    body[data-mode="instrument"] .hint { display: flex; }
+    body[data-mode="poster"] .plate-note { display: flex; }
+
+    .plate-note {
+      display: none;
+      align-items: center;
+      padding: 0 clamp(12px, 2vw, 28px);
+      height: 100%;
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: color-mix(in oklch, var(--bone) 55%, var(--oxide));
+    }
+
+    .transport button {
+      min-width: 72px;
+      height: 30px;
+      border: 1px solid var(--line);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+    .transport button:hover {
+      border-color: var(--corona);
+      color: var(--corona);
+    }
+    .scrub {
+      flex: 1;
+      min-width: 80px;
+      accent-color: var(--flare);
+      height: 18px;
+    }
+    .timecode {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      min-width: 15ch;
+      color: var(--corona);
+    }
+    .hint {
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: color-mix(in oklch, var(--bone) 60%, var(--oxide));
+    }
+
+    @media (max-width: 760px) {
+      :root { --chrome: 96px; --dock: 64px; }
+      .mast {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 42px 54px;
+      }
+      .model-name { grid-column: 1; font-size: 16px; }
+      .seeds { grid-column: 2; }
+      .modes { grid-column: 1 / -1; border-inline: 0; border-top: 1px solid var(--line); }
+      .transport { flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+      .hint, .plate-note { font-size: 10px; letter-spacing: 0.1em; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .mode-btn::after, .wipe span { transition: none; animation: none !important; }
+    }
+  </style>
+</head>
+<body data-mode="poster">
+  <a class="skip" href="#stage">Skip to identity</a>
+  <p class="sr-only">NOCTURNE. Festival of Impossible Light. 18 October. Doors 19:30. Atlas Observatory. Mira Vale · Glass Choir · Static Bloom. ceremonial · electric · intimate.</p>
+  <div class="app">
+    <header class="mast">
+      <h1 class="model-name">Cursor Grok 4.6</h1>
+      <div class="modes" role="tablist" aria-label="Identity expressions">
+        <button class="mode-btn" role="tab" id="tab-poster" data-mode="poster" aria-selected="true" aria-controls="expr-poster">Poster</button>
+        <button class="mode-btn" role="tab" id="tab-motion" data-mode="motion" aria-selected="false" aria-controls="expr-motion" tabindex="-1">Motion</button>
+        <button class="mode-btn" role="tab" id="tab-instrument" data-mode="instrument" aria-selected="false" aria-controls="expr-instrument" tabindex="-1">Instrument</button>
+      </div>
+      <div class="seeds" role="group" aria-label="Identity seeds">
+        <span class="seed-label">Plate</span>
+        <button class="seed-btn" data-seed="18" aria-pressed="true">18</button>
+        <button class="seed-btn" data-seed="73" aria-pressed="false">73</button>
+        <button class="seed-btn" data-seed="190" aria-pressed="false">190</button>
+        <button class="seed-btn" data-seed="1930" aria-pressed="false">1930</button>
+      </div>
+    </header>
+
+    <main class="stage" id="stage">
+      <div class="wipe" id="wipe" aria-hidden="true"><span></span></div>
+
+      <section class="expression poster-stage is-active" id="expr-poster" role="tabpanel" aria-labelledby="tab-poster">
+        <div class="poster-frame" id="poster-frame">
+          <canvas id="poster" aria-label="NOCTURNE festival poster"></canvas>
+        </div>
+      </section>
+
+      <section class="expression motion-stage" id="expr-motion" role="tabpanel" aria-labelledby="tab-motion" aria-hidden="true">
+        <canvas class="fill-canvas" id="motion" aria-label="NOCTURNE kinetic title sequence"></canvas>
+      </section>
+
+      <section class="expression instrument-stage" id="expr-instrument" role="tabpanel" aria-labelledby="tab-instrument" aria-hidden="true">
+        <canvas class="fill-canvas" id="instrument" tabindex="0" aria-label="NOCTURNE observatory instrument. Point to aim the slit, drag to focus, space to expose."></canvas>
+      </section>
+    </main>
+
+    <footer class="dock">
+      <div class="plate-note">Glass plate · 4:5 · Atlas Observatory</div>
+      <div class="transport" aria-label="Motion transport">
+        <button type="button" id="play-pause">Play</button>
+        <button type="button" id="replay">Replay</button>
+        <input class="scrub" id="scrub" type="range" min="0" max="12000" value="0" step="1" aria-label="Motion timeline">
+        <span class="timecode" id="timecode">00:00.000 / 00:12.000</span>
+      </div>
+      <p class="hint">Point to aim the slit · Drag to focus · Space to expose the plate</p>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      const DURATION = 12000;
+      const MODES = ["poster", "motion", "instrument"];
+      const EVENT = {
+        name: "NOCTURNE",
+        description: "Festival of Impossible Light",
+        date: "18 October",
+        doors: "19:30",
+        venue: "Atlas Observatory",
+        artists: "Mira Vale · Glass Choir · Static Bloom",
+        tension: "ceremonial · electric · intimate"
+      };
+      const SEEDS = [18, 73, 190, 1930];
+
+      const els = {
+        body: document.body,
+        wipe: document.getElementById("wipe"),
+        posterFrame: document.getElementById("poster-frame"),
+        poster: document.getElementById("poster"),
+        motion: document.getElementById("motion"),
+        instrument: document.getElementById("instrument"),
+        expressions: {
+          poster: document.getElementById("expr-poster"),
+          motion: document.getElementById("expr-motion"),
+          instrument: document.getElementById("expr-instrument")
+        },
+        modeButtons: Array.from(document.querySelectorAll(".mode-btn")),
+        seedButtons: Array.from(document.querySelectorAll(".seed-btn")),
+        playPause: document.getElementById("play-pause"),
+        replay: document.getElementById("replay"),
+        scrub: document.getElementById("scrub"),
+        timecode: document.getElementById("timecode")
+      };
+
+      const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+      let reducedMotion = reducedQuery.matches;
+      reducedQuery.addEventListener("change", (e) => { reducedMotion = e.matches; });
+
+      const posterCtx = els.poster.getContext("2d");
+      const motionCtx = els.motion.getContext("2d");
+      const instrumentCtx = els.instrument.getContext("2d");
+
+      let grainCanvas = null;
+      let grainSeed = null;
+
+      const state = {
+        seed: 18,
+        mode: "poster",
+        motionTime: 0,
+        playing: false,
+        lastFrame: performance.now(),
+        identity: null,
+        instrument: defaultInstrument()
+      };
+
+      function defaultInstrument() {
+        return {
+          pointerX: 0.62,
+          pointerY: 0.38,
+          azimuth: -0.55,
+          altitude: 0.42,
+          aperture: 0.018,
+          energy: 0,
+          shutter: 0,
+          phase: 0,
+          dragCount: 0,
+          down: false,
+          burns: []
+        };
+      }
+
+      function mulberry32(a) {
+        return function () {
+          a |= 0;
+          a = a + 0x6D2B79F5 | 0;
+          let t = Math.imul(a ^ a >>> 15, 1 | a);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+      function lerp(a, b, t) { return a + (b - a) * t; }
+      function map(t, a, b) { return clamp((b === a ? 1 : (t - a) / (b - a)), 0, 1); }
+      function easeOutExpo(t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); }
+      function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+      function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+      function generateIdentity(seed) {
+        const rng = mulberry32(seed >>> 0);
+        const warmth = rng();
+        const slitX = lerp(0.34, 0.46, rng());
+        const slitAngle = lerp(-0.08, 0.08, rng());
+        const ringCount = 5 + Math.floor(rng() * 3);
+        const rings = [];
+        for (let i = 0; i < ringCount; i++) {
+          rings.push({
+            t: (i + 1) / (ringCount + 0.4),
+            gap: lerp(0.18, 0.42, rng()),
+            weight: lerp(0.6, 1.8, rng()),
+            oxide: rng() > 0.72
+          });
+        }
+        const ticks = 48 + Math.floor(rng() * 24);
+        return {
+          seed,
+          slitX,
+          slitAngle,
+          ringCount,
+          rings,
+          ticks,
+          eccentricity: lerp(0.0, 0.045, rng()),
+          cut: lerp(6, 16, rng()),
+          corona: lerp(0.55, 0.95, rng()),
+          warmth,
+          grain: lerp(0.1, 0.22, rng()),
+          letterTrack: lerp(0.08, 0.18, rng()),
+          markPhase: rng() * Math.PI * 2,
+          hueShift: lerp(-8, 12, warmth)
+        };
+      }
+
+      function colors(id) {
+        const h = 68 + id.hueShift;
+        return {
+          night: `oklch(0.125 0.018 ${52 + id.hueShift * 0.2})`,
+          umbra: `oklch(0.08 0.016 ${48 + id.hueShift * 0.15})`,
+          bone: `oklch(0.93 0.022 ${88 + id.hueShift * 0.1})`,
+          corona: `oklch(0.86 0.13 ${h})`,
+          flare: `oklch(0.67 0.18 ${44 + id.hueShift * 0.4})`,
+          oxide: `oklch(0.46 0.045 ${162 + id.hueShift * 0.2})`,
+          velvet: `oklch(0.36 0.11 ${22 + id.hueShift * 0.3})`
+        };
+      }
+
+      function makeGrain(seed) {
+        if (grainCanvas && grainSeed === seed) return grainCanvas;
+        const size = 128;
+        const c = document.createElement("canvas");
+        c.width = c.height = size;
+        const g = c.getContext("2d");
+        const img = g.createImageData(size, size);
+        const rng = mulberry32((seed * 997) >>> 0);
+        for (let i = 0; i < img.data.length; i += 4) {
+          const v = 180 + rng() * 75;
+          img.data[i] = v;
+          img.data[i + 1] = v * 0.96;
+          img.data[i + 2] = v * 0.88;
+          img.data[i + 3] = 22 + rng() * 18;
+        }
+        g.putImageData(img, 0, 0);
+        grainCanvas = c;
+        grainSeed = seed;
+        return c;
+      }
+
+      function fitCanvas(canvas, ctx) {
+        const rect = canvas.getBoundingClientRect();
+        const w = Math.max(0, rect.width);
+        const h = Math.max(0, rect.height);
+        const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+        const pw = Math.round(w * dpr);
+        const ph = Math.round(h * dpr);
+        if (canvas.width !== pw || canvas.height !== ph) {
+          canvas.width = pw;
+          canvas.height = ph;
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { w, h, dpr };
+      }
+
+      function layoutPoster() {
+        const stage = els.expressions.poster;
+        const pad = 8;
+        const sw = Math.max(0, stage.clientWidth - pad * 2);
+        const sh = Math.max(0, stage.clientHeight - pad * 2);
+        if (sw < 2 || sh < 2) return;
+        let w, h;
+        if (sw / sh > 4 / 5) {
+          h = sh;
+          w = h * 4 / 5;
+        } else {
+          w = sw;
+          h = w * 5 / 4;
+        }
+        els.posterFrame.style.width = w + "px";
+        els.posterFrame.style.height = h + "px";
+      }
+
+      function clipHalf(ctx, ox, oy, angle, side, span) {
+        const tx = Math.cos(angle);
+        const ty = Math.sin(angle);
+        const nx = -ty * side;
+        const ny = tx * side;
+        const far = span * 4;
+        ctx.beginPath();
+        ctx.moveTo(ox - tx * far, oy - ty * far);
+        ctx.lineTo(ox + tx * far, oy + ty * far);
+        ctx.lineTo(ox + tx * far + nx * far, oy + ty * far + ny * far);
+        ctx.lineTo(ox - tx * far + nx * far, oy - ty * far + ny * far);
+        ctx.closePath();
+        ctx.clip();
+      }
+
+      function drawGrain(ctx, w, h, id) {
+        const g = makeGrain(id.seed);
+        ctx.save();
+        ctx.globalAlpha = id.grain;
+        ctx.fillStyle = ctx.createPattern(g, "repeat");
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+      }
+
+      function drawSlit(ctx, ox, oy, angle, length, width, intensity, pal, chromatic) {
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.rotate(angle);
+        const hw = width / 2;
+        const hl = length / 2;
+        if (chromatic) {
+          ctx.globalCompositeOperation = "lighter";
+          ctx.fillStyle = pal.flare;
+          ctx.globalAlpha = intensity * 0.45;
+          ctx.fillRect(-hl, -hw - 1.2, length, width);
+          ctx.fillStyle = pal.oxide;
+          ctx.globalAlpha = intensity * 0.35;
+          ctx.fillRect(-hl, -hw + 1.2, length, width);
+        }
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = pal.corona;
+        ctx.globalAlpha = intensity;
+        ctx.fillRect(-hl, -hw, length, width);
+        ctx.globalAlpha = intensity * 0.22;
+        ctx.fillRect(-hl, -hw - 6, length, 1.2);
+        ctx.fillRect(-hl, hw + 5, length, 1.2);
+        ctx.globalAlpha = intensity * 0.12;
+        ctx.fillRect(-hl, -hw - 11, length, 1);
+        ctx.fillRect(-hl, hw + 10, length, 1);
+        ctx.restore();
+      }
+
+      function drawRings(ctx, cx, cy, maxR, id, pal, progress, rotation, closeGap) {
+        ctx.save();
+        id.rings.forEach((ring, i) => {
+          const p = Array.isArray(progress) ? progress[i] : progress;
+          if (p <= 0) return;
+          const r = maxR * ring.t * (1 + id.eccentricity * (i % 2 ? 1 : -1));
+          const sweep = lerp(Math.PI * 1.15, Math.PI * 2 * 0.92, closeGap) * p;
+          const start = id.markPhase + rotation + i * 0.17 - sweep / 2 + ring.gap * (1 - closeGap);
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, start, start + sweep);
+          ctx.strokeStyle = ring.oxide ? pal.oxide : (i === 1 ? pal.flare : pal.bone);
+          ctx.globalAlpha = ring.oxide ? 0.7 : 0.55;
+          ctx.lineWidth = ring.weight;
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
+
+      function drawTicks(ctx, cx, cy, r, id, pal, alpha) {
+        ctx.save();
+        ctx.strokeStyle = pal.bone;
+        ctx.globalAlpha = alpha;
+        for (let i = 0; i < id.ticks; i++) {
+          const a = id.markPhase + (i / id.ticks) * Math.PI * 2;
+          const long = i % 6 === 0;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(a) * (r - (long ? 10 : 5)), cy + Math.sin(a) * (r - (long ? 10 : 5)));
+          ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+          ctx.lineWidth = long ? 1.2 : 0.6;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawCutGlyph(ctx, ch, x, y, pal, ox, oy, angle, cut, alpha) {
+        if (alpha <= 0.01) return;
+        const span = 5000;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = pal.bone;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.save();
+        clipHalf(ctx, ox, oy, angle, -1, span);
+        ctx.fillText(ch, x - cut, y);
+        ctx.restore();
+        ctx.save();
+        clipHalf(ctx, ox, oy, angle, 1, span);
+        ctx.fillText(ch, x + cut, y);
+        ctx.restore();
+        ctx.restore();
+      }
+
+      function drawCutWord(ctx, text, x, y, font, pal, ox, oy, angle, cut, tracking, alphas) {
+        ctx.save();
+        ctx.font = font;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        const letters = Array.from(text);
+        const widths = letters.map((ch) => ctx.measureText(ch).width);
+        const extra = (ctx.measureText("M").width) * tracking;
+        const total = widths.reduce((a, b) => a + b, 0) + extra * (letters.length - 1);
+        let px = x - total / 2;
+        letters.forEach((ch, i) => {
+          const w = widths[i];
+          const a = Array.isArray(alphas) ? alphas[i] : alphas;
+          ctx.save();
+          ctx.textAlign = "left";
+          drawCutGlyph(ctx, ch, px + w / 2, y, pal, ox, oy, angle, cut, a);
+          ctx.restore();
+          px += w + extra;
+        });
+        ctx.restore();
+      }
+
+      function drawPlateHeader(ctx, w, y, pal, alpha) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = pal.bone;
+        ctx.font = "11px " + getComputedStyle(document.body).getPropertyValue("--plate");
+        ctx.letterSpacing = "0.22em";
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        ctx.fillText(EVENT.date.toUpperCase(), w * 0.08, y);
+        ctx.textAlign = "right";
+        ctx.fillText(EVENT.doors, w * 0.92, y);
+        ctx.strokeStyle = pal.corona;
+        ctx.globalAlpha = alpha * 0.45;
+        ctx.beginPath();
+        ctx.moveTo(w * 0.08, y + 14);
+        ctx.lineTo(w * 0.92, y + 14);
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function renderPoster() {
+        const { w, h } = fitCanvas(els.poster, posterCtx);
+        if (w < 2 || h < 2) return;
+        const ctx = posterCtx;
+        const id = state.identity;
+        const pal = colors(id);
+        const display = getComputedStyle(document.body).getPropertyValue("--display");
+        const plate = getComputedStyle(document.body).getPropertyValue("--plate");
+        const mono = getComputedStyle(document.body).getPropertyValue("--mono");
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = pal.night;
+        ctx.fillRect(0, 0, w, h);
+
+        const letters = Array.from(EVENT.name);
+        const nameSize = Math.round(h * 0.068);
+        const stackGap = nameSize * 1.05;
+        const stackTop = h * 0.175;
+        const oIndex = letters.indexOf("O");
+        const cx = w * id.slitX;
+        const cy = stackTop + oIndex * stackGap;
+        const maxR = h * 0.56;
+        const slitAngle = Math.PI / 2 + id.slitAngle;
+        const cut = id.cut * (w / 380);
+
+        ctx.save();
+        ctx.fillStyle = pal.velvet;
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxR * 0.155, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = pal.night;
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxR * 0.092, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        drawRings(ctx, cx, cy, maxR, id, pal, 1, 0, 0.12);
+        drawTicks(ctx, cx, cy, maxR * 0.88, id, pal, 0.3);
+
+        ctx.save();
+        ctx.strokeStyle = pal.flare;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 1.2;
+        const doorAng = id.markPhase + (19.5 / 24) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(doorAng) * maxR * 0.2, cy + Math.sin(doorAng) * maxR * 0.2);
+        ctx.lineTo(cx + Math.cos(doorAng) * maxR * 0.86, cy + Math.sin(doorAng) * maxR * 0.86);
+        ctx.stroke();
+        ctx.restore();
+
+        const slitLen = h * 0.92;
+        const slitWid = Math.max(2.2, w * 0.009);
+        drawSlit(ctx, cx, cy, slitAngle, slitLen, slitWid, 0.95, pal, true);
+
+        ctx.save();
+        ctx.fillStyle = pal.corona;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(2.2, w * 0.007), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.font = nameSize + "px " + display;
+        letters.forEach((ch, i) => {
+          const y = stackTop + i * stackGap;
+          if (ch === "O") return;
+          ctx.save();
+          ctx.globalAlpha = 0.22;
+          ctx.fillStyle = pal.bone;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(ch, cx, y);
+          ctx.restore();
+          drawCutGlyph(ctx, ch, cx, y, pal, cx, cy, slitAngle, cut * 0.55, 1);
+        });
+
+        ctx.save();
+        ctx.fillStyle = pal.bone;
+        ctx.globalAlpha = 0.12;
+        ctx.font = Math.round(h * 0.2) + "px " + display;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText("18", w * 0.9, h * 0.84);
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = pal.corona;
+        ctx.font = "italic " + Math.round(w * 0.038) + "px " + display;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        const copyX = Math.max(w * 0.56, cx + nameSize * 0.95);
+        ctx.fillText("Festival of", copyX, h * 0.58);
+        ctx.fillText("Impossible Light", copyX, h * 0.62);
+        ctx.fillStyle = pal.bone;
+        ctx.font = Math.round(w * 0.03) + "px " + plate;
+        ctx.letterSpacing = "0.2em";
+        ctx.fillText(EVENT.venue.toUpperCase(), copyX, h * 0.68);
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = pal.bone;
+        ctx.font = Math.round(w * 0.028) + "px " + display;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(EVENT.artists, w * 0.52, h * 0.86);
+        ctx.fillStyle = pal.flare;
+        ctx.font = Math.round(w * 0.02) + "px " + plate;
+        ctx.letterSpacing = "0.16em";
+        ctx.fillText(EVENT.tension.toUpperCase(), w * 0.52, h * 0.91);
+        ctx.restore();
+
+        drawPlateHeader(ctx, w, h * 0.055, pal, 1);
+
+        ctx.save();
+        ctx.translate(w * 0.042, h * 0.5);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillStyle = pal.oxide;
+        ctx.font = "10px " + mono;
+        ctx.letterSpacing = "0.32em";
+        ctx.textAlign = "center";
+        ctx.fillText("PLATE " + id.seed + "  ·  DOME SLIT", 0, 0);
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = pal.corona;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(w * 0.032, h * 0.026, w * 0.936, h * 0.948);
+        ctx.restore();
+
+        drawGrain(ctx, w, h, id);
+      }
+
+      function motionScene(t) {
+        const id = state.identity;
+        const point = 0.18 + 0.82 * easeOutExpo(map(t, 60, 900));
+        const slitGrow = easeOutCubic(map(t, 700, 2400));
+        const rings = id.rings.map((_, i) => easeOutCubic(map(t, 1600 + i * 420, 2500 + i * 420)));
+        const letters = Array.from(EVENT.name).map((_, i) => easeOutCubic(map(t, 5200 + i * 180, 6000 + i * 180)));
+        const rot = reducedMotion ? 0 : lerp(0, 0.62, easeInOut(map(t, 1800, 7000)));
+        const climax = Math.sin(map(t, 7400, 9100) * Math.PI);
+        const closeGap = easeInOut(map(t, 7200, 8400)) * (1 - easeInOut(map(t, 9000, 10300)));
+        const subtitle = easeOutCubic(map(t, 9000, 10200));
+        const meta = easeOutCubic(map(t, 9800, 11300));
+        const slitWidth = lerp(0.0035, 0.01, slitGrow) + climax * 0.05;
+        const cut = lerp(id.cut * 3.4, id.cut * 0.15, easeOutCubic(map(t, 5200, 7400)));
+        return {
+          point, slitGrow, rings, letters, rot, climax, closeGap, subtitle, meta, slitWidth, cut,
+          hold: map(t, 11300, 12000)
+        };
+      }
+
+      function renderMotion() {
+        const { w, h } = fitCanvas(els.motion, motionCtx);
+        if (w < 2 || h < 2) return;
+        const ctx = motionCtx;
+        const id = state.identity;
+        const pal = colors(id);
+        const t = state.motionTime;
+        const sc = motionScene(t);
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = pal.umbra;
+        ctx.fillRect(0, 0, w, h);
+
+        const cx = w * 0.5;
+        const cy = h * 0.46;
+        const maxR = Math.min(w, h) * 0.46;
+        const slitAngle = Math.PI / 2 + id.slitAngle;
+
+        if (sc.point > 0) {
+          ctx.save();
+          ctx.fillStyle = pal.corona;
+          ctx.globalAlpha = 0.9;
+          ctx.beginPath();
+          ctx.arc(cx, cy, lerp(1.2, 3.5, sc.point) + sc.climax * 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        if (sc.climax > 0.02) {
+          ctx.save();
+          ctx.globalAlpha = sc.climax * 0.16;
+          ctx.strokeStyle = pal.flare;
+          ctx.lineWidth = Math.min(w, h) * 0.08 * sc.climax;
+          ctx.beginPath();
+          ctx.arc(cx, cy, maxR * (0.18 + sc.climax * 0.22), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        drawRings(ctx, cx, cy, maxR, id, pal, sc.rings, sc.rot, sc.closeGap);
+        if (sc.meta > 0.2) drawTicks(ctx, cx, cy, maxR * 0.9, id, pal, sc.meta * 0.35);
+
+        const slitLen = Math.min(w, h) * 0.92 * Math.max(sc.slitGrow, sc.point > 0.5 ? 0.08 : 0);
+        const slitWid = Math.max(1.5, Math.min(w, h) * sc.slitWidth);
+        if (sc.slitGrow > 0 || sc.point > 0.4) {
+          drawSlit(ctx, cx, cy, slitAngle, Math.max(slitLen, 8), slitWid, 0.55 + sc.climax * 0.45, pal, true);
+        }
+
+        const nameSize = Math.round(Math.min(w, h) * 0.11);
+        drawCutWord(
+          ctx, EVENT.name, cx, cy,
+          nameSize + "px " + getComputedStyle(document.body).getPropertyValue("--display"),
+          pal, cx, cy, slitAngle,
+          sc.cut * (w / 900), id.letterTrack, sc.letters
+        );
+
+        ctx.save();
+        ctx.globalAlpha = sc.subtitle;
+        ctx.fillStyle = pal.corona;
+        ctx.font = "italic " + Math.round(Math.min(w, h) * 0.032) + "px " + getComputedStyle(document.body).getPropertyValue("--display");
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(EVENT.description, cx, cy + Math.min(w, h) * 0.14);
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = sc.meta;
+        ctx.fillStyle = pal.bone;
+        ctx.font = Math.round(Math.min(w, h) * 0.022) + "px " + getComputedStyle(document.body).getPropertyValue("--plate");
+        ctx.letterSpacing = "0.24em";
+        ctx.textAlign = "center";
+        ctx.fillText(EVENT.date.toUpperCase() + "   ·   " + EVENT.doors + "   ·   " + EVENT.venue.toUpperCase(), cx, h * 0.82);
+        ctx.font = Math.round(Math.min(w, h) * 0.02) + "px " + getComputedStyle(document.body).getPropertyValue("--display");
+        ctx.letterSpacing = "0";
+        ctx.fillText(EVENT.artists, cx, h * 0.88);
+        ctx.fillStyle = pal.flare;
+        ctx.font = Math.round(Math.min(w, h) * 0.016) + "px " + getComputedStyle(document.body).getPropertyValue("--plate");
+        ctx.letterSpacing = "0.22em";
+        ctx.fillText(EVENT.tension.toUpperCase(), cx, h * 0.935);
+        ctx.restore();
+
+        drawGrain(ctx, w, h, id);
+      }
+
+      function renderInstrument() {
+        const { w, h } = fitCanvas(els.instrument, instrumentCtx);
+        if (w < 2 || h < 2) return;
+        const ctx = instrumentCtx;
+        const id = state.identity;
+        const pal = colors(id);
+        const inst = state.instrument;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = pal.umbra;
+        ctx.fillRect(0, 0, w, h);
+
+        const cx = w * 0.5;
+        const cy = h * 0.5;
+        const maxR = Math.min(w, h) * (0.38 + inst.altitude * 0.12);
+        const angle = inst.azimuth;
+        const energy = inst.energy;
+        const shutter = inst.shutter;
+
+        if (shutter > 0.02) {
+          ctx.save();
+          ctx.globalAlpha = shutter * 0.22;
+          ctx.fillStyle = pal.bone;
+          ctx.fillRect(0, 0, w, h);
+          ctx.restore();
+        }
+
+        inst.burns.forEach((burn) => {
+          drawSlit(ctx, cx, cy, burn.angle, Math.min(w, h) * 0.96, Math.max(1, burn.aperture * Math.min(w, h)), burn.life * 0.35, pal, false);
+        });
+
+        drawRings(ctx, cx, cy, maxR, id, pal, 1, inst.phase * 0.08 * (reducedMotion ? 0 : 1), 0.08 + energy * 0.2);
+        drawTicks(ctx, cx, cy, maxR * 1.05, id, pal, 0.22 + energy * 0.2);
+
+        const slitLen = Math.min(w, h) * 0.98;
+        const slitWid = Math.max(2, inst.aperture * Math.min(w, h) * (1 + energy * 1.4));
+        drawSlit(ctx, cx, cy, angle, slitLen, slitWid, 0.85 + shutter * 0.15, pal, true);
+
+        ctx.save();
+        ctx.fillStyle = pal.corona;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 3 + energy * 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        const cut = (id.cut + energy * 22 + inst.altitude * 10) * (Math.min(w, h) / 700);
+        const nameSize = Math.round(Math.min(w, h) * 0.16);
+        drawCutWord(
+          ctx, EVENT.name, cx, cy,
+          nameSize + "px " + getComputedStyle(document.body).getPropertyValue("--display"),
+          pal, cx, cy, angle, cut, id.letterTrack * 0.7, 1
+        );
+
+        const px = inst.pointerX * w;
+        const py = inst.pointerY * h;
+        ctx.save();
+        ctx.strokeStyle = pal.flare;
+        ctx.globalAlpha = 0.85;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(px, py, 10 + energy * 14, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(px - 16, py);
+        ctx.lineTo(px + 16, py);
+        ctx.moveTo(px, py - 16);
+        ctx.lineTo(px, py + 16);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = pal.bone;
+        ctx.globalAlpha = 0.7;
+        ctx.font = "11px " + getComputedStyle(document.body).getPropertyValue("--plate");
+        ctx.letterSpacing = "0.18em";
+        ctx.textAlign = "left";
+        ctx.fillText(EVENT.date.toUpperCase() + "  " + EVENT.doors, 24, 28);
+        ctx.textAlign = "right";
+        ctx.fillText(EVENT.venue.toUpperCase(), w - 24, 28);
+        ctx.textAlign = "center";
+        ctx.font = "13px " + getComputedStyle(document.body).getPropertyValue("--display");
+        ctx.letterSpacing = "0";
+        ctx.fillText(EVENT.description, cx, h - 48);
+        ctx.font = "12px " + getComputedStyle(document.body).getPropertyValue("--display");
+        ctx.fillText(EVENT.artists, cx, h - 28);
+        ctx.fillStyle = pal.flare;
+        ctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--plate");
+        ctx.letterSpacing = "0.2em";
+        ctx.fillText(EVENT.tension.toUpperCase(), cx, h - 12);
+        ctx.restore();
+
+        drawGrain(ctx, w, h, id);
+      }
+
+      function render() {
+        if (state.mode === "poster") renderPoster();
+        else if (state.mode === "motion") renderMotion();
+        else renderInstrument();
+      }
+
+      function applyInstrumentInput(x, y, down, energyBoost) {
+        const inst = state.instrument;
+        inst.pointerX = clamp(Number(x), 0, 1);
+        inst.pointerY = clamp(Number(y), 0, 1);
+        inst.azimuth = Math.atan2(inst.pointerY - 0.5, inst.pointerX - 0.5);
+        inst.altitude = clamp(Math.hypot(inst.pointerX - 0.5, inst.pointerY - 0.5) * 2, 0, 1.25);
+        inst.aperture = 0.006 + inst.altitude * 0.03;
+        if (down) {
+          inst.down = true;
+          inst.dragCount += 1;
+          inst.energy = clamp(inst.energy + (Number(energyBoost) || 0.08), 0, 1);
+        }
+        return inst;
+      }
+
+      function exposePlate() {
+        const inst = state.instrument;
+        inst.shutter = 1;
+        inst.burns.push({
+          angle: inst.azimuth,
+          aperture: inst.aperture,
+          life: 1
+        });
+        if (inst.burns.length > 12) inst.burns.shift();
+      }
+
+      function stepInstrument(dt) {
+        const inst = state.instrument;
+        const capped = Math.min(0.05, Math.max(0, dt));
+        inst.energy = Math.max(0, inst.energy - capped * 0.38);
+        inst.shutter = Math.max(0, inst.shutter - capped * 2.4);
+        inst.phase += capped * (0.12 + inst.energy * 1.1);
+        if (!Number.isFinite(inst.phase)) inst.phase = 0;
+        inst.burns.forEach((b) => { b.life = Math.max(0, b.life - capped * 0.12); });
+        inst.burns = inst.burns.filter((b) => b.life > 0.02);
+      }
+
+      function resetInstrumentFromIdentity() {
+        const id = state.identity;
+        const inst = defaultInstrument();
+        inst.pointerX = clamp(id.slitX + 0.18, 0.08, 0.92);
+        inst.pointerY = 0.36;
+        inst.azimuth = Math.atan2(inst.pointerY - 0.5, inst.pointerX - 0.5);
+        inst.altitude = clamp(Math.hypot(inst.pointerX - 0.5, inst.pointerY - 0.5) * 2, 0, 1.25);
+        inst.aperture = 0.006 + inst.altitude * 0.03;
+        state.instrument = inst;
+      }
+
+      function snapshot() {
+        const inst = state.instrument;
+        return {
+          seed: state.seed,
+          mode: state.mode,
+          motionTime: Math.round(state.motionTime * 1000) / 1000,
+          playing: state.playing,
+          instrument: {
+            pointer: [Number(inst.pointerX.toFixed(5)), Number(inst.pointerY.toFixed(5))],
+            azimuth: Number(inst.azimuth.toFixed(5)),
+            altitude: Number(inst.altitude.toFixed(5)),
+            aperture: Number(inst.aperture.toFixed(5)),
+            energy: Number(inst.energy.toFixed(5)),
+            shutter: Number(inst.shutter.toFixed(5)),
+            phase: Number(inst.phase.toFixed(5)),
+            dragCount: inst.dragCount,
+            burns: inst.burns.length
+          }
+        };
+      }
+
+      function updateModeUI() {
+        els.body.dataset.mode = state.mode;
+        MODES.forEach((name) => {
+          const node = els.expressions[name];
+          const active = name === state.mode;
+          node.classList.toggle("is-active", active);
+          node.setAttribute("aria-hidden", String(!active));
+        });
+        els.modeButtons.forEach((button) => {
+          const active = button.dataset.mode === state.mode;
+          button.setAttribute("aria-selected", String(active));
+          button.tabIndex = active ? 0 : -1;
+        });
+      }
+
+      function updateSeedUI() {
+        els.seedButtons.forEach((button) => {
+          button.setAttribute("aria-pressed", String(Number(button.dataset.seed) === state.seed));
+        });
+      }
+
+      function formatTime(ms) {
+        const safe = clamp(Math.round(ms), 0, DURATION);
+        const seconds = Math.floor(safe / 1000);
+        const millis = safe % 1000;
+        return "00:" + String(seconds).padStart(2, "0") + "." + String(millis).padStart(3, "0");
+      }
+
+      function updateTransportUI() {
+        els.scrub.value = String(Math.round(state.motionTime));
+        els.timecode.textContent = formatTime(state.motionTime) + " / 00:12.000";
+        els.playPause.textContent = state.playing ? "Pause" : "Play";
+        els.playPause.setAttribute("aria-label", state.playing ? "Pause motion sequence" : "Play motion sequence");
+      }
+
+      function playWipe() {
+        if (reducedMotion) return;
+        els.wipe.classList.remove("run");
+        void els.wipe.offsetWidth;
+        els.wipe.classList.add("run");
+      }
+
+      function reset(seed) {
+        const normalized = Number.isFinite(Number(seed)) ? Math.trunc(Number(seed)) : 18;
+        state.seed = normalized;
+        state.mode = "poster";
+        state.motionTime = 0;
+        state.playing = false;
+        state.lastFrame = performance.now();
+        state.identity = generateIdentity(normalized);
+        resetInstrumentFromIdentity();
+        updateModeUI();
+        updateSeedUI();
+        updateTransportUI();
+        layoutPoster();
+        renderPoster();
+        renderMotion();
+        renderInstrument();
+        return snapshot();
+      }
+
+      function setMode(name) {
+        if (!MODES.includes(name)) return false;
+        const changed = state.mode !== name;
+        state.mode = name;
+        if (name !== "motion") state.playing = false;
+        state.lastFrame = performance.now();
+        updateModeUI();
+        updateTransportUI();
+        if (changed) playWipe();
+        requestAnimationFrame(() => {
+          if (name === "poster") layoutPoster();
+          render();
+          if (name === "instrument") els.instrument.focus({ preventScroll: true });
+        });
+        return true;
+      }
+
+      function seek(milliseconds) {
+        const next = Number(milliseconds);
+        state.motionTime = Number.isFinite(next) ? clamp(next, 0, DURATION) : 0;
+        if (state.motionTime >= DURATION) state.playing = false;
+        state.lastFrame = performance.now();
+        updateTransportUI();
+        if (state.mode === "motion") renderMotion();
+        return state.motionTime;
+      }
+
+      function runSelfTest() {
+        const tests = [];
+        const add = (name, pass, detail) => tests.push({ name, pass: Boolean(pass), detail });
+        const previous = snapshot();
+
+        const first = reset(2468);
+        setMode("instrument");
+        applyInstrumentInput(0.23, 0.71, true, 0.84);
+        reset(2468);
+        const second = snapshot();
+        add("deterministic reset", JSON.stringify(first) === JSON.stringify(second), "Seed 2468 restores identical complete state.");
+
+        const modeResults = MODES.map((mode) => setMode(mode) && state.mode === mode);
+        add("all modes", modeResults.every(Boolean), "Poster, motion, and instrument accept programmatic entry.");
+
+        setMode("motion");
+        seek(4321);
+        add("exact motion seek", state.motionTime === 4321, "Motion time is exactly 4321 ms.");
+
+        seek(15000);
+        const upper = state.motionTime === 12000;
+        seek(-200);
+        const lower = state.motionTime === 0;
+        add("timeline boundary", upper && lower, "Timeline clamps to the inclusive 0 through 12000 ms range.");
+
+        setMode("instrument");
+        applyInstrumentInput(0.81, 0.17, true, 1.25);
+        stepInstrument(0.016);
+        const numeric = [
+          state.instrument.pointerX,
+          state.instrument.pointerY,
+          state.instrument.azimuth,
+          state.instrument.altitude,
+          state.instrument.aperture,
+          state.instrument.energy,
+          state.instrument.shutter,
+          state.instrument.phase
+        ];
+        add("finite interaction state", numeric.every(Number.isFinite), "Pointer, azimuth, aperture, energy, shutter, and phase remain finite after real interaction updates.");
+
+        reset(previous.seed);
+        setMode(previous.mode);
+        seek(previous.motionTime);
+        state.playing = previous.playing && previous.motionTime < DURATION;
+        Object.assign(state.instrument, {
+          pointerX: previous.instrument.pointer[0],
+          pointerY: previous.instrument.pointer[1],
+          azimuth: previous.instrument.azimuth,
+          altitude: previous.instrument.altitude,
+          aperture: previous.instrument.aperture,
+          energy: previous.instrument.energy,
+          shutter: previous.instrument.shutter,
+          phase: previous.instrument.phase,
+          dragCount: previous.instrument.dragCount,
+          burns: []
+        });
+        updateTransportUI();
+        render();
+        return { passed: tests.every((test) => test.pass), tests };
+      }
+
+      function onPointer(e, down) {
+        if (state.mode !== "instrument") return;
+        const rect = els.instrument.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return;
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+        applyInstrumentInput(x, y, down, down ? 0.06 : 0);
+        renderInstrument();
+      }
+
+      els.instrument.addEventListener("pointerdown", (e) => {
+        els.instrument.setPointerCapture(e.pointerId);
+        onPointer(e, true);
+        if (e.button === 0) exposePlate();
+      });
+      els.instrument.addEventListener("pointermove", (e) => {
+        onPointer(e, state.instrument.down || e.buttons > 0);
+      });
+      els.instrument.addEventListener("pointerup", () => { state.instrument.down = false; });
+      els.instrument.addEventListener("pointercancel", () => { state.instrument.down = false; });
+      els.instrument.addEventListener("keydown", (e) => {
+        const inst = state.instrument;
+        const step = 0.03;
+        if (e.key === "ArrowLeft") { applyInstrumentInput(inst.pointerX - step, inst.pointerY, false); e.preventDefault(); }
+        else if (e.key === "ArrowRight") { applyInstrumentInput(inst.pointerX + step, inst.pointerY, false); e.preventDefault(); }
+        else if (e.key === "ArrowUp") { applyInstrumentInput(inst.pointerX, inst.pointerY - step, false); e.preventDefault(); }
+        else if (e.key === "ArrowDown") { applyInstrumentInput(inst.pointerX, inst.pointerY + step, false); e.preventDefault(); }
+        else if (e.key === " " || e.code === "Space") { exposePlate(); e.preventDefault(); }
+        else return;
+        renderInstrument();
+      });
+
+      els.modeButtons.forEach((button) => {
+        button.addEventListener("click", () => setMode(button.dataset.mode));
+        button.addEventListener("keydown", (e) => {
+          const i = els.modeButtons.indexOf(button);
+          if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+            const next = els.modeButtons[(i + 1) % els.modeButtons.length];
+            next.focus();
+            setMode(next.dataset.mode);
+            e.preventDefault();
+          } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+            const prev = els.modeButtons[(i - 1 + els.modeButtons.length) % els.modeButtons.length];
+            prev.focus();
+            setMode(prev.dataset.mode);
+            e.preventDefault();
+          }
+        });
+      });
+
+      els.seedButtons.forEach((button) => {
+        button.addEventListener("click", () => reset(Number(button.dataset.seed)));
+      });
+
+      els.playPause.addEventListener("click", () => {
+        setMode("motion");
+        if (state.motionTime >= DURATION) state.motionTime = 0;
+        state.playing = !state.playing;
+        state.lastFrame = performance.now();
+        updateTransportUI();
+        renderMotion();
+      });
+      els.replay.addEventListener("click", () => {
+        setMode("motion");
+        state.motionTime = 0;
+        state.playing = true;
+        state.lastFrame = performance.now();
+        updateTransportUI();
+        renderMotion();
+      });
+      els.scrub.addEventListener("pointerdown", () => {
+        setMode("motion");
+        state.playing = false;
+        updateTransportUI();
+      });
+      els.scrub.addEventListener("input", () => {
+        setMode("motion");
+        seek(Number(els.scrub.value));
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        state.lastFrame = performance.now();
+      });
+
+      function onResize() {
+        if (state.mode === "poster") layoutPoster();
+        render();
+      }
+      window.addEventListener("resize", onResize);
+      if (window.visualViewport) window.visualViewport.addEventListener("resize", onResize);
+
+      function tick(now) {
+        const dt = Math.min(50, Math.max(0, now - state.lastFrame));
+        state.lastFrame = now;
+        if (!document.hidden) {
+          if (state.mode === "motion" && state.playing) {
+            state.motionTime = Math.min(DURATION, state.motionTime + dt);
+            if (state.motionTime >= DURATION) {
+              state.motionTime = DURATION;
+              state.playing = false;
+            }
+            updateTransportUI();
+            renderMotion();
+          } else if (state.mode === "instrument") {
+            stepInstrument(dt / 1000);
+            renderInstrument();
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+
+      window.__LIVING_IDENTITY__ = Object.freeze({
+        reset, setMode, seek, snapshot, runSelfTest
+      });
+
+      reset(18);
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>

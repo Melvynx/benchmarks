@@ -15,10 +15,12 @@ import type {
   TranscriptPhaseKey,
 } from "@/components/transcript-phase-chart"
 import { analyzeIntegrityTranscript } from "@/lib/integrity-analysis"
+import { parseModelReview } from "@/lib/model-review"
 import {
   parsePersistedSessionUsage,
   parseSessionUsageTranscript,
 } from "@/lib/session-usage"
+import { activeTranscriptDurationMs } from "@/lib/transcript-duration"
 
 export type BenchmarkEntry = {
   id: string
@@ -33,6 +35,7 @@ export type BenchmarkEntry = {
   benchmarkId: string
   runId: string
   appPath: string
+  hasPreview: boolean
   hasTranscript: boolean
   promptSlug: string | null
   promptVersion: string | null
@@ -70,7 +73,7 @@ const mimeTypes: Record<string, string> = {
   ".woff2": "font/woff2",
 }
 
-function benchmarkRoot() {
+export function benchmarkRoot() {
   return resolve(process.env.BENCHMARK_ROOT || join(process.cwd(), ".."))
 }
 
@@ -105,7 +108,13 @@ function transcriptFiles(directory: string) {
   if (!existsSync(directory)) return []
   return readdirSync(directory)
     .filter((file) => /^transcript(?:-resume-\d+)?\.jsonl$/.test(file))
-    .sort()
+    .sort((left, right) => {
+      if (left === "transcript.jsonl") return -1
+      if (right === "transcript.jsonl") return 1
+      const leftResume = Number(/resume-(\d+)/.exec(left)?.[1] ?? 0)
+      const rightResume = Number(/resume-(\d+)/.exec(right)?.[1] ?? 0)
+      return leftResume - rightResume
+    })
 }
 
 type RunEvidence = {
@@ -138,6 +147,43 @@ function normalizeRunToken(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
+}
+
+function recordedCursorModel(directory: string, fallback: string) {
+  const transcript = transcriptFiles(directory)[0]
+  if (!transcript) return fallback
+
+  try {
+    for (const line of readFileSync(join(directory, transcript), "utf8").split(
+      "\n"
+    )) {
+      if (!line.trim()) continue
+      const event = JSON.parse(line) as {
+        type?: unknown
+        subtype?: unknown
+        model?: unknown
+      }
+      if (
+        event.type !== "system" ||
+        event.subtype !== "init" ||
+        typeof event.model !== "string"
+      )
+        continue
+
+      const recorded = event.model
+        .replace(/^Cursor\s+/i, "cursor-")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "-")
+      return normalizeRunToken(recorded) === normalizeRunToken(fallback)
+        ? fallback
+        : recorded
+    }
+  } catch {
+    // Partial historical transcripts keep their metadata identity.
+  }
+
+  return fallback
 }
 
 function runTimestamp(runId: string) {
@@ -290,6 +336,27 @@ function recordedMetadata(directory: string) {
   }
 }
 
+function runNameMatchesIdentity(
+  runName: string,
+  dateToken: string,
+  identity: { harness: string; model: string }
+) {
+  if (!runName.startsWith(dateToken)) return false
+  const suffix = `-${normalizeRunToken(identity.model)}-${normalizeRunToken(identity.harness)}`
+  return runName.endsWith(suffix) || runName.match(new RegExp(`${suffix}-\\d+$`))
+}
+
+function identityFromRunDirectory(runName: string) {
+  const stripped = runName.replace(/^\d{8}T\d{6}Z-/, "").replace(/-\d+$/, "")
+  const harnesses = ["cursor-agent", "opencode", "codex", "ccx", "cc"]
+  const harness = harnesses.find((value) => stripped.endsWith(`-${value}`))
+  if (!harness) return null
+  return {
+    harness,
+    model: stripped.slice(0, -(harness.length + 1)),
+  }
+}
+
 function historicalEvidence(
   root: string,
   task: string,
@@ -300,13 +367,10 @@ function historicalEvidence(
   const runs = join(root, "runs")
   if (!existsSync(runs) || date === "unknown") return undefined
   const dateToken = date.replaceAll("-", "")
-  const suffix = `-${normalizeRunToken(identity.model)}-${normalizeRunToken(identity.harness)}`
   const candidates = readdirSync(runs, { withFileTypes: true })
     .filter(
       (run) =>
-        run.isDirectory() &&
-        run.name.startsWith(dateToken) &&
-        run.name.endsWith(suffix)
+        run.isDirectory() && runNameMatchesIdentity(run.name, dateToken, identity)
     )
     .map((run) => {
       const directory = join(runs, run.name, "data", task)
@@ -355,7 +419,44 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
       const taskData = join(data, task.name)
       const appPathFile = join(taskData, "app-path.txt")
       const metadataFile = join(taskData, "metadata.json")
-      if (!existsSync(appPathFile) || !existsSync(metadataFile)) continue
+      if (!existsSync(appPathFile)) continue
+      if (!existsSync(metadataFile)) {
+        if (!transcriptFiles(taskData).length) continue
+        const inferred = identityFromRunDirectory(run.name)
+        if (!inferred) continue
+        try {
+          const appPath = resolveRecordedAppPath(
+            root,
+            task.name,
+            readFileSync(appPathFile, "utf8").trim()
+          )
+          const candidate = {
+            directory: taskData,
+            effort: "unknown",
+            benchmarkId: benchmarkIds.get(`${run.name}/${task.name}`) || run.name,
+            durationMs: null,
+            harness: inferred.harness,
+            model:
+              inferred.harness === "cursor-agent"
+                ? recordedCursorModel(taskData, inferred.model)
+                : inferred.model,
+            runId: run.name,
+            status: existsSync(join(taskData, "final.txt"))
+              ? "unknown"
+              : "interrupted",
+            repairStatus: "unknown",
+            promptSlug: null,
+            promptVersion: null,
+          }
+          const previous = metadata.get(appPath)
+          if (!previous || !transcriptFiles(previous.directory).length) {
+            metadata.set(appPath, candidate)
+          }
+        } catch {
+          // Partial historical evidence can omit metadata; filename inference remains.
+        }
+        continue
+      }
       try {
         const appPath = resolveRecordedAppPath(
           root,
@@ -392,7 +493,10 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
                 ? value.model_timing.duration_ms
                 : null,
             harness: value.harness,
-            model: value.model,
+            model:
+              value.harness === "cursor-agent"
+                ? recordedCursorModel(taskData, value.model)
+                : value.model,
             runId: run.name,
             status: typeof value.status === "string" ? value.status : "unknown",
             repairStatus:
@@ -472,7 +576,11 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
       const outputDirectory = existsSync(join(distDirectory, "index.html"))
         ? distDirectory
         : resultDirectory
-      if (!existsSync(join(outputDirectory, "index.html"))) continue
+      const previewIndex = join(outputDirectory, "index.html")
+      const hasPreview =
+        existsSync(previewIndex) &&
+        (outputDirectory === distDirectory ||
+          !usesUncompiledDevSources(previewIndex))
 
       const appDirectory = resolve(resultDirectory)
       const date = /^\d{4}-\d{2}-\d{2}/.exec(result.name)?.[0] || "unknown"
@@ -487,13 +595,31 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
           benchmarkIds
         )
       const identity = runEvidence || inferredIdentity
+      const hasTranscript = Boolean(
+        runEvidence && transcriptFiles(runEvidence.directory).length > 0
+      )
+      if (!hasPreview && !hasTranscript) continue
       if (
         runEvidence?.status === "failed" &&
         runEvidence.repairStatus !== "verified" &&
+        !hasTranscript &&
         !existsSync(join(runEvidence.directory, "screenshot.png"))
       )
         continue
       const id = `${task.name}/${result.name}`
+      const activeSegments =
+        identity.harness === "cursor-agent" && runEvidence
+          ? transcriptFiles(runEvidence.directory)
+              .map((file) =>
+                activeTranscriptDurationMs(
+                  readFileSync(join(runEvidence.directory, file), "utf8")
+                )
+              )
+              .filter((duration): duration is number => duration !== null)
+          : []
+      const activeDuration = activeSegments.length
+        ? activeSegments.reduce((total, duration) => total + duration, 0)
+        : null
       entries.push({
         id,
         task: task.name,
@@ -503,16 +629,15 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
         harness: identity.harness,
         effort: runEvidence?.effort || "unknown",
         status: runEvidence?.status || "unknown",
-        durationMs: runEvidence?.durationMs ?? null,
+        durationMs: activeDuration ?? runEvidence?.durationMs ?? null,
         benchmarkId:
           runEvidence?.benchmarkId ||
           runEvidence?.runId ||
           `legacy-result-${task.name}-${result.name}`,
         runId: runEvidence?.runId || result.name,
         appPath: repositoryPath(root, appDirectory),
-        hasTranscript: Boolean(
-          runEvidence && transcriptFiles(runEvidence.directory).length > 0
-        ),
+        hasPreview,
+        hasTranscript,
         promptSlug: runEvidence?.promptSlug || null,
         promptVersion: runEvidence?.promptVersion || null,
         promptUrl:
@@ -530,6 +655,10 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
       right.result.localeCompare(left.result) ||
       left.task.localeCompare(right.task)
   )
+}
+
+function usesUncompiledDevSources(htmlPath: string) {
+  return /(?:src|href)=["'][^"']*\/?src\//i.test(readFileSync(htmlPath, "utf8"))
 }
 
 function readOptional(file: string) {
@@ -586,8 +715,17 @@ function readSessionUsage(directory: string) {
   )
 }
 
-function readTranscriptForUi(file: string) {
-  const transcript = readOptional(file)
+function readModelReview(directory: string) {
+  try {
+    return parseModelReview(
+      JSON.parse(readFileSync(join(directory, "review.json"), "utf8"))
+    )
+  } catch {
+    return null
+  }
+}
+
+function readTranscriptForUi(transcript: string) {
   if (transcript.length < 1_000_000) {
     return { transcript, transcriptOriginalBytes: transcript.length }
   }
@@ -640,6 +778,7 @@ export function getBenchmarkEvidence(splat: string) {
       final: "",
       effort: entry.effort,
       durationMs: entry.durationMs,
+      activeDurationMs: null,
       benchmarkId: entry.benchmarkId,
       prompt: "",
       resumeCommand: "",
@@ -648,6 +787,7 @@ export function getBenchmarkEvidence(splat: string) {
       transcript: "",
       transcriptAnalysis: null,
       integrityAnalysis: null,
+      modelReview: null,
       transcriptPaths: [],
       transcriptOriginalBytes: 0,
       sessionUsage: null,
@@ -655,10 +795,18 @@ export function getBenchmarkEvidence(splat: string) {
   }
 
   const recordedTranscripts = transcriptFiles(evidence.directory)
-  const transcript = readTranscriptForUi(
-    join(evidence.directory, "transcript.jsonl")
+  const rawTranscriptSegments = recordedTranscripts.map((file) =>
+    readOptional(join(evidence.directory, file))
   )
-  const rawTranscript = readOptional(join(evidence.directory, "transcript.jsonl"))
+  const rawTranscript = rawTranscriptSegments.filter(Boolean).join("\n")
+  const transcript = readTranscriptForUi(rawTranscript)
+  const activeSegments = rawTranscriptSegments
+    .map(activeTranscriptDurationMs)
+    .filter((duration): duration is number => duration !== null)
+  const activeDurationMs =
+    entry.harness === "cursor-agent" && activeSegments.length
+      ? activeSegments.reduce((total, duration) => total + duration, 0)
+      : evidence.durationMs
   return {
     appPath: entry.appPath,
     command: readOptional(join(evidence.directory, "command.sh")),
@@ -666,6 +814,7 @@ export function getBenchmarkEvidence(splat: string) {
     final: readOptional(join(evidence.directory, "final.txt")),
     effort: evidence.effort,
     durationMs: evidence.durationMs,
+    activeDurationMs,
     benchmarkId: evidence.benchmarkId,
     prompt: readOptional(join(evidence.directory, "prompt.md")),
     resumeCommand: readOptional(join(evidence.directory, "resume-command.sh")),
@@ -676,6 +825,7 @@ export function getBenchmarkEvidence(splat: string) {
       rawTranscript,
       resolve(root, entry.appPath)
     ),
+    modelReview: readModelReview(evidence.directory),
     transcriptPaths: recordedTranscripts.map((file) =>
       repositoryPath(root, join(evidence.directory, file))
     ),
@@ -693,6 +843,37 @@ function rewriteAbsoluteAssetPaths(content: string, prefix: string) {
   return content.replace(
     /(^|[("'=,\s])\/(?=[A-Za-z0-9_.-])/gm,
     (_, boundary: string) => `${boundary}${prefix}`
+  )
+}
+
+function rewriteJavaScriptAbsolutePaths(
+  content: string,
+  prefix: string,
+  outputDirectory: string
+) {
+  return content.replace(
+    /(^|[=(:,\[!&|?{};>\s])(["'`])\/([A-Za-z0-9_.-][A-Za-z0-9_./-]*)\2/gm,
+    (
+      match: string,
+      boundary: string,
+      quote: string,
+      assetPath: string
+    ) => {
+      const file = safeJoin(outputDirectory, assetPath)
+      if (!file || !existsSync(file)) return match
+      const stats = statSync(file)
+      return stats.isFile() || stats.isDirectory()
+        ? `${boundary}${quote}${prefix}${assetPath}${quote}`
+        : match
+    }
+  )
+}
+
+function appendViewerAssetVersion(content: string, version: string) {
+  return content.replace(
+    /\b(src|href)=(['"])([^'"?#]+\.(?:css|js|mjs))\2/gi,
+    (_, attribute: string, quote: string, assetPath: string) =>
+      `${attribute}=${quote}${assetPath}?viewer=${version}${quote}`
   )
 }
 
@@ -722,10 +903,26 @@ export function getBenchmarkAsset(splat: string) {
     body = rewriteAbsoluteAssetPaths(
       readFileSync(file, "utf8"),
       prefix
-    ).replace(/<head([^>]*)>/i, `<head$1><base href="${prefix}">`)
+    )
+      .replace(/<head([^>]*)>/i, `<head$1><base href="${prefix}">`)
+      .replace(
+        /<\/head>/i,
+        `<script>window.__BENCHMARK_VIEWER_VERSION__=${JSON.stringify(String(statSync(file).mtimeMs))}</script></head>`
+      )
+    body = appendViewerAssetVersion(
+      body,
+      encodeURIComponent(String(statSync(file).mtimeMs))
+    )
   } else if (extension === ".css") {
     const prefix = `/view/${encodeURIComponent(task)}/${encodeURIComponent(result)}/`
     body = rewriteAbsoluteAssetPaths(readFileSync(file, "utf8"), prefix)
+  } else if (extension === ".js" || extension === ".mjs") {
+    const prefix = `/view/${encodeURIComponent(task)}/${encodeURIComponent(result)}/`
+    body = rewriteJavaScriptAbsolutePaths(
+      readFileSync(file, "utf8"),
+      prefix,
+      outputDirectory
+    )
   }
 
   return {

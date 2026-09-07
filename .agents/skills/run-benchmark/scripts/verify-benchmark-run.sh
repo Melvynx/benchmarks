@@ -7,6 +7,23 @@ BENCHMARKS_DIR="$ROOT/benchmarks"
 JQ_BIN="$(type -P jq)"
 [[ $# -gt 0 ]] || { echo "Usage: $0 <run-dir>..." >&2; exit 2; }
 mkdir -p "$ROOT/.benchmark-verification-port-locks"
+# Background jobs need their own process group so the whole dev-server tree dies
+# with them; killing the pnpm wrapper alone leaves the bundler holding the port.
+set -m
+
+# A dev server may bind IPv4, IPv6, or both; a run is only unreachable when no
+# loopback family answers.
+probe() {
+  local path="$1" port="$2"
+  curl -fsS --max-time 5 "http://127.0.0.1:$port$path" >/dev/null 2>&1 ||
+    curl -fsS --max-time 5 "http://[::1]:$port$path" >/dev/null 2>&1
+}
+
+stop_server() {
+  local pid="$1"
+  kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
 
 for run_dir in "$@"; do
   [[ -f "$run_dir/run.json" ]] || { echo "Missing run.json: $run_dir" >&2; exit 1; }
@@ -35,13 +52,12 @@ for run_dir in "$@"; do
       while lsof -nP -iTCP:"$verify_port" -sTCP:LISTEN >/dev/null 2>&1 || ! mkdir "$ROOT/.benchmark-verification-port-locks/$verify_port" 2>/dev/null; do verify_port=$((verify_port + 1)); done
       (cd "$app_path" && python3 -m http.server "$verify_port" --bind 127.0.0.1) > "$data_dir/runtime.log" 2>&1 &
       server_pid=$!
-      trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+      trap 'stop_server "$server_pid"' EXIT
       for _ in 1 2 3 4 5 6 7 8 9 10; do
-        if curl -fsS "http://127.0.0.1:$verify_port/index.html" >/dev/null; then runtime_ok=true; break; fi
+        if probe /index.html "$verify_port"; then runtime_ok=true; break; fi
         sleep 1
       done
-      kill "$server_pid" 2>/dev/null || true
-      wait "$server_pid" 2>/dev/null || true
+      stop_server "$server_pid"
       trap - EXIT
       build_ok=true
     elif [[ "$type" == web-app || "$type" == cloned-web-app ]]; then
@@ -50,13 +66,13 @@ for run_dir in "$@"; do
       [[ "$build_ok" == true ]] || { echo "Build failed: $app_path (see $data_dir/build.log)" >&2; exit 1; }
       (cd "$app_path" && PORT="$port" pnpm run dev) > "$data_dir/runtime.log" 2>&1 &
       server_pid=$!
-      trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-      for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-        if curl -fsS "http://127.0.0.1:$port/" >/dev/null; then runtime_ok=true; break; fi
+      trap 'stop_server "$server_pid"' EXIT
+      # A cold dependency re-optimization can outlast a short probe window.
+      for _ in $(seq 45); do
+        if probe / "$port"; then runtime_ok=true; break; fi
         sleep 1
       done
-      kill "$server_pid" 2>/dev/null || true
-      wait "$server_pid" 2>/dev/null || true
+      stop_server "$server_pid"
       trap - EXIT
     else
       build_ok=true

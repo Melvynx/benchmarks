@@ -1,6 +1,6 @@
 ---
 name: run-benchmark
-description: Run reproducible coding-model benchmarks from a model name, CLI harness, and task list. Use when creating, executing, resuming, or verifying benchmark runs with Codex, Claudex via ccx, Claude Code, or Cursor Agent in this repository.
+description: Run reproducible coding-model benchmarks from a model name, CLI harness, and task list. Use when creating, executing, resuming, or verifying benchmark runs with Codex, Claudex via ccx, Claude Code, Cursor Agent, or OpenCode in this repository.
 ---
 
 # Run Benchmark
@@ -17,7 +17,7 @@ Create one independently resumable session per task. Put the app in `benchmarks/
    ```bash
    .agents/skills/run-benchmark/scripts/run-benchmark.sh \
      --model '<model-name>' \
-    --harness '<codex|ccx|cc|cckimi|cursor-agent>' \
+    --harness '<codex|ccx|cc|cckimi|cursor-agent|opencode>' \
      --tasks '<task-a,task-b>' \
      --effort '<level>'
    ```
@@ -56,6 +56,7 @@ Create one independently resumable session per task. Put the app in `benchmarks/
 - Follow [.agents/rules/benchmark-runs.md](../../rules/benchmark-runs.md).
 - For `ccx`, select exactly `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna`; forward effort through `--effort`.
 - Use `cckimi` when the local Claude Code-compatible Kimi alias is explicitly requested; keep the exact Kimi model identifier and effort.
+- Use `opencode` only when the caller explicitly selects it. Pass the exact `provider/model` id from `opencode models`.
 - When a GPT model uses the Claude Code harness family, route it through `ccx`; never run a GPT model with `cc`.
 - Do not combine tasks into one model session.
 - Never store an app below `runs/`; `app-path.txt` and `metadata.json` must point to the task-local output directory.

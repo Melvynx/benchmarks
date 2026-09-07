@@ -1,0 +1,1793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Claude Opus 5</title>
+<style>
+  :root{
+    --bg:#080a0e;
+    --panel:rgba(16,20,28,0.86);
+    --panel-solid:#10141c;
+    --line:rgba(255,255,255,0.09);
+    --line-soft:rgba(255,255,255,0.05);
+    --txt:#e8edf5;
+    --txt-dim:#8d97a8;
+    --txt-faint:#5d6675;
+    --accent:#ff5f3d;
+    --accent-2:#4da3ff;
+    --ok:#39d98a;
+    --warn:#ffb547;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font-family:var(--sans)}
+  body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overscroll-behavior:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+  .layer{position:fixed;inset:0;pointer-events:none;z-index:5}
+  .layer > *{pointer-events:auto}
+
+  /* ---------- brand ---------- */
+  .brand{position:absolute;top:18px;left:20px;user-select:none}
+  .brand h1{
+    font-size:19px;font-weight:650;letter-spacing:-0.02em;line-height:1;
+    display:flex;align-items:center;gap:9px;
+  }
+  .brand h1::before{
+    content:"";width:9px;height:9px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 12px rgba(255,95,61,.9);flex:none;
+  }
+  .brand p{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--txt-faint);margin-top:7px;padding-left:18px}
+
+  /* ---------- telemetry ---------- */
+  .telemetry{
+    position:absolute;top:16px;right:16px;width:232px;
+    background:var(--panel);border:1px solid var(--line);border-radius:13px;
+    backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
+    padding:12px 13px 11px;box-shadow:0 18px 44px rgba(0,0,0,.5);
+  }
+  .telemetry .cap{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--txt-faint);
+    padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid var(--line-soft);
+  }
+  .status{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;padding:3px 7px;border-radius:5px;
+    background:rgba(77,163,255,.13);color:var(--accent-2);border:1px solid rgba(77,163,255,.25);
+  }
+  .status[data-s="LAUNCH"]{background:rgba(255,181,71,.13);color:var(--warn);border-color:rgba(255,181,71,.28)}
+  .status[data-s="IMPACT"]{background:rgba(255,95,61,.16);color:var(--accent);border-color:rgba(255,95,61,.35)}
+  .status[data-s="SETTLING"]{background:rgba(255,181,71,.13);color:var(--warn);border-color:rgba(255,181,71,.28)}
+  .status[data-s="SETTLED"]{background:rgba(57,217,138,.12);color:var(--ok);border-color:rgba(57,217,138,.28)}
+
+  .rows{display:flex;flex-direction:column;gap:6px}
+  .row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:11.5px}
+  .row span{color:var(--txt-dim);white-space:nowrap}
+  .row b{font-family:var(--mono);font-weight:500;font-size:12.5px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .row b i{font-style:normal;color:var(--txt-faint);font-size:10px;margin-left:2px}
+  .row.hi b{color:var(--accent)}
+
+  .bar{height:3px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:11px;overflow:hidden}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#ffb547);border-radius:2px;transition:width .12s linear}
+  .barlab{display:flex;justify-content:space-between;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--txt-faint);margin-top:7px}
+
+  /* ---------- dock ---------- */
+  .dock{
+    position:absolute;left:50%;bottom:20px;transform:translateX(-50%);
+    display:flex;align-items:center;gap:8px;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px;
+    backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
+    box-shadow:0 18px 44px rgba(0,0,0,.5);
+  }
+  button{
+    font-family:var(--sans);font-size:13px;font-weight:560;letter-spacing:-.01em;color:var(--txt);
+    background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:9px;
+    padding:9px 15px;cursor:pointer;transition:background .14s,border-color .14s,transform .06s;
+    display:flex;align-items:center;gap:7px;white-space:nowrap;
+  }
+  button:hover{background:rgba(255,255,255,.11)}
+  button:active{transform:translateY(1px)}
+  button kbd{
+    font-family:var(--mono);font-size:9.5px;color:var(--txt-faint);
+    border:1px solid var(--line);border-radius:4px;padding:1px 4px;line-height:1.35;
+  }
+  button.primary{
+    background:linear-gradient(180deg,#ff6f4f,#ef4a26);border-color:rgba(255,140,110,.45);color:#fff;
+    box-shadow:0 5px 16px rgba(239,74,38,.32);
+  }
+  button.primary:hover{background:linear-gradient(180deg,#ff8163,#f25733)}
+  button.primary kbd{color:rgba(255,255,255,.72);border-color:rgba(255,255,255,.3)}
+  button.primary:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
+  .sep{width:1px;height:22px;background:var(--line);margin:0 2px}
+
+  /* ---------- settings ---------- */
+  .panel{
+    position:absolute;top:0;right:0;height:100%;width:318px;
+    background:var(--panel);border-left:1px solid var(--line);
+    backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);
+    display:flex;flex-direction:column;
+    transform:translateX(101%);transition:transform .3s cubic-bezier(.22,1,.36,1);
+    box-shadow:-24px 0 60px rgba(0,0,0,.45);
+  }
+  .panel.open{transform:none}
+  .panel header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:15px 16px;border-bottom:1px solid var(--line);flex:none;
+  }
+  .panel header h2{font-size:13px;font-weight:600;letter-spacing:-.01em}
+  .panel header p{font-size:10px;color:var(--txt-faint);margin-top:3px;letter-spacing:.1em;text-transform:uppercase}
+  .xbtn{padding:6px 9px;font-size:14px;line-height:1;border-radius:7px}
+  .panel .body{overflow-y:auto;padding:6px 16px 18px;flex:1;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
+  .panel .body::-webkit-scrollbar{width:8px}
+  .panel .body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:4px;border:2px solid transparent;background-clip:padding-box}
+
+  .grp{margin-top:16px}
+  .grp > h3{
+    font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--txt-faint);
+    padding-bottom:8px;margin-bottom:11px;border-bottom:1px solid var(--line-soft);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .grp > h3 em{font-style:normal;font-family:var(--mono);font-size:9.5px;color:var(--txt-faint);opacity:.65;letter-spacing:0}
+
+  .ctl{margin-bottom:13px}
+  .ctl .top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;gap:8px}
+  .ctl label{font-size:12px;color:var(--txt-dim);letter-spacing:-.01em}
+  .ctl .val{
+    font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+    color:var(--txt);background:rgba(255,255,255,.05);border:1px solid var(--line-soft);
+    border-radius:5px;padding:1.5px 6px;white-space:nowrap;
+  }
+  .ctl .val u{text-decoration:none;color:var(--txt-faint);font-size:10px;margin-left:2px}
+  .ctl.dirty .val{color:var(--warn);border-color:rgba(255,181,71,.3);background:rgba(255,181,71,.08)}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:16px;background:transparent;cursor:pointer;display:block;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:rgba(255,255,255,.13)}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#fff;margin-top:-5px;
+    border:none;box-shadow:0 1px 5px rgba(0,0,0,.55);transition:transform .1s;
+  }
+  input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.16)}
+  input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:rgba(255,255,255,.13)}
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 5px rgba(0,0,0,.55)}
+
+  .panel footer{
+    flex:none;padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;
+  }
+  .panel footer button{flex:1;justify-content:center;font-size:12px;padding:8px 10px}
+
+  /* ---------- report ---------- */
+  .report{
+    position:absolute;left:20px;bottom:20px;width:222px;
+    background:var(--panel);border:1px solid var(--line);border-radius:13px;
+    backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
+    padding:12px 13px;box-shadow:0 18px 44px rgba(0,0,0,.5);
+    opacity:0;transform:translateY(8px);transition:opacity .3s,transform .3s;
+  }
+  .report.show{opacity:1;transform:none}
+  .report h4{
+    font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--txt-faint);
+    padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid var(--line-soft);
+  }
+  .hint{
+    position:absolute;left:50%;bottom:84px;transform:translateX(-50%);
+    font-size:11px;color:var(--txt-faint);letter-spacing:.04em;white-space:nowrap;
+    transition:opacity .3s;
+  }
+
+  @media (max-width:900px){
+    .telemetry{width:196px;top:12px;right:12px;padding:10px 11px}
+    .report{display:none}
+    .brand p{display:none}
+    .panel{width:min(320px,86vw)}
+    .dock{bottom:14px;padding:7px;gap:6px}
+    button{padding:8px 12px;font-size:12.5px}
+    button kbd{display:none}
+  }
+  @media (max-height:620px){ .brand p{display:none} .report{display:none} }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div class="layer">
+  <div class="brand">
+    <h1>Claude Opus 5</h1>
+    <p>Rigid-body crash laboratory</p>
+  </div>
+
+  <div class="telemetry">
+    <div class="cap"><span>Telemetry</span><span class="status" id="status" data-s="READY">READY</span></div>
+    <div class="rows">
+      <div class="row hi"><span>Car speed</span><b id="t-speed">0.0<i>m/s</i></b></div>
+      <div class="row"><span>Elapsed</span><b id="t-time">0.000<i>s</i></b></div>
+      <div class="row"><span>Moving bricks</span><b id="t-moving">0</b></div>
+      <div class="row"><span>Displaced</span><b id="t-disp">0<i>/0</i></b></div>
+      <div class="row"><span>Peak decel</span><b id="t-g">0.0<i>g</i></b></div>
+      <div class="row"><span>Kinetic energy</span><b id="t-ke">0<i>kJ</i></b></div>
+    </div>
+    <div class="bar"><i id="t-bar" style="width:100%"></i></div>
+    <div class="barlab"><span>Wall integrity</span><span id="t-int">100%</span></div>
+  </div>
+
+  <div class="report" id="report">
+    <h4>Impact report</h4>
+    <div class="rows">
+      <div class="row"><span>Impact speed</span><b id="r-v">—</b></div>
+      <div class="row"><span>Car momentum</span><b id="r-p">—</b></div>
+      <div class="row"><span>Wall mass</span><b id="r-m">—</b></div>
+      <div class="row"><span>Energy at impact</span><b id="r-e">—</b></div>
+      <div class="row"><span>Penetration</span><b id="r-d">—</b></div>
+      <div class="row"><span>Settle time</span><b id="r-t">—</b></div>
+    </div>
+  </div>
+
+  <div class="hint" id="hint">Press <b>Space</b> to run the test</div>
+
+  <div class="dock">
+    <button class="primary" id="btn-test">Test <kbd>Space</kbd></button>
+    <button id="btn-reset">Reset <kbd>R</kbd></button>
+    <div class="sep"></div>
+    <button id="btn-settings">Settings <kbd>S</kbd></button>
+  </div>
+
+  <aside class="panel" id="panel">
+    <header>
+      <div>
+        <h2>Experiment parameters</h2>
+        <p>Deterministic · repeatable</p>
+      </div>
+      <button class="xbtn" id="btn-close">✕</button>
+    </header>
+    <div class="body" id="panel-body"></div>
+    <footer>
+      <button id="btn-defaults">Restore defaults</button>
+      <button class="primary" id="btn-run" style="flex:0 0 92px">Run test</button>
+    </footer>
+  </aside>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   Claude Opus 5 — 2D rigid-body crash laboratory
+   --------------------------------------------------------------------------
+   0.  Utilities
+   1.  Physics engine   (bodies, broadphase, SAT+clipping, impulse solver)
+   2.  Experiment       (parameters, scene construction, car controller)
+   3.  Effects          (particles, skid marks, camera shake — visual only)
+   4.  Renderer         (camera, world drawing)
+   5.  UI + main loop
+   ========================================================================== */
+
+/* ======================= 0. UTILITIES ==================================== */
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp  = (a, b, t) => a + (b - a) * t;
+
+/** Deterministic PRNG — used for VISUAL effects only, never for physics. */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Stable integer hash — deterministic per-brick visual variation. */
+function hash3(a, b, c) {
+  let h = (a * 374761393 + b * 668265263 + c * 2147483647) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/* ======================= 1. PHYSICS ENGINE ==============================
+   Impulse-based sequential solver for oriented boxes.
+     · SAT with reference/incident face clipping -> up to 2 contact points
+     · Persistent manifolds + warm starting (essential for stable stacks)
+     · Velocity pass (friction, then restitution-aware normal impulses)
+     · Separate pseudo-position pass (no energy injection)
+     · Speculative contacts + sub-stepping to kill tunneling
+     · Per-body sleeping so large walls stay cheap once settled
+   Everything is a deterministic function of state — no randomness at all.
+   ======================================================================== */
+
+const SLOP        = 0.0035; // allowed overlap (m)
+const BAUMGARTE   = 0.22;   // position correction factor
+const MAX_CORRECT = 0.20;   // max positional correction per iteration (m)
+const REST_THRESH = 1.0;    // min approach speed for restitution (m/s)
+const SPEC_MARGIN = 0.02;   // speculative contact distance (m)
+/* Broadphase AABBs are inflated so they are a strict superset of what the
+   narrowphase accepts. If they were tight, a pair separated by a fraction of a
+   millimetre would be culled before narrowphase, its manifold destroyed and
+   its accumulated impulses thrown away — a resting stack would then rebuild
+   its support from zero every frame, injecting energy and shaking itself
+   apart. Contacts must outlive momentary separation. */
+const AABB_PAD    = SPEC_MARGIN;
+const SLEEP_LIN   = 0.055;  // m/s
+const SLEEP_ANG   = 0.30;   // rad/s
+const SLEEP_TIME  = 0.45;   // s below threshold before sleeping
+const SETTLE_FRAMES = 16;   // build-time masonry relaxation budget (frames)
+const SETTLE_DAMP   = 0.4;  // velocity decay per settle frame (kills ringing)
+
+let BODY_UID = 0;
+
+class Body {
+  constructor(o) {
+    this.id = BODY_UID++;
+    this.hw = o.hw; this.hh = o.hh;                       // half extents
+    this.px = o.x;  this.py = o.y;  this.ang = o.ang || 0;
+    this.vx = 0;    this.vy = 0;    this.av  = 0;
+    this.isStatic = !!o.isStatic;
+
+    if (this.isStatic) {
+      this.mass = 0; this.invMass = 0; this.inertia = 0; this.invI = 0;
+    } else {
+      const m = o.mass;
+      const w = this.hw * 2, h = this.hh * 2;
+      this.mass = m; this.invMass = 1 / m;
+      this.inertia = (m * (w * w + h * h)) / 12;
+      this.invI = 1 / this.inertia;
+    }
+
+    this.fric = o.fric; this.rest = o.rest;
+    this.layer = o.layer === undefined ? -1 : o.layer;    // -1 collides with all
+    this.tag = o.tag;
+
+    this.c = Math.cos(this.ang); this.s = Math.sin(this.ang);
+    this.awake = true; this.sleepT = 0;
+    this.ox = this.px; this.oy = this.py; this.oang = this.ang; // spawn pose
+
+    // broadphase AABB
+    this.minx = 0; this.maxx = 0; this.miny = 0; this.maxy = 0;
+  }
+  updateRot() { this.c = Math.cos(this.ang); this.s = Math.sin(this.ang); }
+  wake() { this.awake = true; this.sleepT = 0; }
+  sleep() { this.awake = false; this.vx = this.vy = this.av = 0; this.sleepT = SLEEP_TIME; }
+  speed() { return Math.hypot(this.vx, this.vy); }
+  computeAABB() {
+    const ac = Math.abs(this.c), as = Math.abs(this.s);
+    const ex = ac * this.hw + as * this.hh + AABB_PAD;
+    const ey = as * this.hw + ac * this.hh + AABB_PAD;
+    this.minx = this.px - ex; this.maxx = this.px + ex;
+    this.miny = this.py - ey; this.maxy = this.py + ey;
+  }
+}
+
+/* --- box geometry tables: face normals & vertices in local space --------- */
+const FN = [1, 0, 0, 1, -1, 0, 0, -1];      // outward normal of face i
+const FV = [1, -1, 1, 1, -1, 1, -1, -1];    // vertex i (× hw, hh)
+
+function worldVert(b, i, out) {
+  const lx = FV[i * 2] * b.hw, ly = FV[i * 2 + 1] * b.hh;
+  out.x = b.px + b.c * lx - b.s * ly;
+  out.y = b.py + b.s * lx + b.c * ly;
+}
+function worldNorm(b, i, out) {
+  const lx = FN[i * 2], ly = FN[i * 2 + 1];
+  out.x = b.c * lx - b.s * ly;
+  out.y = b.s * lx + b.c * ly;
+}
+function support(b, dx, dy, out) {
+  const ldx = b.c * dx + b.s * dy;          // rotate direction into local space
+  const ldy = -b.s * dx + b.c * dy;
+  const lx = ldx >= 0 ? b.hw : -b.hw;
+  const ly = ldy >= 0 ? b.hh : -b.hh;
+  out.x = b.px + b.c * lx - b.s * ly;
+  out.y = b.py + b.s * lx + b.c * ly;
+}
+
+/* --- narrowphase scratch (module-level to avoid per-call allocation) ----- */
+const _n = { x: 0, y: 0 }, _p = { x: 0, y: 0 }, _v = { x: 0, y: 0 };
+const _refN = { x: 0, y: 0 }, _tn = { x: 0, y: 0 };
+const _ip0 = { x: 0, y: 0 }, _ip1 = { x: 0, y: 0 };
+const _rv0 = { x: 0, y: 0 }, _rv1 = { x: 0, y: 0 };
+const _mk = (n) => Array.from({ length: n }, () => ({ x: 0, y: 0, id: 0 }));
+const _cIn = _mk(2), _cMid = _mk(2), _cOut = _mk(2);
+const _sepRes = { s: 0, i: 0 };
+
+/** Deepest penetration of B against every face of A. */
+function maxSeparation(A, B) {
+  let best = -1e30, bi = 0;
+  for (let i = 0; i < 4; i++) {
+    worldNorm(A, i, _n);
+    support(B, -_n.x, -_n.y, _p);
+    worldVert(A, i, _v);
+    const s = _n.x * (_p.x - _v.x) + _n.y * (_p.y - _v.y);
+    if (s > best) { best = s; bi = i; }
+  }
+  _sepRes.s = best; _sepRes.i = bi;
+  return _sepRes;
+}
+
+/** Clip segment `inA` against half-plane (n·p - off <= 0). Returns count. */
+function clipSegment(inA, outA, nx, ny, off) {
+  let o = 0;
+  const d0 = nx * inA[0].x + ny * inA[0].y - off;
+  const d1 = nx * inA[1].x + ny * inA[1].y - off;
+  if (d0 <= 0) { outA[o].x = inA[0].x; outA[o].y = inA[0].y; outA[o].id = inA[0].id; o++; }
+  if (d1 <= 0) { outA[o].x = inA[1].x; outA[o].y = inA[1].y; outA[o].id = inA[1].id; o++; }
+  if (d0 * d1 < 0 && o < 2) {
+    const t = d0 / (d0 - d1);
+    outA[o].x = inA[0].x + t * (inA[1].x - inA[0].x);
+    outA[o].y = inA[0].y + t * (inA[1].y - inA[0].y);
+    outA[o].id = d0 < 0 ? inA[1].id : inA[0].id;
+    o++;
+  }
+  return o;
+}
+
+class ContactPoint {
+  constructor() {
+    this.x = 0; this.y = 0;            // world contact position
+    this.lax = 0; this.lay = 0;        // anchor in A local space
+    this.lbx = 0; this.lby = 0;        // anchor in B local space
+    this.rax = 0; this.ray = 0;
+    this.rbx = 0; this.rby = 0;
+    this.sep = 0;                      // separation at manifold creation
+    this.ni = 0; this.ti = 0;          // accumulated normal / tangent impulses
+    this.nmass = 0; this.tmass = 0;
+    this.vbias = 0;
+    this.fid = -1;                     // feature id (warm-start matching)
+  }
+}
+
+class Manifold {
+  constructor(A, B) {
+    this.A = A; this.B = B;
+    this.nx = 0; this.ny = 0;          // normal points from A towards B
+    this.count = 0;
+    this.pts = [new ContactPoint(), new ContactPoint()];
+    this.fric = 0; this.rest = 0;
+    this.stamp = -1;
+    this.totalImpulse = 0;
+    // 2x2 block-solver terms (see solveVelocities)
+    this.block = false;
+    this.k11 = 0; this.k12 = 0; this.k22 = 0; this.invDet = 0;
+  }
+}
+
+/**
+ * Build the contact manifold for two boxes. Returns number of contact points.
+ * Impulses of matching features are carried over from the previous frame.
+ */
+function collide(m) {
+  const A = m.A, B = m.B;
+
+  const sa = maxSeparation(A, B); const saS = sa.s, saI = sa.i;
+  if (saS > SPEC_MARGIN) return (m.count = 0);
+  const sb = maxSeparation(B, A); const sbS = sb.s, sbI = sb.i;
+  if (sbS > SPEC_MARGIN) return (m.count = 0);
+
+  let ref, inc, refI, flip;
+  if (sbS > saS + 0.1 * SLOP) { ref = B; inc = A; refI = sbI; flip = true; }
+  else                        { ref = A; inc = B; refI = saI; flip = false; }
+
+  worldNorm(ref, refI, _refN);
+
+  // incident face = the one most anti-parallel to the reference normal
+  let minD = 1e30, incI = 0;
+  for (let i = 0; i < 4; i++) {
+    worldNorm(inc, i, _tn);
+    const d = _tn.x * _refN.x + _tn.y * _refN.y;
+    if (d < minD) { minD = d; incI = i; }
+  }
+  worldVert(inc, incI, _ip0);
+  worldVert(inc, (incI + 1) & 3, _ip1);
+  worldVert(ref, refI, _rv0);
+  worldVert(ref, (refI + 1) & 3, _rv1);
+
+  let tx = _rv1.x - _rv0.x, ty = _rv1.y - _rv0.y;
+  const tl = Math.hypot(tx, ty);
+  if (tl < 1e-9) return (m.count = 0);
+  tx /= tl; ty /= tl;
+
+  _cIn[0].x = _ip0.x; _cIn[0].y = _ip0.y; _cIn[0].id = incI;
+  _cIn[1].x = _ip1.x; _cIn[1].y = _ip1.y; _cIn[1].id = (incI + 1) & 3;
+
+  // clip against both side planes of the reference face
+  if (clipSegment(_cIn, _cMid, -tx, -ty, -(tx * _rv0.x + ty * _rv0.y)) < 2) return (m.count = 0);
+  if (clipSegment(_cMid, _cOut, tx, ty, tx * _rv1.x + ty * _rv1.y) < 2) return (m.count = 0);
+
+  const nx = flip ? -_refN.x : _refN.x;
+  const ny = flip ? -_refN.y : _refN.y;
+  m.nx = nx; m.ny = ny;
+
+  const old0 = m.pts[0], old1 = m.pts[1], oldCount = m.count;
+  const oi0 = oldCount > 0 ? old0.fid : -1, oi1 = oldCount > 1 ? old1.fid : -1;
+  const on0 = old0.ni, ot0 = old0.ti, on1 = old1.ni, ot1 = old1.ti;
+
+  let n = 0;
+  for (let k = 0; k < 2; k++) {
+    const cp = _cOut[k];
+    const sep = _refN.x * (cp.x - _rv0.x) + _refN.y * (cp.y - _rv0.y);
+    if (sep > SPEC_MARGIN) continue;
+    const p = m.pts[n];
+    p.x = cp.x; p.y = cp.y; p.sep = sep;
+    p.fid = (flip ? 1000 : 0) + refI * 100 + incI * 10 + cp.id;
+    // warm start from the matching feature of the previous frame
+    if (p.fid === oi0)      { p.ni = on0; p.ti = ot0; }
+    else if (p.fid === oi1) { p.ni = on1; p.ti = ot1; }
+    else                    { p.ni = 0;   p.ti = 0;   }
+    n++;
+  }
+  m.count = n;
+  return n;
+}
+
+/* --- spatial hash broadphase --------------------------------------------
+   The depth layers all sit in the same plane, so a purely spatial hash would
+   pile every layer into the same bucket and leave the layer filter to throw
+   four fifths of the candidate pairs away *after* paying for them. Layer is
+   part of the key instead. Bodies that collide with everything (layer -1 —
+   the car) go into every layer's bucket, which costs a handful of inserts. */
+class Grid {
+  constructor(cell) {
+    this.cell = cell; this.map = new Map(); this.layers = 1;
+    this.pool = []; this.poolN = 0;      // recycled buckets, see clear()
+  }
+  key(gx, gy, layer) { return ((gx + 4096) * 8192 + (gy + 4096)) * 8 + layer; }
+  /* Buckets are recycled rather than dropped. Rebuilding the hash from scratch
+     each frame meant a fresh array per occupied cell, which at ~1900 bodies is
+     half a megabyte per frame handed to the collector — and that comes back as
+     a GC pause precisely when the crash is at its busiest and the frame budget
+     is already tight. The pool holds at most one frame's worth of buckets. */
+  clear() {
+    for (const arr of this.map.values()) { arr.length = 0; this.pool[this.poolN++] = arr; }
+    this.map.clear();
+  }
+  insert(b) {
+    const c = this.cell;
+    const x0 = Math.floor(b.minx / c), x1 = Math.floor(b.maxx / c);
+    const y0 = Math.floor(b.miny / c), y1 = Math.floor(b.maxy / c);
+    const lo = b.layer < 0 ? 0 : b.layer, hi = b.layer < 0 ? this.layers - 1 : b.layer;
+    for (let gx = x0; gx <= x1; gx++) {
+      for (let gy = y0; gy <= y1; gy++) {
+        for (let L = lo; L <= hi; L++) {
+          const k = this.key(gx, gy, L);
+          let arr = this.map.get(k);
+          if (arr === undefined) {
+            arr = this.poolN > 0 ? this.pool[--this.poolN] : [];
+            this.map.set(k, arr);
+          }
+          arr.push(b);
+        }
+      }
+    }
+  }
+}
+
+class World {
+  constructor(gravity, cellSize) {
+    this.bodies = [];
+    this.statics = [];
+    this.dynamics = [];
+    this.gravity = gravity;
+    this.manifolds = new Map();
+    this.grid = new Grid(cellSize);
+    this.stamp = 0;
+    this.time = 0;
+    this.impacts = [];            // {x,y,mag,nx,ny} — consumed by the FX layer
+    this.frictionOverride = null; // (A,B) => number | null
+    this.onManifold = null;       // (m) => void
+  }
+  add(b) {
+    this.bodies.push(b);
+    (b.isStatic ? this.statics : this.dynamics).push(b);
+    return b;
+  }
+  key(a, b) { return a * 65536 + b; }
+
+  /* ---- integrate external forces ---- */
+  integrateVelocities(dt) {
+    const g = this.gravity;
+    const D = this.dynamics;
+    for (let i = 0; i < D.length; i++) {
+      const b = D[i];
+      if (!b.awake) continue;
+      b.vy += g * dt;
+      b.vx *= 0.9995; b.vy *= 0.9995; b.av *= 0.998;   // faint air drag
+      if (b.av > 42) b.av = 42; else if (b.av < -42) b.av = -42;
+      const sp = b.vx * b.vx + b.vy * b.vy;
+      if (sp > 40000) { const k = 200 / Math.sqrt(sp); b.vx *= k; b.vy *= k; }
+    }
+  }
+
+  /* ---- broadphase + narrowphase ---- */
+  updateContacts() {
+    const stamp = ++this.stamp;
+    const D = this.dynamics, S = this.statics, grid = this.grid;
+
+    grid.clear();
+    for (let i = 0; i < D.length; i++) { D[i].computeAABB(); grid.insert(D[i]); }
+    for (let i = 0; i < S.length; i++) S[i].computeAABB();
+
+    // dynamic <-> dynamic
+    for (const cellBodies of grid.map.values()) {
+      const L = cellBodies.length;
+      if (L < 2) continue;
+      for (let i = 0; i < L; i++) {
+        const A = cellBodies[i];
+        for (let j = i + 1; j < L; j++) {
+          const B = cellBodies[j];
+          if (!A.awake && !B.awake) continue;
+          if (A.layer >= 0 && B.layer >= 0 && A.layer !== B.layer) continue;
+          if (A.maxx < B.minx || B.maxx < A.minx || A.maxy < B.miny || B.maxy < A.miny) continue;
+          const lo = A.id < B.id ? A : B, hi = A.id < B.id ? B : A;
+          this.narrow(lo, hi, this.key(lo.id, hi.id), stamp);
+        }
+      }
+    }
+    // dynamic <-> static (few statics: direct test, no grid needed)
+    for (let s = 0; s < S.length; s++) {
+      const St = S[s];
+      for (let i = 0; i < D.length; i++) {
+        const B = D[i];
+        if (!B.awake) continue;
+        if (St.maxx < B.minx || B.maxx < St.minx || St.maxy < B.miny || B.maxy < St.miny) continue;
+        const lo = St.id < B.id ? St : B, hi = St.id < B.id ? B : St;
+        this.narrow(lo, hi, this.key(lo.id, hi.id), stamp);
+      }
+    }
+
+    for (const [k, m] of this.manifolds) if (m.stamp !== stamp) this.manifolds.delete(k);
+  }
+
+  narrow(A, B, k, stamp) {
+    let m = this.manifolds.get(k);
+    if (m === undefined) { m = new Manifold(A, B); this.manifolds.set(k, m); }
+    // A pair straddling a cell boundary is reached from every cell it shares,
+    // and the stamp already records that this frame has dealt with it — so it
+    // doubles as the duplicate filter, and the per-frame set of seen pairs it
+    // replaces was itself thousands of insertions of pure overhead.
+    else if (m.stamp === stamp) return;
+    // Stamp on consideration, not on contact: a manifold that momentarily
+    // reports zero points keeps its accumulated impulses for when the pair
+    // touches again a frame later.
+    m.stamp = stamp;
+    if (collide(m) > 0) {
+      // wake a sleeping neighbour that is being touched by something moving
+      if (!A.isStatic && !B.isStatic) {
+        if (A.awake && !B.awake) B.wake();
+        else if (B.awake && !A.awake) A.wake();
+      }
+      if (this.onManifold) this.onManifold(m);
+    }
+  }
+
+  /* ---- prepare constraints ----
+     Every restitution decision is made from the velocities as they stand at
+     the top of the step. Warm starting happens afterwards, in its own pass
+     (warmStart), because a warm-start impulse applied at one contact point
+     spins the body before the next point has been measured — and a box that
+     appears to be closing at 1 m/s when it is actually at rest gets handed a
+     bounce it never earned. That is free energy, and a tall stack collects
+     enough of it to walk itself over. */
+  prestep(invDt) {
+    for (const m of this.manifolds.values()) {
+      const A = m.A, B = m.B, nx = m.nx, ny = m.ny;
+      const ov = this.frictionOverride && this.frictionOverride(A, B);
+      m.fric = ov === null || ov === undefined ? Math.sqrt(A.fric * B.fric) : ov;
+      m.rest = Math.min(A.rest, B.rest);
+      m.totalImpulse = 0;
+      const tx = -ny, ty = nx;
+
+      for (let i = 0; i < m.count; i++) {
+        const p = m.pts[i];
+        p.rax = p.x - A.px; p.ray = p.y - A.py;
+        p.rbx = p.x - B.px; p.rby = p.y - B.py;
+        // cache anchors in local space for the position pass
+        p.lax =  p.rax * A.c + p.ray * A.s;
+        p.lay = -p.rax * A.s + p.ray * A.c;
+        p.lbx =  p.rbx * B.c + p.rby * B.s;
+        p.lby = -p.rbx * B.s + p.rby * B.c;
+
+        const rnA = p.rax * ny - p.ray * nx;
+        const rnB = p.rbx * ny - p.rby * nx;
+        const kn = A.invMass + B.invMass + A.invI * rnA * rnA + B.invI * rnB * rnB;
+        p.nmass = kn > 0 ? 1 / kn : 0;
+
+        const rtA = p.rax * ty - p.ray * tx;
+        const rtB = p.rbx * ty - p.rby * tx;
+        const kt = A.invMass + B.invMass + A.invI * rtA * rtA + B.invI * rtB * rtB;
+        p.tmass = kt > 0 ? 1 / kt : 0;
+
+        const dvx = (B.vx - B.av * p.rby) - (A.vx - A.av * p.ray);
+        const dvy = (B.vy + B.av * p.rbx) - (A.vy + A.av * p.rax);
+        const vn = dvx * nx + dvy * ny;
+
+        if (p.sep > 0) p.vbias = -p.sep * invDt;              // speculative limit
+        else if (vn < -REST_THRESH) p.vbias = -m.rest * vn;   // bounce
+        else p.vbias = 0;
+      }
+
+      /* Two-point manifolds get a simultaneous 2x2 solve. Resolving the two
+         points one after the other (pure Gauss-Seidel) always lands the first
+         impulse before the second, which leaves a residual torque on every
+         box — a stack of them slowly rocks itself apart. Precompute the
+         coupled mass matrix here; ill-conditioned pairs fall back to the
+         sequential path. */
+      if (m.count === 2) {
+        const p1 = m.pts[0], p2 = m.pts[1];
+        const rn1A = p1.rax * ny - p1.ray * nx, rn1B = p1.rbx * ny - p1.rby * nx;
+        const rn2A = p2.rax * ny - p2.ray * nx, rn2B = p2.rbx * ny - p2.rby * nx;
+        const im = A.invMass + B.invMass;
+        const k11 = im + A.invI * rn1A * rn1A + B.invI * rn1B * rn1B;
+        const k22 = im + A.invI * rn2A * rn2A + B.invI * rn2B * rn2B;
+        const k12 = im + A.invI * rn1A * rn2A + B.invI * rn1B * rn2B;
+        const det = k11 * k22 - k12 * k12;
+        if (det > 0 && k11 * k11 < 1000 * det) {
+          m.block = true; m.k11 = k11; m.k12 = k12; m.k22 = k22; m.invDet = 1 / det;
+        } else m.block = false;
+      } else m.block = false;
+    }
+  }
+
+  /* ---- replay last step's impulses (see prestep) ---- */
+  warmStart() {
+    for (const m of this.manifolds.values()) {
+      const A = m.A, B = m.B, nx = m.nx, ny = m.ny, tx = -ny, ty = nx;
+      for (let i = 0; i < m.count; i++) {
+        const p = m.pts[i];
+        const px = p.ni * nx + p.ti * tx;
+        const py = p.ni * ny + p.ti * ty;
+        A.vx -= px * A.invMass; A.vy -= py * A.invMass;
+        A.av -= A.invI * (p.rax * py - p.ray * px);
+        B.vx += px * B.invMass; B.vy += py * B.invMass;
+        B.av += B.invI * (p.rbx * py - p.rby * px);
+      }
+    }
+  }
+
+  /* ---- velocity constraints (friction first, then normal) ---- */
+  solveVelocities(iters) {
+    for (let it = 0; it < iters; it++) {
+      const last = it === iters - 1;
+      for (const m of this.manifolds.values()) {
+        const A = m.A, B = m.B, nx = m.nx, ny = m.ny, tx = -ny, ty = nx;
+
+        // ---- friction (always sequential; bound by the current normal load)
+        for (let i = 0; i < m.count; i++) {
+          const p = m.pts[i];
+          const dvx = (B.vx - B.av * p.rby) - (A.vx - A.av * p.ray);
+          const dvy = (B.vy + B.av * p.rbx) - (A.vy + A.av * p.rax);
+          const vt = dvx * tx + dvy * ty;
+          let dl = -p.tmass * vt;
+          const maxF = m.fric * p.ni;
+          const oldT = p.ti;
+          p.ti = clamp(oldT + dl, -maxF, maxF);
+          dl = p.ti - oldT;
+          const ix = dl * tx, iy = dl * ty;
+          A.vx -= ix * A.invMass; A.vy -= iy * A.invMass;
+          A.av -= A.invI * (p.rax * iy - p.ray * ix);
+          B.vx += ix * B.invMass; B.vy += iy * B.invMass;
+          B.av += B.invI * (p.rbx * iy - p.rby * ix);
+        }
+
+        // ---- normal
+        if (m.block) {
+          // Simultaneous 2-point solve: find x >= 0 with A*x + b = 0, trying
+          // each active set in turn (both points, either one, neither).
+          const p1 = m.pts[0], p2 = m.pts[1];
+          const a1 = p1.ni, a2 = p2.ni;
+          let dvx = (B.vx - B.av * p1.rby) - (A.vx - A.av * p1.ray);
+          let dvy = (B.vy + B.av * p1.rbx) - (A.vy + A.av * p1.rax);
+          const vn1 = dvx * nx + dvy * ny;
+          dvx = (B.vx - B.av * p2.rby) - (A.vx - A.av * p2.ray);
+          dvy = (B.vy + B.av * p2.rbx) - (A.vy + A.av * p2.rax);
+          const vn2 = dvx * nx + dvy * ny;
+
+          const b1 = vn1 - p1.vbias - (m.k11 * a1 + m.k12 * a2);
+          const b2 = vn2 - p2.vbias - (m.k12 * a1 + m.k22 * a2);
+
+          let x1 = -(m.k22 * b1 - m.k12 * b2) * m.invDet;
+          let x2 = -(m.k11 * b2 - m.k12 * b1) * m.invDet;
+          let ok = x1 >= 0 && x2 >= 0;
+          if (!ok) { x1 = -b1 / m.k11; x2 = 0; ok = x1 >= 0 && m.k12 * x1 + b2 >= 0; }
+          if (!ok) { x1 = 0; x2 = -b2 / m.k22; ok = x2 >= 0 && m.k12 * x2 + b1 >= 0; }
+          if (!ok) { x1 = 0; x2 = 0; ok = b1 >= 0 && b2 >= 0; }
+
+          if (ok) {
+            const d1 = x1 - a1, d2 = x2 - a2;
+            const ix = (d1 + d2) * nx, iy = (d1 + d2) * ny;
+            A.vx -= ix * A.invMass; A.vy -= iy * A.invMass;
+            A.av -= A.invI * (p1.rax * (d1 * ny) - p1.ray * (d1 * nx)
+                            + p2.rax * (d2 * ny) - p2.ray * (d2 * nx));
+            B.vx += ix * B.invMass; B.vy += iy * B.invMass;
+            B.av += B.invI * (p1.rbx * (d1 * ny) - p1.rby * (d1 * nx)
+                            + p2.rbx * (d2 * ny) - p2.rby * (d2 * nx));
+            p1.ni = x1; p2.ni = x2;
+          }
+        } else {
+          for (let i = 0; i < m.count; i++) {
+            const p = m.pts[i];
+            const dvx = (B.vx - B.av * p.rby) - (A.vx - A.av * p.ray);
+            const dvy = (B.vy + B.av * p.rbx) - (A.vy + A.av * p.rax);
+            const vn = dvx * nx + dvy * ny;
+            let dl = -p.nmass * (vn - p.vbias);
+            const oldN = p.ni;
+            p.ni = oldN + dl > 0 ? oldN + dl : 0;
+            dl = p.ni - oldN;
+            const ix = dl * nx, iy = dl * ny;
+            A.vx -= ix * A.invMass; A.vy -= iy * A.invMass;
+            A.av -= A.invI * (p.rax * iy - p.ray * ix);
+            B.vx += ix * B.invMass; B.vy += iy * B.invMass;
+            B.av += B.invI * (p.rbx * iy - p.rby * ix);
+          }
+        }
+        if (last) for (let i = 0; i < m.count; i++) m.totalImpulse += m.pts[i].ni;
+      }
+    }
+  }
+
+  integratePositions(dt) {
+    const D = this.dynamics;
+    for (let i = 0; i < D.length; i++) {
+      const b = D[i];
+      if (!b.awake) continue;
+      b.px += b.vx * dt; b.py += b.vy * dt; b.ang += b.av * dt;
+      if (b.ang > Math.PI) b.ang -= 2 * Math.PI;
+      else if (b.ang < -Math.PI) b.ang += 2 * Math.PI;
+      b.updateRot();
+    }
+  }
+
+  /* ---- pseudo-velocity position pass (no energy injection) ---- */
+  solvePositions(iters) {
+    for (let it = 0; it < iters; it++) {
+      let minSep = 0;
+      for (const m of this.manifolds.values()) {
+        const A = m.A, B = m.B, nx = m.nx, ny = m.ny;
+        if (m.count === 0 || (A.invMass === 0 && B.invMass === 0)) continue;
+
+        /* Both points are measured against the same transform and only then
+           applied. Correcting point 0 first would tilt the box before point 1
+           is even measured, and that per-manifold bias accumulates into a
+           lean that walks a tall stack over. */
+        let sImp = 0, sTrqA = 0, sTrqB = 0;
+        for (let i = 0; i < m.count; i++) {
+          const p = m.pts[i];
+          const rax = A.c * p.lax - A.s * p.lay, ray = A.s * p.lax + A.c * p.lay;
+          const rbx = B.c * p.lbx - B.s * p.lby, rby = B.s * p.lbx + B.c * p.lby;
+          const sep = p.sep + ((B.px + rbx) - (A.px + rax)) * nx
+                            + ((B.py + rby) - (A.py + ray)) * ny;
+          if (sep < minSep) minSep = sep;
+
+          const C = clamp(BAUMGARTE * (sep + SLOP), -MAX_CORRECT, 0);
+          if (C === 0) continue;
+          const rnA = rax * ny - ray * nx, rnB = rbx * ny - rby * nx;
+          const k = A.invMass + B.invMass + A.invI * rnA * rnA + B.invI * rnB * rnB;
+          if (k <= 0) continue;
+          const imp = -C / k;
+          sImp += imp;
+          sTrqA += rax * (imp * ny) - ray * (imp * nx);
+          sTrqB += rbx * (imp * ny) - rby * (imp * nx);
+        }
+        if (sImp === 0 && sTrqA === 0 && sTrqB === 0) continue;
+        const ix = sImp * nx, iy = sImp * ny;
+        A.px -= ix * A.invMass; A.py -= iy * A.invMass; A.ang -= A.invI * sTrqA;
+        B.px += ix * B.invMass; B.py += iy * B.invMass; B.ang += B.invI * sTrqB;
+      }
+      const D = this.dynamics;
+      for (let i = 0; i < D.length; i++) if (D[i].awake) D[i].updateRot();
+      if (minSep >= -3 * SLOP) break;
+    }
+  }
+
+  updateSleep(dt) {
+    const D = this.dynamics;
+    for (let i = 0; i < D.length; i++) {
+      const b = D[i];
+      if (!b.awake || b.noSleep) continue;
+      if (b.vx * b.vx + b.vy * b.vy < SLEEP_LIN * SLEEP_LIN && Math.abs(b.av) < SLEEP_ANG) {
+        b.sleepT += dt;
+        if (b.sleepT >= SLEEP_TIME) b.sleep();
+      } else b.sleepT = 0;
+    }
+  }
+
+  /** Report large contact impulses so the FX layer can spawn dust/debris. */
+  collectImpacts(threshold) {
+    const out = this.impacts;
+    for (const m of this.manifolds.values()) {
+      if (m.count === 0 || m.totalImpulse < threshold) continue;
+      if (m.A.tag === "ground" && m.B.tag === "ground") continue;
+      if (out.length >= 48) break;
+      const p = m.pts[0];
+      out.push({ x: p.x, y: p.y, mag: m.totalImpulse, nx: m.nx, ny: m.ny });
+    }
+  }
+
+  step(dt, velIters, posIters) {
+    const invDt = 1 / dt;
+    this.integrateVelocities(dt);
+    this.updateContacts();
+    this.prestep(invDt);
+    this.warmStart();
+    this.solveVelocities(velIters);
+    this.integratePositions(dt);
+    this.solvePositions(posIters);
+    this.updateSleep(dt);
+    this.time += dt;
+  }
+}
+
+/* ======================= 2. EXPERIMENT ================================== */
+
+const PARAMS = [
+  // key           label                group      min   max   step  default  unit      fmt
+  ["speed",      "Car speed",          "Test",       5,   45,   1,    22,     "m/s",   1],
+  ["cols",       "Wall columns",       "Wall",       4,   24,   1,    12,     "wide",  0],
+  ["rows",       "Wall rows",          "Wall",       3,   16,   1,     8,     "tall",  0],
+  ["layers",     "Wall depth layers",  "Wall",       1,    5,   1,     2,     "thick", 0],
+  ["brickW",     "Brick width",        "Wall",    0.15,  1.2, 0.01,  0.50,    "m",     2],
+  ["brickH",     "Brick height",       "Wall",    0.08,  0.6, 0.01,  0.24,    "m",     2],
+  ["brickMass",  "Brick mass",         "Material", 0.5,   12,  0.1,   2.5,    "kg",    1],
+  ["brickFric",  "Brick friction",     "Material",   0,  1.5, 0.01,  0.72,    "μ",     2],
+  ["brickRest",  "Brick restitution",  "Material",   0, 0.90, 0.01,  0.18,    "e",     2],
+  ["carMass",    "Car mass",           "Vehicle",  200, 6000,   10,  1250,    "kg",    0],
+  ["carW",       "Car width",          "Vehicle",    2,    8,  0.1,   4.2,    "m",     1],
+  ["carH",       "Car height",         "Vehicle",  0.8,    3, 0.05,  1.45,    "m",     2],
+  ["gravity",    "Gravity",            "World",      0,   25, 0.01,  9.81,    "m/s²",  2],
+  ["groundFric", "Ground friction",    "World",      0,  1.5, 0.01,  0.85,    "μ",     2],
+  ["scale",      "Simulation scale",   "World",     20,  160,    1,    80,    "px/m",  0],
+];
+
+const DEFAULTS = {};
+for (const p of PARAMS) DEFAULTS[p[0]] = p[6];
+const S = Object.assign({}, DEFAULTS);
+
+const LAUNCH_ACC = 40;   // m/s² catapult acceleration (crash-sled style)
+const CRUISE_M   = 1.5;  // metres of constant-speed cruise before the wall
+const ROLL_FRIC  = 0.03; // rolling resistance of the wheels before braking
+
+/* --- experiment state --------------------------------------------------- */
+const EX = {
+  world: null, car: null, ground: null, bricks: [],
+  phase: "ready",              // ready | launch | impact | settling | settled
+  runTime: 0, wallW: 0, wallH: 0, wallMass: 0, wallX: 0,
+  startX: 0, brickCount: 0,
+  impactSpeed: 0, impactTime: 0, peakG: 0, penetration: 0, settleTime: 0,
+  substeps: 4, velIters: 8, posIters: 3,
+  carCrush: 0, wheelAng: 0, stillT: 0, decelFilt: 0, cmdV: 0,
+};
+
+function brickColors(seed, layer) {
+  const t = seed;                       // deterministic per-brick variation
+  const dark = clamp(1 - layer * 0.135, 0.52, 1);
+  const h = 12 + t * 12;
+  const sat = 34 + t * 16;
+  const li = (34 + t * 13) * dark;
+  return {
+    base: `hsl(${h} ${sat}% ${li}%)`,
+    top:  `hsl(${h + 4} ${sat - 6}% ${Math.min(72, li + 8.5)}%)`,
+    bot:  `hsl(${h - 3} ${sat + 4}% ${Math.max(6, li - 8)}%)`,
+    edge: `hsla(18 30% 8% / ${0.45 + layer * 0.06})`,
+  };
+}
+
+/**
+ * "Cure" the masonry: let every course reach true static equilibrium, then
+ * record that pose as the reference. Bricks are laid at exact contact, so
+ * without this a tall wall visibly slumps by the accumulated contact slop the
+ * instant it is woken — and the integrity readout would report damage the car
+ * never caused. Purely a build-time step; it is not part of the timed run.
+ */
+function settleWall(world) {
+  const onM = world.onManifold;
+  world.onManifold = null;
+  for (const b of EX.bricks) b.wake();
+
+  /* Relax with the same iteration counts the run will use, so the pose we
+     freeze is the running solver's own fixed point and not a stiffer solver's.
+     A sequential-impulse solver carries load down roughly one course per
+     iteration, so a tall wall needs more frames to come to rest than a short
+     one; stop on stillness, and damp hard between frames so the masonry sinks
+     to its resting pose instead of ringing about it. The budget counts frames,
+     never milliseconds, so the settled pose is identical on every machine. */
+  const STILL = 4e-4;                       // (m/s)^2, ~0.02 m/s
+  for (let frame = 0; frame < SETTLE_FRAMES; frame++) {
+    world.step(1 / 60, EX.velIters, EX.posIters);
+    let moving = false;
+    for (const b of EX.bricks) {
+      b.vx *= SETTLE_DAMP; b.vy *= SETTLE_DAMP; b.av *= SETTLE_DAMP;
+      if (b.vx * b.vx + b.vy * b.vy > STILL) moving = true;
+    }
+    if (!moving) break;
+  }
+
+  for (const b of EX.bricks) {
+    b.vx = b.vy = b.av = 0;
+    b.ox = b.px; b.oy = b.py; b.oang = b.ang;
+    b.sleep();
+  }
+  world.impacts.length = 0;
+  world.time = 0;
+  world.onManifold = onM;
+}
+
+function buildScene() {
+  BODY_UID = 0;
+  const cell = Math.max(0.55, Math.max(S.brickW, S.brickH) * 1.35);
+  const world = new World(-S.gravity, cell);
+  world.grid.layers = S.layers;
+  EX.world = world;
+  EX.bricks = [];
+
+  /* ---- ground ---- */
+  const ground = new Body({
+    hw: 900, hh: 6, x: 0, y: -6, isStatic: true,
+    fric: S.groundFric, rest: 0.20, tag: "ground", layer: -1,
+  });
+  world.add(ground);
+  EX.ground = ground;
+
+  /* ---- brick wall (staggered courses, `layers` independent depth planes) --
+     Odd courses start with a half brick so the vertical seams alternate,
+     exactly like real running-bond masonry. Half bricks carry half the mass. */
+  const bw = S.brickW, bh = S.brickH;
+  const wallX = 0;
+  let wallMass = 0;
+
+  const addBrick = (cx, cy, w, layer, row, col) => {
+    const full = Math.abs(w - bw) < 1e-9;
+    const mass = full ? S.brickMass : S.brickMass * (w / bw);
+    const b = new Body({
+      hw: w / 2, hh: bh / 2, x: cx, y: cy, mass,
+      fric: S.brickFric, rest: S.brickRest, tag: "brick", layer,
+    });
+    b.layerIdx = layer;
+    b.col = brickColors(hash3(row, col, layer * 7 + 3), layer);
+    b.sleep();
+    world.add(b);
+    EX.bricks.push(b);
+    wallMass += mass;
+  };
+
+  for (let L = S.layers - 1; L >= 0; L--) {
+    for (let r = 0; r < S.rows; r++) {
+      // Nominal pitch: courses touch exactly. settleWall() then relaxes the
+      // masonry into its true resting pose before the run starts.
+      const cy = bh / 2 + r * bh;
+      if ((r & 1) === 0) {
+        for (let c = 0; c < S.cols; c++) addBrick(wallX + c * bw + bw / 2, cy, bw, L, r, c);
+      } else {
+        addBrick(wallX + bw * 0.25, cy, bw * 0.5, L, r, 0);
+        for (let c = 0; c < S.cols - 1; c++) addBrick(wallX + bw * 0.5 + c * bw + bw / 2, cy, bw, L, r, c + 1);
+        addBrick(wallX + bw * S.cols - bw * 0.25, cy, bw * 0.5, L, r, S.cols);
+      }
+    }
+  }
+
+  EX.wallX = wallX;
+  EX.wallW = bw * S.cols;
+  EX.wallH = bh * S.rows;
+  EX.wallMass = wallMass;
+  EX.brickCount = EX.bricks.length;
+
+  /* ---- car ---- */
+  const runway = (S.speed * S.speed) / (2 * LAUNCH_ACC) + CRUISE_M;
+  const carX = wallX - runway - S.carW / 2;
+  const car = new Body({
+    hw: S.carW / 2, hh: S.carH / 2, x: carX, y: S.carH / 2,
+    mass: S.carMass, fric: 0.62, rest: 0.05, tag: "car", layer: -1,
+  });
+  car.driving = false; car.braking = false; car.noSleep = false;
+  car.sleep();
+  world.add(car);
+  EX.car = car;
+  EX.startX = carX;
+
+  /* ---- pair-specific friction: wheels roll freely, then lock up ---- */
+  world.frictionOverride = (A, B) => {
+    const ac = A.tag === "car", bc = B.tag === "car";
+    if ((ac && B.tag === "ground") || (bc && A.tag === "ground"))
+      return car.braking ? S.groundFric : ROLL_FRIC;
+    return null;
+  };
+
+  /* ---- the moment the car touches masonry, cut drive & lock the brakes --- */
+  world.onManifold = (m) => {
+    const a = m.A.tag, b = m.B.tag;
+    if ((a === "car" && b === "brick") || (a === "brick" && b === "car")) {
+      if (car.driving) {
+        car.driving = false;
+        car.braking = true;
+        EX.impactSpeed = car.vx;
+        EX.impactTime = EX.runTime;
+        EX.phase = "impact";
+        for (const br of EX.bricks) br.wake();   // full force transfer at t=0
+        FX.shake = Math.min(26, 4 + Math.abs(car.vx) * 0.75);
+        FX.burst(m.pts[0].x, m.pts[0].y, Math.abs(car.vx));
+      }
+    }
+  };
+
+  /* ---- deterministic solver budget (settings-derived, never FPS-derived) */
+  const n = world.dynamics.length;
+  let sub = Math.ceil((Math.max(S.speed, 14) / 60) / (0.5 * Math.min(bw, bh)));
+  sub = clamp(sub, 2, 8);
+  if (n > 1100) sub = Math.max(2, sub - 1);
+  if (n > 1800) sub = Math.max(2, sub - 1);
+  EX.substeps = sub;
+  EX.velIters = n > 1100 ? 6 : 8;
+  EX.posIters = n > 1100 ? 2 : 3;
+
+  settleWall(world);
+
+  /* ---- reset run state ---- */
+  EX.phase = "ready"; EX.runTime = 0; EX.peakG = 0; EX.impactSpeed = 0;
+  EX.impactTime = 0; EX.penetration = 0; EX.settleTime = 0; EX.carCrush = 0;
+  EX.wheelAng = 0; EX.stillT = 0; EX.decelFilt = 0; EX.cmdV = 0;
+  FX.reset();
+  Cam.snap();
+}
+
+function startTest() {
+  buildScene();
+  EX.phase = "launch";
+  EX.car.wake();
+  EX.car.driving = true;
+  EX.car.braking = false;
+  EX.car.noSleep = true;
+}
+
+/** Car propulsion: a guided sled up to the target speed, released on impact.
+ *  The commanded speed is integrated on its own rather than read back off the
+ *  body, so drag and rolling resistance cannot bleed the sled below the speed
+ *  the operator dialled in — it arrives at exactly S.speed, every time. */
+function driveCar(dt) {
+  const car = EX.car;
+  if (!car.driving) return;
+  EX.cmdV = Math.min(S.speed, EX.cmdV + LAUNCH_ACC * dt);
+  car.vx = EX.cmdV;
+  car.ang = 0; car.av = 0; car.updateRot();   // rails keep it level pre-impact
+}
+
+function simulate(dt) {
+  if (EX.phase === "ready" || EX.phase === "settled") return;
+  const world = EX.world, car = EX.car;
+  const sub = EX.substeps, sdt = dt / sub;
+
+  for (let i = 0; i < sub; i++) {
+    const vBefore = car.vx;
+    driveCar(sdt);
+    world.step(sdt, EX.velIters, EX.posIters);
+    if (EX.phase === "impact" || EX.phase === "settling") {
+      // low-pass the deceleration trace (~10 ms) the way crash telemetry is
+      // filtered, otherwise the peak is just single-substep solver noise
+      const dec = (vBefore - car.vx) / sdt / Math.max(0.01, S.gravity);
+      EX.decelFilt += (dec - EX.decelFilt) * (sdt / (sdt + 0.010));
+      if (EX.decelFilt > EX.peakG) EX.peakG = EX.decelFilt;
+    }
+    EX.runTime += sdt;
+  }
+  world.collectImpacts(Math.max(1.5, S.brickMass * 1.4));
+
+  // accumulated visual crush of the front end
+  if (EX.impactTime > 0) {
+    const lost = Math.max(0, EX.impactSpeed - car.vx);
+    EX.carCrush = clamp((lost * S.carMass) / (S.carMass * 26), 0, Math.min(0.62, S.carW * 0.22));
+    EX.penetration = Math.max(EX.penetration, car.px + S.carW / 2 - EX.wallX);
+  }
+  EX.wheelAng += (car.vx * dt) / Math.max(0.12, Math.min(S.carH * 0.26, S.carW * 0.11));
+
+  // phase machine
+  if (EX.phase === "impact" && EX.runTime - EX.impactTime > 0.6) EX.phase = "settling";
+  if (EX.phase === "settling" || EX.phase === "launch") {
+    const moving = countMoving();
+    if (moving === 0 && Math.abs(car.vx) < 0.12 && EX.phase === "settling") {
+      EX.stillT += dt;
+      if (EX.stillT > 0.7) { EX.phase = "settled"; EX.settleTime = EX.runTime - EX.impactTime; }
+    } else EX.stillT = 0;
+  }
+}
+
+function countMoving() {
+  let n = 0;
+  const B = EX.bricks;
+  for (let i = 0; i < B.length; i++) {
+    const b = B[i];
+    if (b.awake && (b.vx * b.vx + b.vy * b.vy > 0.04 || Math.abs(b.av) > 0.35)) n++;
+  }
+  return n;
+}
+function countDisplaced() {
+  let n = 0;
+  const B = EX.bricks;
+  for (let i = 0; i < B.length; i++) {
+    const b = B[i];
+    const dx = b.px - b.ox, dy = b.py - b.oy;
+    if (dx * dx + dy * dy > 0.0225 || Math.abs(b.ang - b.oang) > 0.14) n++;
+  }
+  return n;
+}
+function kineticEnergy() {
+  let e = 0.5 * S.carMass * (EX.car.vx * EX.car.vx + EX.car.vy * EX.car.vy);
+  const B = EX.bricks;
+  for (let i = 0; i < B.length; i++) {
+    const b = B[i];
+    if (!b.awake) continue;
+    e += 0.5 * b.mass * (b.vx * b.vx + b.vy * b.vy) + 0.5 * b.inertia * b.av * b.av;
+  }
+  return e;
+}
+
+/* ======================= 3. EFFECTS (visual only) ======================= */
+
+const FX = {
+  parts: [], skids: [], shake: 0, rng: mulberry32(0x51de),
+  reset() { this.parts.length = 0; this.skids.length = 0; this.shake = 0; this.rng = mulberry32(0x51de); },
+
+  spawnDust(x, y, mag) {
+    const r = this.rng;
+    const n = Math.min(7, 1 + Math.floor(mag * 0.06));
+    for (let i = 0; i < n; i++) {
+      if (this.parts.length > 420) return;
+      this.parts.push({
+        t: 0, life: 0.55 + r() * 0.85, x, y,
+        vx: (r() - 0.5) * 2.6, vy: r() * 1.9 + 0.35,
+        r0: 0.05 + r() * 0.07, r1: 0.3 + r() * 0.55, kind: 0, rot: 0, rv: 0,
+        g: 0.16 + r() * 0.12,
+      });
+    }
+  },
+  spawnChips(x, y, mag, col) {
+    const r = this.rng;
+    const n = Math.min(5, 1 + Math.floor(mag * 0.04));
+    for (let i = 0; i < n; i++) {
+      if (this.parts.length > 420) return;
+      const a = r() * Math.PI * 2, sp = 1.2 + r() * mag * 0.16;
+      this.parts.push({
+        t: 0, life: 0.9 + r() * 1.3, x, y,
+        vx: Math.cos(a) * sp, vy: Math.abs(Math.sin(a)) * sp * 0.9 + 0.6,
+        r0: 0.025 + r() * 0.035, r1: 0, kind: 1,
+        rot: r() * 6.28, rv: (r() - 0.5) * 16, g: 1, col: col || "#8a5340",
+      });
+    }
+  },
+  burst(x, y, v) {
+    const r = this.rng;
+    for (let i = 0; i < 26; i++) {
+      if (this.parts.length > 420) break;
+      const a = (i / 26) * Math.PI * 2;
+      this.parts.push({
+        t: 0, life: 0.4 + r() * 0.5, x, y,
+        vx: Math.cos(a) * (2 + r() * v * 0.22), vy: Math.sin(a) * (1.4 + r() * v * 0.16) + 1,
+        r0: 0.06, r1: 0.42 + r() * 0.4, kind: 0, g: 0.1, rot: 0, rv: 0,
+      });
+    }
+  },
+
+  update(dt, world) {
+    // consume physics impact events -> dust + chips (never touches the sim)
+    const ev = world.impacts;
+    for (let i = 0; i < ev.length; i++) {
+      const e = ev[i];
+      const m = e.mag;
+      this.spawnDust(e.x, e.y, m);
+      if (m > 12) this.spawnChips(e.x, e.y, m);
+      if (m > 90) this.shake = Math.max(this.shake, Math.min(22, m * 0.035));
+    }
+    ev.length = 0;
+
+    const P = this.parts;
+    for (let i = P.length - 1; i >= 0; i--) {
+      const p = P[i];
+      p.t += dt;
+      if (p.t >= p.life) { P.splice(i, 1); continue; }
+      p.vy -= 9.81 * p.g * dt;
+      p.vx *= 0.985; p.vy *= 0.99;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.rot += p.rv * dt;
+      if (p.kind === 1 && p.y < p.r0) { p.y = p.r0; p.vy = Math.abs(p.vy) * 0.28; p.vx *= 0.62; p.rv *= 0.5; }
+    }
+    this.shake *= Math.pow(0.0016, dt);
+
+    // tyre skid marks while the wheels are locked and sliding
+    const car = EX.car;
+    if (car && car.braking && Math.abs(car.vx) > 0.55 && car.py - S.carH / 2 < 0.14) {
+      const last = this.skids[this.skids.length - 1];
+      if (!last || Math.abs(car.px - last.x1) > 0.12) {
+        const x = car.px;
+        if (last && Math.abs(x - last.x1) < 2.5) this.skids.push({ x0: last.x1, x1: x, a: Math.min(0.5, Math.abs(car.vx) * 0.03) });
+        else this.skids.push({ x0: x, x1: x, a: 0.2 });
+        if (this.skids.length > 400) this.skids.shift();
+      }
+    }
+  },
+};
+
+/* ======================= 4. RENDERER ==================================== */
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d", { alpha: false });
+let W = 0, H = 0, DPR = 1;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+}
+window.addEventListener("resize", resize);
+resize();
+
+/** Camera: follows the action, never rescales the physics. */
+const Cam = {
+  /* groundY is where the ground line sits down the canvas. A side-on scene is
+     inherently letterboxed — the action is a shallow band — so pinning it near
+     the bottom edge buys nothing but empty sky and crowds the ruler against the
+     controls. Two thirds down centres the band and still leaves the horizon
+     high enough to read as ground rather than as a floor. */
+  x: 0, y: 0, s: 80, tx: 0, ty: 0, ts: 80, groundY: 0.68,
+  computeTarget() {
+    const car = EX.car;
+    const needH = Math.max(EX.wallH + 2.2, S.carH + 2.6);
+    let s = Math.min(S.scale, (H * 0.62) / needH);
+
+    let cx;
+    if (EX.phase === "ready") {
+      const left = car.px - S.carW / 2 - 1.4;
+      const right = EX.wallX + EX.wallW + 2.2;
+      s = Math.min(s, (W * 0.84) / Math.max(4, right - left));
+      cx = (left + right) / 2;
+    } else {
+      // keep debris in frame
+      let lo = car.px - S.carW, hi = EX.wallX + EX.wallW;
+      const B = EX.bricks;
+      for (let i = 0; i < B.length; i++) {
+        const b = B[i];
+        if (!b.awake) continue;
+        if (b.px < lo) lo = b.px;
+        if (b.px > hi) hi = b.px;
+      }
+      /* Debris from a fast run scatters over fifty metres. Fitting all of it
+         shrinks every brick to a smudge, so the zoom-out stops halfway: the
+         camera holds on the bulk of the pile and lets the far stragglers leave
+         frame, where the ruler and the displaced count still account for them. */
+      const span = Math.max(6, hi - lo + 3.5);
+      s = Math.min(s, Math.max(S.scale * 0.5, (W * 0.9) / span));
+      const viewW = W / s;
+      cx = car.px + viewW * 0.16;
+      const wallCx = EX.wallX + EX.wallW / 2;
+      if (cx > wallCx + viewW * 0.14) cx = wallCx + viewW * 0.14;
+      const dbCx = (lo + hi) / 2;
+      if (EX.phase === "settling" || EX.phase === "settled") cx = lerp(cx, dbCx, 0.5);
+    }
+    this.tx = cx;
+    this.ts = s;
+    this.ty = Math.max(0, (EX.wallH - 6) * 0.12);
+  },
+  update(dt) {
+    this.computeTarget();
+    const k = 1 - Math.pow(0.0009, dt);
+    this.x = lerp(this.x, this.tx, k);
+    this.y = lerp(this.y, this.ty, k);
+    this.s = lerp(this.s, this.ts, k);
+  },
+  snap() { this.computeTarget(); this.x = this.tx; this.y = this.ty; this.s = this.ts; },
+  ox() { return W / 2 - this.x * this.s + FX.shake * (FX.rng() - 0.5); },
+  oy() { return H * this.groundY + this.y * this.s + FX.shake * (FX.rng() - 0.5) * 0.7; },
+};
+
+function drawBackground(ox, oy, s) {
+  const horizon = oy;
+  const g = ctx.createLinearGradient(0, 0, 0, horizon);
+  g.addColorStop(0, "#080b12");
+  g.addColorStop(0.55, "#0d1420");
+  g.addColorStop(1, "#17202e");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, horizon + 1);
+
+  // distant hangar silhouette
+  const hb = horizon;
+  ctx.fillStyle = "#0b1119";
+  const hx = ox - EX.wallX * 0 - W * 0.1;
+  ctx.beginPath();
+  const bw = W * 1.6, bh = Math.min(H * 0.24, 190);
+  ctx.moveTo(hx - bw * 0.1, hb);
+  ctx.lineTo(hx - bw * 0.1, hb - bh * 0.62);
+  ctx.lineTo(hx + bw * 0.22, hb - bh);
+  ctx.lineTo(hx + bw * 0.55, hb - bh * 0.62);
+  ctx.lineTo(hx + bw * 0.55, hb);
+  ctx.closePath(); ctx.fill();
+
+  // light pools on the back wall
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = -3; i <= 3; i++) {
+    const lx = ox + i * 9 * s;
+    if (lx < -260 || lx > W + 260) continue;
+    const rg = ctx.createRadialGradient(lx, hb - 130, 0, lx, hb - 130, 240);
+    rg.addColorStop(0, "rgba(120,150,200,0.075)");
+    rg.addColorStop(1, "rgba(120,150,200,0)");
+    ctx.fillStyle = rg;
+    ctx.fillRect(lx - 240, hb - 370, 480, 380);
+  }
+  ctx.restore();
+
+  // ground
+  const gg = ctx.createLinearGradient(0, horizon, 0, H);
+  gg.addColorStop(0, "#1b1f26");
+  gg.addColorStop(0.12, "#14181e");
+  gg.addColorStop(1, "#0a0c10");
+  ctx.fillStyle = gg;
+  ctx.fillRect(0, horizon, W, H - horizon);
+
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.fillRect(0, horizon - 1, W, 1.4);
+
+  // distance markers every 5 m, measured from the wall face
+  const step = s < 34 ? 20 : s < 60 ? 10 : 5;
+  const x0 = Math.floor((Cam.x - W / (2 * s)) / step) * step;
+  const x1 = Cam.x + W / (2 * s) + step;
+  ctx.font = "500 10px ui-monospace,monospace";
+  ctx.textAlign = "center";
+  for (let m = x0; m <= x1; m += step) {
+    const px = ox + m * s;
+    if (px < -50 || px > W + 50) continue;
+    const major = m === 0;
+    ctx.fillStyle = major ? "rgba(255,95,61,0.55)" : "rgba(255,255,255,0.13)";
+    ctx.fillRect(px - (major ? 1 : 0.5), horizon, major ? 2 : 1, major ? 22 : 13);
+    ctx.fillStyle = major ? "rgba(255,140,110,0.75)" : "rgba(255,255,255,0.24)";
+    ctx.fillText(m === 0 ? "0" : (m > 0 ? "+" : "") + m + " m", px, horizon + 34);
+  }
+  ctx.textAlign = "left";
+}
+
+function drawSkids(ox, oy, s) {
+  if (!FX.skids.length) return;
+  const y = oy + 0.5;
+  ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(1.5, 0.07 * s);
+  for (let i = 0; i < FX.skids.length; i++) {
+    const k = FX.skids[i];
+    ctx.strokeStyle = `rgba(8,8,10,${k.a})`;
+    const wOff = S.carW * 0.29 * s;
+    ctx.beginPath();
+    ctx.moveTo(ox + k.x0 * s - wOff, y); ctx.lineTo(ox + k.x1 * s - wOff, y);
+    ctx.moveTo(ox + k.x0 * s + wOff, y); ctx.lineTo(ox + k.x1 * s + wOff, y);
+    ctx.stroke();
+  }
+}
+
+function drawBricks(ox, oy, s) {
+  const B = EX.bricks;
+  const marL = -80, marR = W + 80, marT = -80, marB = H + 80;
+  const lw = Math.max(0.6, s * 0.012);
+
+  for (let i = 0; i < B.length; i++) {
+    const b = B[i];
+    // depth cue: deeper courses sit slightly up-and-back, drawn first
+    const dz = b.layerIdx;
+    const sx = ox + (b.px + dz * 0.045) * s;
+    const sy = oy - (b.py + dz * 0.06) * s;
+    const hw = b.hw * s, hh = b.hh * s;
+    const rad = hw + hh;
+    if (sx + rad < marL || sx - rad > marR || sy + rad < marT || sy - rad > marB) continue;
+
+    const c = b.col;
+    if (Math.abs(b.ang) < 0.0025) {
+      const x = sx - hw, y = sy - hh, w = hw * 2, h = hh * 2;
+      ctx.fillStyle = c.base; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = c.top;  ctx.fillRect(x, y, w, Math.max(1, h * 0.17));
+      ctx.fillStyle = c.bot;  ctx.fillRect(x, y + h - Math.max(1, h * 0.15), w, Math.max(1, h * 0.15));
+      ctx.strokeStyle = c.edge; ctx.lineWidth = lw; ctx.strokeRect(x + lw / 2, y + lw / 2, w - lw, h - lw);
+    } else {
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(-b.ang);
+      ctx.fillStyle = c.base; ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+      ctx.fillStyle = c.top;  ctx.fillRect(-hw, -hh, hw * 2, Math.max(1, hh * 0.34));
+      ctx.fillStyle = c.bot;  ctx.fillRect(-hw, hh - Math.max(1, hh * 0.3), hw * 2, Math.max(1, hh * 0.3));
+      ctx.strokeStyle = c.edge; ctx.lineWidth = lw;
+      ctx.strokeRect(-hw + lw / 2, -hh + lw / 2, hw * 2 - lw, hh * 2 - lw);
+      ctx.restore();
+    }
+  }
+}
+
+function drawCar(ox, oy, s) {
+  const car = EX.car;
+  const hw = S.carW / 2, hh = S.carH / 2;
+  const crush = EX.carCrush;
+
+  ctx.save();
+  ctx.translate(ox + car.px * s, oy - car.py * s);
+  ctx.rotate(-car.ang);
+  ctx.scale(s, -s);                     // work in metres, y-up
+
+  const rw = Math.min(S.carH * 0.26, S.carW * 0.11);
+  const front = hw - crush;
+  const wheelY = -hh + rw;
+  const bodyBase = -hh + rw * 0.52;
+  const hood = -hh + S.carH * 0.5;
+  const roof = hh;
+
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.beginPath();
+  ctx.ellipse(0, -hh + 0.02, hw * 0.98, Math.max(0.05, S.carH * 0.07), 0, 0, 6.2832);
+  ctx.fill();
+
+  // wheels
+  const drawWheel = (wx) => {
+    ctx.save(); ctx.translate(wx, wheelY);
+    ctx.fillStyle = "#0c0e12";
+    ctx.beginPath(); ctx.arc(0, 0, rw, 0, 6.2832); ctx.fill();
+    ctx.strokeStyle = "#22262e"; ctx.lineWidth = rw * 0.14;
+    ctx.beginPath(); ctx.arc(0, 0, rw * 0.93, 0, 6.2832); ctx.stroke();
+    ctx.rotate(-EX.wheelAng);
+    ctx.fillStyle = "#3a4049";
+    ctx.beginPath(); ctx.arc(0, 0, rw * 0.42, 0, 6.2832); ctx.fill();
+    ctx.strokeStyle = "#5a626e"; ctx.lineWidth = rw * 0.1;
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * rw * 0.62, Math.sin(a) * rw * 0.62); ctx.stroke();
+    }
+    ctx.restore();
+  };
+  drawWheel(-hw * 0.58); drawWheel(hw * 0.58);
+
+  // lower body
+  const grd = ctx.createLinearGradient(0, bodyBase, 0, roof);
+  grd.addColorStop(0, "#8d1f14");
+  grd.addColorStop(0.45, "#d0402a");
+  grd.addColorStop(1, "#f06a4b");
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.moveTo(-hw, bodyBase + 0.02);
+  ctx.lineTo(-hw, hood - 0.06);
+  ctx.lineTo(-hw + S.carW * 0.14, hood);
+  ctx.lineTo(front - 0.04, hood - crush * 0.28);
+  ctx.lineTo(front, hood - 0.14 - crush * 0.35);
+  ctx.lineTo(front, bodyBase + 0.06);
+  ctx.lineTo(front - 0.05, bodyBase);
+  ctx.lineTo(-hw + 0.04, bodyBase);
+  ctx.closePath(); ctx.fill();
+
+  // cabin
+  const cabF = Math.min(front - S.carW * 0.1, hw * 0.28);
+  const cabR = -hw * 0.72;
+  ctx.fillStyle = "#b7351f";
+  ctx.beginPath();
+  ctx.moveTo(cabR, hood - 0.01);
+  ctx.lineTo(cabR + S.carW * 0.07, roof);
+  ctx.lineTo(cabF - S.carW * 0.1, roof);
+  ctx.lineTo(cabF, hood - 0.01);
+  ctx.closePath(); ctx.fill();
+
+  // glass
+  ctx.fillStyle = "rgba(150,200,240,0.34)";
+  const inset = S.carH * 0.045;
+  ctx.beginPath();
+  ctx.moveTo(cabR + inset * 1.6, hood + inset);
+  ctx.lineTo(cabR + S.carW * 0.075 + inset, roof - inset);
+  ctx.lineTo(cabF - S.carW * 0.105 - inset, roof - inset);
+  ctx.lineTo(cabF - inset * 1.6, hood + inset);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.lineWidth = 0.018; ctx.stroke();
+
+  // pillar + door line
+  ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.lineWidth = 0.022;
+  ctx.beginPath(); ctx.moveTo(-hw * 0.16, bodyBase + 0.04); ctx.lineTo(-hw * 0.16, hood); ctx.stroke();
+
+  // crumple creases proportional to the accumulated crush
+  if (crush > 0.012) {
+    ctx.strokeStyle = "rgba(30,8,4,0.5)"; ctx.lineWidth = 0.02;
+    const n = 4;
+    for (let i = 0; i < n; i++) {
+      const y = bodyBase + 0.06 + (i / n) * (hood - bodyBase - 0.05);
+      const amp = 0.035 + crush * 0.16;
+      ctx.beginPath();
+      ctx.moveTo(front - 0.02, y);
+      ctx.lineTo(front - crush * 0.5, y + amp);
+      ctx.lineTo(front - crush * 0.95, y - amp * 0.6);
+      ctx.stroke();
+    }
+  }
+
+  // headlight
+  ctx.fillStyle = crush > 0.1 ? "rgba(120,120,120,0.6)" : "#ffe9b0";
+  ctx.fillRect(front - 0.2, hood - 0.3, 0.18, 0.13);
+  if (crush <= 0.1) {
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const lg = ctx.createRadialGradient(front, hood - 0.24, 0, front, hood - 0.24, 1.5);
+    lg.addColorStop(0, "rgba(255,225,160,0.28)"); lg.addColorStop(1, "rgba(255,225,160,0)");
+    ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(front, hood - 0.24, 1.5, 0, 6.2832); ctx.fill();
+    ctx.restore();
+  }
+  // tail light
+  ctx.fillStyle = "#ff4b3a"; ctx.fillRect(-hw + 0.02, hood - 0.3, 0.1, 0.13);
+
+  ctx.restore();
+}
+
+function drawParticles(ox, oy, s) {
+  const P = FX.parts;
+  for (let i = 0; i < P.length; i++) {
+    const p = P[i];
+    const t = p.t / p.life;
+    const x = ox + p.x * s, y = oy - p.y * s;
+    if (x < -60 || x > W + 60 || y < -60 || y > H + 60) continue;
+    if (p.kind === 0) {
+      const r = lerp(p.r0, p.r1, t) * s;
+      ctx.fillStyle = `rgba(196,178,158,${(1 - t) * 0.3})`;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
+    } else {
+      const r = p.r0 * s;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(p.rot);
+      ctx.globalAlpha = 1 - t * t;
+      ctx.fillStyle = p.col;
+      ctx.fillRect(-r, -r * 0.7, r * 2, r * 1.4);
+      ctx.restore(); ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function render() {
+  const s = Cam.s, ox = Cam.ox(), oy = Cam.oy();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = "#05070a";
+  ctx.fillRect(0, 0, W, H);
+
+  drawBackground(ox, oy, s);
+  drawSkids(ox, oy, s);
+  drawBricks(ox, oy, s);
+  drawCar(ox, oy, s);
+  drawParticles(ox, oy, s);
+
+  // vignette
+  const vg = ctx.createRadialGradient(W / 2, H * 0.5, Math.min(W, H) * 0.34, W / 2, H * 0.5, Math.max(W, H) * 0.78);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.55)");
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
+
+/* ======================= 5. UI + MAIN LOOP ============================== */
+
+const el = (id) => document.getElementById(id);
+const panel = el("panel"), panelBody = el("panel-body");
+const fmt = (v, d) => v.toFixed(d);
+
+const controls = {};
+function buildPanel() {
+  const groups = [];
+  for (const p of PARAMS) {
+    let g = groups.find((x) => x.name === p[2]);
+    if (!g) { g = { name: p[2], items: [] }; groups.push(g); }
+    g.items.push(p);
+  }
+  panelBody.innerHTML = "";
+  for (const g of groups) {
+    const wrap = document.createElement("div");
+    wrap.className = "grp";
+    const h = document.createElement("h3");
+    h.innerHTML = `<span>${g.name}</span><em>${g.items.length}</em>`;
+    wrap.appendChild(h);
+    for (const [key, label, , min, max, step, def, unit, dec] of g.items) {
+      const ctl = document.createElement("div");
+      ctl.className = "ctl";
+      ctl.innerHTML =
+        `<div class="top"><label for="p-${key}">${label}</label>` +
+        `<span class="val" id="v-${key}">${fmt(S[key], dec)}<u>${unit}</u></span></div>` +
+        `<input type="range" id="p-${key}" min="${min}" max="${max}" step="${step}" value="${S[key]}">`;
+      wrap.appendChild(ctl);
+      const input = ctl.querySelector("input");
+      controls[key] = { input, ctl, valEl: ctl.querySelector(".val"), dec, unit, def };
+      input.addEventListener("input", () => {
+        S[key] = parseFloat(input.value);        // only this parameter changes
+        syncControl(key);
+        buildScene();                            // live preview of the new rig
+        setStatus("READY");
+        el("report").classList.remove("show");
+        el("hint").style.opacity = "1";
+      });
+    }
+    panelBody.appendChild(wrap);
+  }
+  for (const k in controls) syncControl(k);
+}
+function syncControl(key) {
+  const c = controls[key];
+  c.valEl.innerHTML = `${fmt(S[key], c.dec)}<u>${c.unit}</u>`;
+  c.ctl.classList.toggle("dirty", Math.abs(S[key] - c.def) > 1e-9);
+  c.input.value = String(S[key]);
+}
+
+function setStatus(t) {
+  const s = el("status");
+  s.textContent = t; s.dataset.s = t;
+}
+
+function updateHUD() {
+  const car = EX.car;
+  const v = Math.abs(car.vx);
+  el("t-speed").innerHTML = `${v.toFixed(1)}<i>m/s</i>`;
+  el("t-time").innerHTML = `${EX.runTime.toFixed(3)}<i>s</i>`;
+  const moving = countMoving();
+  el("t-moving").textContent = String(moving);
+  const disp = countDisplaced();
+  el("t-disp").innerHTML = `${disp}<i>/${EX.brickCount}</i>`;
+  el("t-g").innerHTML = `${EX.peakG.toFixed(1)}<i>g</i>`;
+  el("t-ke").innerHTML = `${(kineticEnergy() / 1000).toFixed(1)}<i>kJ</i>`;
+  const integrity = EX.brickCount ? 1 - disp / EX.brickCount : 1;
+  el("t-bar").style.width = (integrity * 100).toFixed(1) + "%";
+  el("t-int").textContent = Math.round(integrity * 100) + "%";
+
+  const phase = EX.phase;
+  const want = phase === "ready" ? "READY" : phase === "launch" ? "LAUNCH"
+    : phase === "impact" ? "IMPACT" : phase === "settling" ? "SETTLING" : "SETTLED";
+  if (el("status").textContent !== want) setStatus(want);
+
+  if (EX.impactTime > 0) {
+    const rep = el("report");
+    if (!rep.classList.contains("show")) rep.classList.add("show");
+    el("r-v").innerHTML = `${Math.abs(EX.impactSpeed).toFixed(1)}<i>m/s</i>`;
+    el("r-p").innerHTML = `${(S.carMass * Math.abs(EX.impactSpeed) / 1000).toFixed(1)}<i>kN·s</i>`;
+    el("r-m").innerHTML = `${EX.wallMass.toFixed(0)}<i>kg</i>`;
+    el("r-e").innerHTML = `${(0.5 * S.carMass * EX.impactSpeed * EX.impactSpeed / 1000).toFixed(0)}<i>kJ</i>`;
+    el("r-d").innerHTML = `${Math.max(0, EX.penetration).toFixed(2)}<i>m</i>`;
+    el("r-t").innerHTML = EX.settleTime > 0 ? `${EX.settleTime.toFixed(2)}<i>s</i>` : `—`;
+  }
+}
+
+/* ---- buttons ---- */
+el("btn-test").addEventListener("click", () => { startTest(); el("hint").style.opacity = "0"; });
+el("btn-run").addEventListener("click", () => { startTest(); el("hint").style.opacity = "0"; });
+el("btn-reset").addEventListener("click", () => {
+  buildScene(); setStatus("READY");
+  el("report").classList.remove("show"); el("hint").style.opacity = "1";
+});
+el("btn-settings").addEventListener("click", () => panel.classList.toggle("open"));
+el("btn-close").addEventListener("click", () => panel.classList.remove("open"));
+el("btn-defaults").addEventListener("click", () => {
+  Object.assign(S, DEFAULTS);
+  for (const k in controls) syncControl(k);
+  buildScene(); setStatus("READY");
+  el("report").classList.remove("show"); el("hint").style.opacity = "1";
+});
+window.addEventListener("keydown", (e) => {
+  if (e.target && e.target.tagName === "INPUT") return;
+  const k = e.key.toLowerCase();
+  if (k === " " || e.code === "Space") { e.preventDefault(); startTest(); el("hint").style.opacity = "0"; }
+  else if (k === "r") { buildScene(); setStatus("READY"); el("report").classList.remove("show"); el("hint").style.opacity = "1"; }
+  else if (k === "s") panel.classList.toggle("open");
+});
+
+/* ---- fixed-timestep loop ---------------------------------------------
+   The simulation always advances in exact 1/60 s increments subdivided into
+   `substeps`, so the trajectory is identical run to run regardless of the
+   display refresh rate. Rendering and effects use wall-clock time only.   */
+const FIXED_DT = 1 / 60;
+let acc = 0, prev = performance.now();
+
+function frame(now) {
+  let real = (now - prev) / 1000;
+  prev = now;
+  if (real > 0.25) real = 0.25;
+  acc += real;
+
+  let steps = 0;
+  while (acc >= FIXED_DT && steps < 4) { simulate(FIXED_DT); acc -= FIXED_DT; steps++; }
+  if (acc > FIXED_DT * 4) acc = 0;
+
+  if (EX.world) FX.update(Math.min(real, 0.05), EX.world);
+  Cam.update(Math.min(real, 0.05));
+  render();
+  updateHUD();
+  requestAnimationFrame(frame);
+}
+
+buildPanel();
+buildScene();
+Cam.snap();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

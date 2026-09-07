@@ -1,0 +1,10 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+const root = new URL('../', import.meta.url);
+const source = file => readFile(new URL(file, root), 'utf8');
+await mkdir(new URL('dist/', root), { recursive: true });
+const styles = await source('style.css');
+const scripts = await Promise.all(['simulation.js', 'garden.js', 'app.js'].map(source));
+const bundledScript = scripts.map(script => script.replace(/^import .*;\n/gm, '').replace(/^export /gm, '')).join('\n');
+const html = (await source('index.html')).replace('<link rel="stylesheet" href="style.css">', `<style>${styles}</style>`).replace('<script type="module" src="app.js"></script>', `<script type="module">${bundledScript}</script>`);
+await writeFile(new URL('dist/index.html', root), html);
+console.log('Built self-contained application in dist/index.html');

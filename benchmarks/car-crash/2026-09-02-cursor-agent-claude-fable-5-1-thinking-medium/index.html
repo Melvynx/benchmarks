@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Fable 5.1</title>
+<style>
+  :root {
+    --bg: #0b0f16;
+    --panel: rgba(14, 19, 28, 0.86);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --text: #e8edf5;
+    --muted: #8b97ab;
+    --accent: #ff7a2f;
+    --accent-2: #ffb347;
+    --ok: #4cd97b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  canvas#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .brand { position: fixed; top: 16px; left: 18px; pointer-events: none; }
+  .brand h1 { margin: 0; font-size: 22px; letter-spacing: 0.2px; font-weight: 700;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.5); }
+  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 12px; text-shadow: 0 1px 8px rgba(0,0,0,0.6); }
+
+  .panel { position: fixed; top: 16px; right: 16px; width: 330px; max-height: calc(100vh - 32px);
+    display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 14px 40px rgba(0,0,0,0.45); overflow: hidden; }
+  .panel-head { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--panel-border); }
+  .btn { appearance: none; border: 1px solid var(--panel-border); background: rgba(255,255,255,0.06);
+    color: var(--text); border-radius: 9px; padding: 9px 14px; font-weight: 600; cursor: pointer;
+    font-size: 14px; transition: background .15s, transform .05s; }
+  .btn:hover { background: rgba(255,255,255,0.12); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { flex: 1; background: linear-gradient(180deg, var(--accent-2), var(--accent)); color: #1a0d04;
+    border-color: rgba(255,170,90,0.6); font-size: 15px; letter-spacing: 0.3px; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.ghost { padding: 9px 10px; }
+  .btn.small { padding: 6px 10px; font-size: 12px; font-weight: 500; }
+  .active-values { padding: 10px 12px; border-bottom: 1px solid var(--panel-border); font-size: 12px; color: var(--muted); }
+  .active-values b { color: var(--text); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+  .active-values .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { background: rgba(255,255,255,0.06); border: 1px solid var(--panel-border); border-radius: 999px; padding: 2px 8px; }
+  .settings { overflow-y: auto; padding: 8px 12px 12px; }
+  .panel.collapsed .settings, .panel.collapsed .active-values { display: none; }
+  .param { display: grid; grid-template-columns: 1fr 74px; grid-template-areas: "label num" "range range";
+    gap: 4px 8px; padding: 8px 0; border-bottom: 1px dashed rgba(255,255,255,0.06); }
+  .param:last-child { border-bottom: 0; }
+  .param label { grid-area: label; display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+  .param label small { color: var(--muted); font-size: 11px; }
+  .param input[type=number] { grid-area: num; width: 100%; background: rgba(0,0,0,0.35); color: var(--text);
+    border: 1px solid var(--panel-border); border-radius: 6px; padding: 4px 6px; font-family: var(--mono); font-size: 12px; }
+  .param input[type=range] { grid-area: range; width: 100%; accent-color: var(--accent); margin: 0; }
+  details.group { margin-top: 6px; }
+  details.group summary { cursor: pointer; color: var(--muted); font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.6px; padding: 8px 0 4px; user-select: none; }
+  .row-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  .note { font-size: 11px; color: var(--accent-2); }
+  .hint { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+  kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--panel-border); border-radius: 4px; padding: 0 4px;
+    background: rgba(255,255,255,0.05); }
+
+  .hud { position: fixed; left: 18px; bottom: 16px; background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 12px 14px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 14px 40px rgba(0,0,0,0.45); width: min(560px, calc(100vw - 36px)); }
+  .hud-state { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .pill { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 9px;
+    border-radius: 999px; background: rgba(255,255,255,0.08); color: var(--muted); }
+  .pill.running { background: rgba(255,122,47,0.2); color: var(--accent-2); }
+  .pill.settled { background: rgba(76,217,123,0.16); color: var(--ok); }
+  .hud-grid { display: grid; grid-template-columns: repeat(4, minmax(80px, 1fr)); gap: 8px 16px; margin: 0; }
+  .hud-grid dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .hud-grid dd { margin: 1px 0 0; font-family: var(--mono); font-size: 14px; }
+  .hud-grid dd small { color: var(--muted); font-size: 11px; }
+  .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; margin-top: 8px; }
+  .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); width: 0%; transition: width .2s; }
+
+  @media (max-width: 900px) {
+    .panel { width: 280px; }
+    .hud { min-width: 0; right: 16px; }
+    .hud-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<header class="brand">
+  <h1>Claude Fable 5.1</h1>
+  <p>Brick wall crash lab · deterministic 2D rigid-body sandbox</p>
+</header>
+
+<aside class="panel" id="panel">
+  <div class="panel-head">
+    <button id="btnTest" class="btn primary" title="Run the crash test (Space)">Test</button>
+    <button id="btnReset" class="btn" title="Rebuild the scene (R)">Reset</button>
+    <button id="btnSettings" class="btn ghost" title="Toggle settings">Settings</button>
+  </div>
+  <div class="active-values" id="activeValues"></div>
+  <div class="settings" id="settings">
+    <div class="group" id="mainParams"></div>
+    <details class="group" id="advWrap">
+      <summary>Advanced physics</summary>
+      <div id="advParams"></div>
+    </details>
+    <div class="row-actions">
+      <button id="btnDefaults" class="btn small">Restore defaults</button>
+      <span class="note" id="pendingNote"></span>
+    </div>
+    <p class="hint">Depth layers are simulated as independent brick planes stacked behind each other; the car must push all of them. <kbd>Space</kbd> test · <kbd>R</kbd> reset.</p>
+  </div>
+</aside>
+
+<section class="hud" id="hud">
+  <div class="hud-state">
+    <span id="statePill" class="pill">Ready</span>
+    <span id="stateText" style="color: var(--muted); font-size: 12px;">Press Test to launch the car.</span>
+  </div>
+  <dl class="hud-grid">
+    <div><dt>Car speed</dt><dd><span id="tSpeed">0.0</span> m/s <small id="tKmh"></small></dd></div>
+    <div><dt>Elapsed</dt><dd><span id="tTime">0.00</span> s</dd></div>
+    <div><dt>Moving bricks</dt><dd><span id="tMoving">0</span><small> / <span id="tTotal">0</span></small></dd></div>
+    <div><dt>Wall displaced</dt><dd><span id="tDisplaced">0</span>%</dd></div>
+    <div><dt>Impact speed</dt><dd id="tImpact">–</dd></div>
+    <div><dt>Peak decel</dt><dd id="tDecel">–</dd></div>
+    <div><dt>Car energy</dt><dd id="tKE">–</dd></div>
+    <div><dt>Solver</dt><dd id="tSolver" style="font-size: 11px;"></dd></div>
+  </dl>
+  <div class="bar"><i id="energyBar"></i></div>
+</section>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   Parameters
+   ===================================================================== */
+const DEFAULTS = {
+  carSpeed: 22, cols: 12, rows: 8, layers: 2, brickMass: 2.5,
+  brickW: 0.5, brickH: 0.24, gravity: 9.81, brickFriction: 0.72, brickRestitution: 0.18,
+  carMass: 1250, carW: 4.2, carH: 1.45, groundFriction: 0.85, scale: 80,
+};
+const PARAM_DEFS = [
+  { key: 'carSpeed', label: 'Car speed', unit: 'm/s', min: 5, max: 45, step: 0.5, group: 'main' },
+  { key: 'cols', label: 'Wall columns', unit: 'bricks wide', min: 4, max: 24, step: 1, group: 'main' },
+  { key: 'rows', label: 'Wall rows', unit: 'bricks tall', min: 3, max: 16, step: 1, group: 'main' },
+  { key: 'layers', label: 'Wall depth layers', unit: 'layers', min: 1, max: 5, step: 1, group: 'main' },
+  { key: 'brickMass', label: 'Brick mass', unit: 'kg / brick', min: 0.5, max: 12, step: 0.1, group: 'main' },
+  { key: 'brickW', label: 'Brick width', unit: 'm', min: 0.2, max: 1, step: 0.01, group: 'adv' },
+  { key: 'brickH', label: 'Brick height', unit: 'm', min: 0.1, max: 0.5, step: 0.01, group: 'adv' },
+  { key: 'gravity', label: 'Gravity', unit: 'm/s²', min: 1, max: 25, step: 0.01, group: 'adv' },
+  { key: 'brickFriction', label: 'Brick friction', unit: 'μ', min: 0, max: 1.5, step: 0.01, group: 'adv' },
+  { key: 'brickRestitution', label: 'Brick restitution', unit: 'e', min: 0, max: 0.8, step: 0.01, group: 'adv' },
+  { key: 'carMass', label: 'Car mass', unit: 'kg', min: 300, max: 4000, step: 10, group: 'adv' },
+  { key: 'carW', label: 'Car width', unit: 'm', min: 2.5, max: 6, step: 0.05, group: 'adv' },
+  { key: 'carH', label: 'Car height', unit: 'm', min: 0.9, max: 2.5, step: 0.05, group: 'adv' },
+  { key: 'groundFriction', label: 'Ground friction', unit: 'μ', min: 0, max: 1.5, step: 0.01, group: 'adv' },
+  { key: 'scale', label: 'Simulation scale', unit: 'px / m', min: 30, max: 140, step: 1, group: 'adv' },
+];
+const settings = { ...DEFAULTS };
+
+/* =====================================================================
+   Solver constants
+   ===================================================================== */
+const STEP_H = 1 / 240;           // 240 Hz sub-stepping keeps tall stacks and fast impacts stable
+const SOLVER_ITERATIONS = 8;
+const ALLOWED_PENETRATION = 0.005;
+const BIAS_FACTOR = 0.2;
+const PRESETTLE_STEPS = 240;
+const SPECULATIVE = 0.01;         // contacts are created slightly before touching (speculative)
+const AABB_MARGIN = 0.02;
+const RESTITUTION_VEL = 1.0;
+const SLEEP_LIN = 0.06, SLEEP_ANG = 0.15, SLEEP_TIME = 0.6;
+const MAX_LAUNCH_ACCEL = 30;
+const COAST_DIST = 1.0;
+const MIN_RUNUP = 3.0;
+
+/* =====================================================================
+   Rigid body
+   ===================================================================== */
+let nextBodyId = 0;
+class Body {
+  constructor(hw, hh, mass) {
+    this.id = nextBodyId++;
+    this.hw = hw; this.hh = hh;
+    this.x = 0; this.y = 0; this.a = 0;
+    this.vx = 0; this.vy = 0; this.w = 0;
+    this.bvx = 0; this.bvy = 0; this.bw = 0;   // split-impulse pseudo velocities (position correction only)
+    this.fx = 0; this.fy = 0; this.torque = 0;
+    this.cos = 1; this.sin = 0;
+    this.minX = 0; this.maxX = 0; this.minY = 0; this.maxY = 0;
+    this.friction = 0.7; this.restitution = 0;
+    this.layer = -1; this.kind = 'brick'; this.index = 0;
+    this.isStatic = !isFinite(mass);
+    if (this.isStatic) { this.mass = Infinity; this.invMass = 0; this.I = Infinity; this.invI = 0; }
+    else { this.mass = mass; this.invMass = 1 / mass; this.I = mass * (4 * hw * hw + 4 * hh * hh) / 12; this.invI = 1 / this.I; }
+    this.asleep = false; this.sleepTime = 0; this.canSleep = true; this.visit = -1;
+    this.touching = [];
+    this.cx0 = 0; this.cx1 = 0; this.cy0 = 0; this.cy1 = 0;
+    this.x0 = 0; this.y0 = 0;
+  }
+  updateTransform() {
+    const c = Math.cos(this.a), s = Math.sin(this.a);
+    this.cos = c; this.sin = s;
+    const ex = Math.abs(c) * this.hw + Math.abs(s) * this.hh;
+    const ey = Math.abs(s) * this.hw + Math.abs(c) * this.hh;
+    this.minX = this.x - ex; this.maxX = this.x + ex;
+    this.minY = this.y - ey; this.maxY = this.y + ey;
+  }
+  get inactive() { return this.asleep || this.isStatic; }
+}
+
+/* =====================================================================
+   Box-box contact generation (SAT + reference-face clipping)
+   ===================================================================== */
+const E1 = 1, E2 = 2, E3 = 3, E4 = 4;
+// feature packing: inEdge1 | outEdge1<<8 | inEdge2<<16 | outEdge2<<24
+const fpFlip = f => ((f & 0xFFFF) << 16) | ((f >>> 16) & 0xFFFF);
+class Contact {
+  constructor() {
+    this.px = 0; this.py = 0; this.nx = 0; this.ny = 0; this.separation = 0; this.feature = 0;
+    this.Pn = 0; this.Pt = 0; this.Pnb = 0; this.massNormal = 0; this.massTangent = 0; this.bias = 0; this.specBias = 0; this.velBias = 0;
+    this.r1x = 0; this.r1y = 0; this.r2x = 0; this.r2y = 0;
+  }
+}
+const mkClip = () => ({ x: 0, y: 0, fp: 0 });
+const incident = [mkClip(), mkClip()], clip1 = [mkClip(), mkClip()], clip2 = [mkClip(), mkClip()];
+
+function computeIncidentEdge(c, hx, hy, body, nx, ny) {
+  const co = body.cos, si = body.sin;
+  const nlx = -(co * nx + si * ny), nly = -(-si * nx + co * ny);
+  let v0x, v0y, v1x, v1y, in0, out0, in1, out1;
+  if (Math.abs(nlx) > Math.abs(nly)) {
+    if (nlx > 0) { v0x = hx; v0y = -hy; in0 = E3; out0 = E4; v1x = hx; v1y = hy; in1 = E4; out1 = E1; }
+    else { v0x = -hx; v0y = hy; in0 = E1; out0 = E2; v1x = -hx; v1y = -hy; in1 = E2; out1 = E3; }
+  } else {
+    if (nly > 0) { v0x = hx; v0y = hy; in0 = E4; out0 = E1; v1x = -hx; v1y = hy; in1 = E1; out1 = E2; }
+    else { v0x = -hx; v0y = -hy; in0 = E2; out0 = E3; v1x = hx; v1y = -hy; in1 = E3; out1 = E4; }
+  }
+  c[0].x = body.x + co * v0x - si * v0y; c[0].y = body.y + si * v0x + co * v0y; c[0].fp = (in0 << 16) | (out0 << 24);
+  c[1].x = body.x + co * v1x - si * v1y; c[1].y = body.y + si * v1x + co * v1y; c[1].fp = (in1 << 16) | (out1 << 24);
+}
+
+function clipSegmentToLine(vOut, vIn, nx, ny, offset, clipEdge) {
+  let n = 0;
+  const d0 = nx * vIn[0].x + ny * vIn[0].y - offset;
+  const d1 = nx * vIn[1].x + ny * vIn[1].y - offset;
+  if (d0 <= 0) { vOut[n].x = vIn[0].x; vOut[n].y = vIn[0].y; vOut[n].fp = vIn[0].fp; n++; }
+  if (d1 <= 0) { vOut[n].x = vIn[1].x; vOut[n].y = vIn[1].y; vOut[n].fp = vIn[1].fp; n++; }
+  if (d0 * d1 < 0) {
+    const t = d0 / (d0 - d1);
+    const o = vOut[n];
+    o.x = vIn[0].x + t * (vIn[1].x - vIn[0].x);
+    o.y = vIn[0].y + t * (vIn[1].y - vIn[0].y);
+    if (d0 > 0) o.fp = (vIn[0].fp & 0xFF00FF00) | clipEdge;          // inEdge1 = clipEdge, inEdge2 = none
+    else o.fp = (vIn[1].fp & 0x00FF00FF) | (clipEdge << 8);          // outEdge1 = clipEdge, outEdge2 = none
+    n++;
+  }
+  return n;
+}
+
+function collide(A, B, out) {
+  const hAx = A.hw, hAy = A.hh, hBx = B.hw, hBy = B.hh;
+  const ca = A.cos, sa = A.sin, cb = B.cos, sb = B.sin;
+  const dpx = B.x - A.x, dpy = B.y - A.y;
+  const dAx = ca * dpx + sa * dpy, dAy = -sa * dpx + ca * dpy;
+  const dBx = cb * dpx + sb * dpy, dBy = -sb * dpx + cb * dpy;
+  const C11 = ca * cb + sa * sb, C21 = ca * sb - sa * cb;
+  const aC = Math.abs(C11), aS = Math.abs(C21);
+
+  const faceAx = Math.abs(dAx) - hAx - (aC * hBx + aS * hBy);
+  const faceAy = Math.abs(dAy) - hAy - (aS * hBx + aC * hBy);
+  if (faceAx > SPECULATIVE || faceAy > SPECULATIVE) return 0;
+  const faceBx = Math.abs(dBx) - (aC * hAx + aS * hAy) - hBx;
+  const faceBy = Math.abs(dBy) - (aS * hAx + aC * hAy) - hBy;
+  if (faceBx > SPECULATIVE || faceBy > SPECULATIVE) return 0;
+
+  let axis = 0, sep = faceAx, nx, ny;
+  if (dAx > 0) { nx = ca; ny = sa; } else { nx = -ca; ny = -sa; }
+  const relTol = 0.95, absTol = 0.01;
+  if (faceAy > relTol * sep + absTol * hAy) { axis = 1; sep = faceAy; if (dAy > 0) { nx = -sa; ny = ca; } else { nx = sa; ny = -ca; } }
+  if (faceBx > relTol * sep + absTol * hBx) { axis = 2; sep = faceBx; if (dBx > 0) { nx = cb; ny = sb; } else { nx = -cb; ny = -sb; } }
+  if (faceBy > relTol * sep + absTol * hBy) { axis = 3; sep = faceBy; if (dBy > 0) { nx = -sb; ny = cb; } else { nx = sb; ny = -cb; } }
+
+  let fnx, fny, front, snx, sny, side, negSide, posSide, negEdge, posEdge;
+  switch (axis) {
+    case 0:
+      fnx = nx; fny = ny; front = A.x * fnx + A.y * fny + hAx;
+      snx = -sa; sny = ca; side = A.x * snx + A.y * sny;
+      negSide = -side + hAy; posSide = side + hAy; negEdge = E3; posEdge = E1;
+      computeIncidentEdge(incident, hBx, hBy, B, fnx, fny); break;
+    case 1:
+      fnx = nx; fny = ny; front = A.x * fnx + A.y * fny + hAy;
+      snx = ca; sny = sa; side = A.x * snx + A.y * sny;
+      negSide = -side + hAx; posSide = side + hAx; negEdge = E2; posEdge = E4;
+      computeIncidentEdge(incident, hBx, hBy, B, fnx, fny); break;
+    case 2:
+      fnx = -nx; fny = -ny; front = B.x * fnx + B.y * fny + hBx;
+      snx = -sb; sny = cb; side = B.x * snx + B.y * sny;
+      negSide = -side + hBy; posSide = side + hBy; negEdge = E3; posEdge = E1;
+      computeIncidentEdge(incident, hAx, hAy, A, fnx, fny); break;
+    default:
+      fnx = -nx; fny = -ny; front = B.x * fnx + B.y * fny + hBy;
+      snx = cb; sny = sb; side = B.x * snx + B.y * sny;
+      negSide = -side + hBx; posSide = side + hBx; negEdge = E2; posEdge = E4;
+      computeIncidentEdge(incident, hAx, hAy, A, fnx, fny); break;
+  }
+  if (clipSegmentToLine(clip1, incident, -snx, -sny, negSide, negEdge) < 2) return 0;
+  if (clipSegmentToLine(clip2, clip1, snx, sny, posSide, posEdge) < 2) return 0;
+
+  let n = 0;
+  for (let i = 0; i < 2; i++) {
+    const s = fnx * clip2[i].x + fny * clip2[i].y - front;
+    if (s <= SPECULATIVE) {
+      const c = out[n++];
+      c.separation = s; c.nx = nx; c.ny = ny;
+      c.px = clip2[i].x - s * fnx; c.py = clip2[i].y - s * fny;
+      c.feature = axis >= 2 ? fpFlip(clip2[i].fp) : clip2[i].fp;
+    }
+  }
+  return n;
+}
+
+/* =====================================================================
+   Persistent contact arbiter (sequential impulses, warm started)
+   ===================================================================== */
+class Arbiter {
+  constructor(a, b) {
+    this.a = a; this.b = b;
+    this.contacts = [new Contact(), new Contact()];
+    this.spare = [new Contact(), new Contact()];
+    this.n = 0; this.stamp = 0;
+    this.friction = 0; this.restitution = 0;
+    this.im1 = 0; this.iI1 = 0; this.im2 = 0; this.iI2 = 0;
+  }
+  update(newC, n) {
+    const spare = this.spare, old = this.contacts;
+    for (let i = 0; i < n; i++) {
+      const nc = newC[i], s = spare[i];
+      s.px = nc.px; s.py = nc.py; s.nx = nc.nx; s.ny = nc.ny; s.separation = nc.separation; s.feature = nc.feature;
+      s.Pn = 0; s.Pt = 0; s.Pnb = 0;
+      for (let j = 0; j < this.n; j++) {
+        if (old[j].feature === nc.feature) { s.Pn = old[j].Pn; s.Pt = old[j].Pt; break; }
+      }
+    }
+    this.spare = old; this.contacts = spare; this.n = n;
+    this.friction = Math.sqrt(this.a.friction * this.b.friction);
+    this.restitution = Math.max(this.a.restitution, this.b.restitution);
+  }
+  preStep(invH) {
+    const a = this.a, b = this.b;
+    const im1 = a.inactive ? 0 : a.invMass, iI1 = a.inactive ? 0 : a.invI;
+    const im2 = b.inactive ? 0 : b.invMass, iI2 = b.inactive ? 0 : b.invI;
+    this.im1 = im1; this.iI1 = iI1; this.im2 = im2; this.iI2 = iI2;
+    for (let i = 0; i < this.n; i++) {
+      const c = this.contacts[i];
+      const r1x = c.px - a.x, r1y = c.py - a.y, r2x = c.px - b.x, r2y = c.py - b.y;
+      c.r1x = r1x; c.r1y = r1y; c.r2x = r2x; c.r2y = r2y;
+      const nx = c.nx, ny = c.ny, tx = ny, ty = -nx;
+      const r1sq = r1x * r1x + r1y * r1y, r2sq = r2x * r2x + r2y * r2y;
+      const rn1 = r1x * nx + r1y * ny, rn2 = r2x * nx + r2y * ny;
+      const kN = im1 + im2 + iI1 * (r1sq - rn1 * rn1) + iI2 * (r2sq - rn2 * rn2);
+      c.massNormal = kN > 0 ? 1 / kN : 0;
+      const rt1 = r1x * tx + r1y * ty, rt2 = r2x * tx + r2y * ty;
+      const kT = im1 + im2 + iI1 * (r1sq - rt1 * rt1) + iI2 * (r2sq - rt2 * rt2);
+      c.massTangent = kT > 0 ? 1 / kT : 0;
+      if (c.separation > 0) { c.bias = 0; c.specBias = -c.separation * invH; }   // may approach, but only close the gap
+      else { c.bias = -BIAS_FACTOR * invH * Math.min(0, c.separation + ALLOWED_PENETRATION); c.specBias = 0; }
+      const dvx = b.vx - b.w * r2y - a.vx + a.w * r1y;
+      const dvy = b.vy + b.w * r2x - a.vy - a.w * r1x;
+      const vn = dvx * nx + dvy * ny;
+      // approach speed at the start of the step; restitution is applied in a separate pass after
+      // the main iterations so bounce targets never fight resting-contact convergence
+      c.velBias = vn < -RESTITUTION_VEL ? -this.restitution * vn : 0;
+      // warm start
+      const Px = c.Pn * nx + c.Pt * tx, Py = c.Pn * ny + c.Pt * ty;
+      a.vx -= im1 * Px; a.vy -= im1 * Py; a.w -= iI1 * (r1x * Py - r1y * Px);
+      b.vx += im2 * Px; b.vy += im2 * Py; b.w += iI2 * (r2x * Py - r2y * Px);
+    }
+  }
+  applyRestitution() {
+    const a = this.a, b = this.b, im1 = this.im1, iI1 = this.iI1, im2 = this.im2, iI2 = this.iI2;
+    for (let i = 0; i < this.n; i++) {
+      const c = this.contacts[i];
+      if (c.velBias === 0 || c.Pn === 0) continue;
+      const r1x = c.r1x, r1y = c.r1y, r2x = c.r2x, r2y = c.r2y, nx = c.nx, ny = c.ny;
+      const dvx = b.vx - b.w * r2y - a.vx + a.w * r1y;
+      const dvy = b.vy + b.w * r2x - a.vy - a.w * r1x;
+      const vn = dvx * nx + dvy * ny;
+      let dPn = c.massNormal * (-vn + c.velBias);
+      const Pn0 = c.Pn;
+      c.Pn = Math.max(Pn0 + dPn, 0);
+      dPn = c.Pn - Pn0;
+      const Px = dPn * nx, Py = dPn * ny;
+      a.vx -= im1 * Px; a.vy -= im1 * Py; a.w -= iI1 * (r1x * Py - r1y * Px);
+      b.vx += im2 * Px; b.vy += im2 * Py; b.w += iI2 * (r2x * Py - r2y * Px);
+    }
+  }
+  applyImpulse() {
+    const a = this.a, b = this.b, im1 = this.im1, iI1 = this.iI1, im2 = this.im2, iI2 = this.iI2, mu = this.friction;
+    for (let i = 0; i < this.n; i++) {
+      const c = this.contacts[i];
+      const r1x = c.r1x, r1y = c.r1y, r2x = c.r2x, r2y = c.r2y, nx = c.nx, ny = c.ny;
+      let dvx = b.vx - b.w * r2y - a.vx + a.w * r1y;
+      let dvy = b.vy + b.w * r2x - a.vy - a.w * r1x;
+      const vn = dvx * nx + dvy * ny;
+      let dPn = c.massNormal * (-vn + c.specBias);
+      const Pn0 = c.Pn;
+      c.Pn = Math.max(Pn0 + dPn, 0);
+      dPn = c.Pn - Pn0;
+      let Px = dPn * nx, Py = dPn * ny;
+      a.vx -= im1 * Px; a.vy -= im1 * Py; a.w -= iI1 * (r1x * Py - r1y * Px);
+      b.vx += im2 * Px; b.vy += im2 * Py; b.w += iI2 * (r2x * Py - r2y * Px);
+
+      // position correction through pseudo velocities so it never injects kinetic energy
+      if (c.bias > 0 || c.Pnb > 0) {
+        const bvn = (b.bvx - b.bw * r2y - a.bvx + a.bw * r1y) * nx + (b.bvy + b.bw * r2x - a.bvy - a.bw * r1x) * ny;
+        let dPnb = c.massNormal * (-bvn + c.bias);
+        const Pnb0 = c.Pnb;
+        c.Pnb = Math.max(Pnb0 + dPnb, 0);
+        dPnb = c.Pnb - Pnb0;
+        const Bx = dPnb * nx, By = dPnb * ny;
+        a.bvx -= im1 * Bx; a.bvy -= im1 * By; a.bw -= iI1 * (r1x * By - r1y * Bx);
+        b.bvx += im2 * Bx; b.bvy += im2 * By; b.bw += iI2 * (r2x * By - r2y * Bx);
+      }
+
+      dvx = b.vx - b.w * r2y - a.vx + a.w * r1y;
+      dvy = b.vy + b.w * r2x - a.vy - a.w * r1x;
+      const tx = ny, ty = -nx;
+      const vt = dvx * tx + dvy * ty;
+      let dPt = c.massTangent * (-vt);
+      const maxPt = mu * c.Pn;
+      const Pt0 = c.Pt;
+      c.Pt = Math.max(-maxPt, Math.min(maxPt, Pt0 + dPt));
+      dPt = c.Pt - Pt0;
+      Px = dPt * tx; Py = dPt * ty;
+      a.vx -= im1 * Px; a.vy -= im1 * Py; a.w -= iI1 * (r1x * Py - r1y * Px);
+      b.vx += im2 * Px; b.vy += im2 * Py; b.w += iI2 * (r2x * Py - r2y * Px);
+    }
+  }
+}
+
+/* =====================================================================
+   World: broadphase grid, islands-by-contact sleeping, stepping
+   ===================================================================== */
+const GRID_X0 = -80, GRID_X1 = 140, GRID_Y0 = -3, GRID_Y1 = 45;
+class World {
+  constructor(gravity, layers, cellSize, brickCount) {
+    this.gravity = gravity;
+    this.bodies = []; this.bricks = []; this.car = null; this.ground = null;
+    this.arbiters = new Map();
+    this.activeArbs = [];
+    this.islandStack = []; this.islandComp = [];
+    this.stamp = 0;
+    this.iterations = SOLVER_ITERATIONS;
+    this.pairA = []; this.pairB = []; this.np = 0;
+    this.scratch = [new Contact(), new Contact()];
+    this.carTouch = false;
+    this.contactEvents = [];
+    this.cs = cellSize;
+    this.gnx = Math.ceil((GRID_X1 - GRID_X0) / cellSize);
+    this.gny = Math.ceil((GRID_Y1 - GRID_Y0) / cellSize);
+    this.cellsPerLayer = this.gnx * this.gny;
+    this.heads = new Int32Array(this.cellsPerLayer * layers);
+    const maxEntries = brickCount * 16 + 16;
+    this.entryBody = new Int32Array(maxEntries);
+    this.entryNext = new Int32Array(maxEntries);
+  }
+  addBody(b) { b.index = this.bodies.length; this.bodies.push(b); if (b.kind === 'brick') b.updateTransform(); return b; }
+
+  collectPairs() {
+    const bricks = this.bricks, car = this.car, ground = this.ground, pa = this.pairA, pb = this.pairB;
+    const M = AABB_MARGIN;
+    let np = 0;
+    for (let i = 0; i < bricks.length; i++) { const b = bricks[i]; if (b.minY < 0.1) { pa[np] = ground; pb[np] = b; np++; } }
+    if (car.minY < 0.1) { pa[np] = ground; pb[np] = car; np++; }
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i];
+      if (b.minX < car.maxX + M && b.maxX > car.minX - M && b.minY < car.maxY + M && b.maxY > car.minY - M) { pa[np] = car; pb[np] = b; np++; }
+    }
+    const heads = this.heads, eb = this.entryBody, en = this.entryNext, inv = 1 / this.cs;
+    const gnx = this.gnx, gny = this.gny, cpl = this.cellsPerLayer;
+    heads.fill(-1);
+    let ne = 0;
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i];
+      let cx0 = Math.floor((b.minX - M - GRID_X0) * inv), cx1 = Math.floor((b.maxX + M - GRID_X0) * inv);
+      let cy0 = Math.floor((b.minY - M - GRID_Y0) * inv), cy1 = Math.floor((b.maxY + M - GRID_Y0) * inv);
+      cx0 = cx0 < 0 ? 0 : cx0 >= gnx ? gnx - 1 : cx0; cx1 = cx1 < 0 ? 0 : cx1 >= gnx ? gnx - 1 : cx1;
+      cy0 = cy0 < 0 ? 0 : cy0 >= gny ? gny - 1 : cy0; cy1 = cy1 < 0 ? 0 : cy1 >= gny ? gny - 1 : cy1;
+      b.cx0 = cx0; b.cx1 = cx1; b.cy0 = cy0; b.cy1 = cy1;
+      const base = b.layer * cpl;
+      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+        if (ne >= eb.length) break;
+        const cell = base + cy * gnx + cx;
+        eb[ne] = i; en[ne] = heads[cell]; heads[cell] = ne; ne++;
+      }
+    }
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i], base = b.layer * cpl;
+      for (let cy = b.cy0; cy <= b.cy1; cy++) for (let cx = b.cx0; cx <= b.cx1; cx++) {
+        let e = heads[base + cy * gnx + cx];
+        while (e !== -1) {
+          const j = eb[e];
+          if (j > i) {
+            const o = bricks[j];
+            if (cx === Math.max(b.cx0, o.cx0) && cy === Math.max(b.cy0, o.cy0) &&
+                b.minX < o.maxX + M && b.maxX > o.minX - M && b.minY < o.maxY + M && b.maxY > o.minY - M) {
+              pa[np] = b; pb[np] = o; np++;
+            }
+          }
+          e = en[e];
+        }
+      }
+    }
+    this.np = np;
+  }
+
+  wake(body) {
+    const stack = [body];
+    while (stack.length) {
+      const x = stack.pop();
+      if (!x.asleep) continue;
+      x.asleep = false; x.sleepTime = 0;
+      for (const arb of x.touching) { const o = arb.a === x ? arb.b : arb.a; if (o.asleep) stack.push(o); }
+    }
+  }
+  removeArb(key, arb) {
+    this.arbiters.delete(key);
+    if (!arb.a.isStatic) { const i = arb.a.touching.indexOf(arb); if (i >= 0) arb.a.touching.splice(i, 1); }
+    if (!arb.b.isStatic) { const i = arb.b.touching.indexOf(arb); if (i >= 0) arb.b.touching.splice(i, 1); }
+  }
+
+  updateContacts() {
+    this.stamp++;
+    const stamp = this.stamp, pa = this.pairA, pb = this.pairB, np = this.np, scratch = this.scratch, map = this.arbiters;
+    // wake pass: a moving body touching a sleeping island wakes the whole island before solving
+    for (let k = 0; k < np; k++) {
+      const a = pa[k], b = pb[k];
+      let sleeper = null;
+      if (a.asleep && !b.asleep && !b.isStatic && b.sleepTime === 0) sleeper = a;
+      else if (b.asleep && !a.asleep && !a.isStatic && a.sleepTime === 0) sleeper = b;
+      if (sleeper && collide(a, b, scratch) > 0) this.wake(sleeper);
+    }
+    const active = this.activeArbs; active.length = 0;
+    this.carTouch = false;
+    for (let k = 0; k < np; k++) {
+      const a = pa[k], b = pb[k];
+      if (a.inactive && b.inactive) continue;
+      const n = collide(a, b, scratch);
+      const key = a.id * 65536 + b.id;
+      let arb = map.get(key);
+      if (n > 0) {
+        if (!arb) {
+          arb = new Arbiter(a, b); map.set(key, arb);
+          if (!a.isStatic) a.touching.push(arb);
+          if (!b.isStatic) b.touching.push(arb);
+        }
+        arb.update(scratch, n); arb.stamp = stamp; active.push(arb);
+        if (a === this.car && b.kind === 'brick') this.carTouch = true;
+      } else if (arb) this.removeArb(key, arb);
+    }
+    for (const [key, arb] of map) {
+      if (arb.stamp !== stamp && !(arb.a.inactive && arb.b.inactive)) this.removeArb(key, arb);
+    }
+  }
+
+  // Bodies only fall asleep as whole contact islands, so a resting stack never loses the weight
+  // of a neighbour that dozed off on its own.
+  sleepIslands() {
+    const bodies = this.bodies, stamp = this.stamp, stack = this.islandStack, comp = this.islandComp;
+    for (let i = 0; i < bodies.length; i++) {
+      const root = bodies[i];
+      if (root.inactive || root.visit === stamp) continue;
+      stack.length = 0; comp.length = 0; stack.push(root);
+      let quiet = true;
+      while (stack.length) {
+        const x = stack.pop();
+        if (x.visit === stamp) continue;
+        x.visit = stamp; comp.push(x);
+        if (!x.canSleep || x.sleepTime < SLEEP_TIME) quiet = false;
+        for (const arb of x.touching) { const o = arb.a === x ? arb.b : arb.a; if (!o.inactive && o.visit !== stamp) stack.push(o); }
+      }
+      if (quiet) for (const x of comp) { x.asleep = true; x.vx = 0; x.vy = 0; x.w = 0; }
+    }
+  }
+
+  forceSleepAll() {
+    for (const b of this.bodies) if (!b.isStatic && b.kind === 'brick') { b.asleep = true; b.vx = 0; b.vy = 0; b.w = 0; b.sleepTime = SLEEP_TIME; }
+  }
+
+  step(h) {
+    this.collectPairs();
+    this.updateContacts();
+    const bodies = this.bodies, g = this.gravity, active = this.activeArbs;
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i];
+      if (b.inactive) continue;
+      b.vx += h * b.invMass * b.fx; b.vy += h * (b.invMass * b.fy - g); b.w += h * b.invI * b.torque;
+      b.bvx = 0; b.bvy = 0; b.bw = 0;
+    }
+    const invH = 1 / h;
+    for (let i = 0; i < active.length; i++) active[i].preStep(invH);
+    for (let it = 0; it < this.iterations; it++) for (let i = 0; i < active.length; i++) active[i].applyImpulse();
+    for (let i = 0; i < active.length; i++) active[i].applyRestitution();
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i];
+      if (b.inactive) continue;
+      b.x += h * (b.vx + b.bvx); b.y += h * (b.vy + b.bvy); b.a += h * (b.w + b.bw);
+      b.fx = 0; b.fy = 0; b.torque = 0;
+      b.updateTransform();
+      if (b.vx * b.vx + b.vy * b.vy < SLEEP_LIN * SLEEP_LIN && Math.abs(b.w) < SLEEP_ANG) b.sleepTime += h;
+      else b.sleepTime = 0;
+    }
+    this.sleepIslands();
+    // impact events for visuals only
+    const ev = this.contactEvents; ev.length = 0;
+    for (let i = 0; i < active.length && ev.length < 48; i++) {
+      const arb = active[i], a = arb.a, b = arb.b;
+      const imSum = (a.isStatic ? 0 : a.invMass) + (b.isStatic ? 0 : b.invMass);
+      for (let j = 0; j < arb.n; j++) {
+        const c = arb.contacts[j], dv = c.Pn * imSum;
+        if (dv > 0.9) ev.push({ x: c.px, y: c.py, nx: c.nx, ny: c.ny, dv, car: a === this.car && b.kind === 'brick' });
+      }
+    }
+  }
+}
+
+/* =====================================================================
+   Scene construction
+   ===================================================================== */
+const brickHash = i => { let h = (i * 2654435761) >>> 0; h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995) >>> 0; h ^= h >>> 15; return (h >>> 0) / 4294967296; };
+const rgb = (r, g, b, k) => `rgb(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)})`;
+
+function buildScene(p) {
+  nextBodyId = 0;
+  const cellSize = Math.max(0.3, Math.max(p.brickW, p.brickH) * 1.25);
+  const brickCount = (p.rows * p.cols + Math.ceil(p.rows / 2)) * p.layers + 8;
+  const world = new World(p.gravity, p.layers, cellSize, brickCount);
+
+  const ground = new Body(300, 1, Infinity);
+  ground.x = 20; ground.y = -1; ground.kind = 'ground'; ground.friction = p.groundFriction; ground.restitution = 0;
+  ground.updateTransform(); world.ground = world.addBody(ground);
+
+  const runup = Math.max(MIN_RUNUP, p.carSpeed * p.carSpeed / (2 * MAX_LAUNCH_ACCEL));
+  const launchAccel = p.carSpeed * p.carSpeed / (2 * runup);
+  const startDist = runup + COAST_DIST;
+  const car = new Body(p.carW / 2, p.carH / 2, p.carMass);
+  car.kind = 'car'; car.x = -startDist - p.carW / 2; car.y = p.carH / 2;
+  car.friction = 0; car.restitution = 0; car.canSleep = false;
+  car.updateTransform(); world.car = world.addBody(car);
+
+  const bw = p.brickW, bh = p.brickH, cols = p.cols, rows = p.rows;
+  const wallW = cols * bw;
+  let idx = 0;
+  for (let k = 0; k < p.layers; k++) {
+    const shade = Math.pow(0.78, k);
+    for (let r = 0; r < rows; r++) {
+      const staggered = (r + k) % 2 === 1;
+      const y = r * bh + bh / 2;
+      const place = (cx, w) => {
+        const b = new Body(w / 2, bh / 2, p.brickMass * (w / bw));
+        b.x = cx; b.y = y; b.x0 = cx; b.y0 = y; b.layer = k; b.kind = 'brick';
+        b.friction = p.brickFriction; b.restitution = p.brickRestitution;
+        const t = brickHash(idx++);
+        const rr = 168 + t * 40, gg = 72 + t * 26, bb = 52 + t * 18;
+        b.faceCol = rgb(rr, gg, bb, shade); b.topCol = rgb(rr, gg, bb, shade * 0.86); b.sideCol = rgb(rr, gg, bb, shade * 0.6);
+        b.updateTransform();
+        world.bricks.push(world.addBody(b));
+      };
+      if (!staggered) { for (let c = 0; c < cols; c++) place(c * bw + bw / 2, bw); }
+      else {
+        place(bw / 4, bw / 2);
+        for (let c = 0; c < cols - 1; c++) place(bw / 2 + c * bw + bw / 2, bw);
+        place(wallW - bw / 4, bw / 2);
+      }
+    }
+  }
+  // Pre-stress the wall: let gravity load every contact (warm-start impulses, micro-penetration)
+  // with the car parked far away, then freeze the wall as one sleeping island.
+  car.asleep = true;
+  for (const b of world.bricks) b.canSleep = false;
+  for (let i = 0; i < PRESETTLE_STEPS; i++) world.step(STEP_H);
+  for (const b of world.bricks) { b.canSleep = true; b.x0 = b.x; b.y0 = b.y; }
+  world.forceSleepAll();
+  world.activeArbs.length = 0;
+  car.asleep = false; car.sleepTime = 0;
+  return { world, car, ground, launchAccel, runup, startDist, wallW, wallH: rows * bh, params: { ...p } };
+}
+
+/* =====================================================================
+   Application state
+   ===================================================================== */
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, dpr = 1;
+
+let scene = null;
+let state = 'ready';            // ready | running | settled
+let simTime = 0, accumulator = 0, stepH = 1 / 120, maxStepsPerFrame = 6;
+let driving = false, impacted = false, impactTime = 0, impactSpeed = 0, peakDecelG = 0, initialKE = 0, prevCarVx = 0;
+let settledAt = 0;
+let pendingChanges = false;
+
+const camera = { x: 0, target: 0, restX: 0, shake: 0, shakeX: 0, shakeY: 0 };
+let rng = mulberry32(1337);
+const particles = [];
+const skids = [[], []];
+let fps = 60, fpsAcc = 0, fpsN = 0, fpsT = 0;
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+let viewScale = DEFAULTS.scale;
+function panelReserve() { const p = $('panel'); return W > 900 && !p.classList.contains('collapsed') ? p.offsetWidth + 34 : 0; }
+function groundScreenY() { return Math.min(Math.round(H * 0.74), H - $('hud').offsetHeight - 52); }
+function usableWidthPx() { return Math.max(320, W - panelReserve()); }
+function restCameraX() { return scene.car.x - scene.car.hw - 0.8; }
+function restSpanMeters() { return (scene.wallW + 0.8) - restCameraX(); }
+// Physics always runs at the configured px/m; the view only zooms out (down to 60%) when the
+// whole rest scene cannot fit next to the settings panel.
+function computeViewScale() {
+  const want = scene.params.scale;
+  const fitW = usableWidthPx() / restSpanMeters();
+  const fitH = Math.max(120, groundScreenY() - 90) / Math.max(scene.wallH + 1.2, 3);
+  viewScale = Math.min(want, Math.max(0.5 * want, Math.min(fitW, fitH)));
+}
+
+function resetScene() {
+  scene = buildScene(settings);
+  state = 'ready'; simTime = 0; accumulator = 0;
+  driving = false; impacted = false; impactTime = 0; impactSpeed = 0; peakDecelG = 0; settledAt = 0;
+  prevCarVx = 0; initialKE = 0.5 * settings.carMass * settings.carSpeed * settings.carSpeed;
+  stepH = STEP_H;
+  maxStepsPerFrame = 12;
+  particles.length = 0; skids[0].length = 0; skids[1].length = 0;
+  rng = mulberry32(1337);
+  computeViewScale();
+  camera.restX = restCameraX(); camera.x = camera.target = camera.restX; camera.shake = 0;
+  pendingChanges = false;
+  renderActiveValues();
+  updatePendingNote();
+}
+
+function startTest() {
+  resetScene();
+  state = 'running';
+  driving = true;
+  scene.car.canSleep = false;
+}
+
+function simStep(h) {
+  const { world, car } = scene;
+  if (driving) car.fx = car.mass * scene.launchAccel;
+  prevCarVx = car.vx;
+  world.step(h);
+
+  if (driving && car.vx >= scene.params.carSpeed) { car.vx = scene.params.carSpeed; driving = false; }
+  if (!impacted && world.carTouch) {
+    impacted = true; impactTime = simTime; impactSpeed = Math.abs(prevCarVx);
+    driving = false; car.friction = scene.params.groundFriction; car.canSleep = true;
+    camera.shake = Math.max(camera.shake, Math.min(22, 4 + impactSpeed * 0.6));
+  }
+  if (impacted) {
+    const decel = (prevCarVx - car.vx) / h / 9.81;
+    if (decel > peakDecelG) peakDecelG = decel;
+    if (decel > 3) camera.shake = Math.max(camera.shake, Math.min(24, decel * 0.5));
+    if (!car.asleep && Math.abs(car.vx) > 0.4 && car.minY < 0.05) recordSkid();
+  }
+  simTime += h;
+  spawnDust(world.contactEvents);
+
+  if (impacted && simTime - impactTime > 0.5) {
+    let allAsleep = car.asleep;
+    if (allAsleep) for (const b of world.bricks) { if (!b.asleep) { allAsleep = false; break; } }
+    if (allAsleep) { state = 'settled'; settledAt = simTime; }
+  }
+  if (simTime > 90) { state = 'settled'; settledAt = simTime; }
+}
+
+function recordSkid() {
+  const car = scene.car, r = Math.min(0.34, car.hh * 0.5);
+  const ly = -car.hh + r;
+  for (let i = 0; i < 2; i++) {
+    const lx = (i === 0 ? -1 : 1) * car.hw * 0.6;
+    const wx = car.x + car.cos * lx - car.sin * ly;
+    const arr = skids[i];
+    if (arr.length === 0 || Math.abs(arr[arr.length - 1] - wx) > 0.02) arr.push(wx);
+  }
+}
+
+function spawnDust(events) {
+  for (const e of events) {
+    if (particles.length > 700) break;
+    const count = e.car ? 3 : Math.min(2, 1 + Math.floor(e.dv / 4));
+    for (let i = 0; i < count; i++) {
+      const spread = (rng() - 0.5) * 1.6;
+      const speed = Math.min(6, 0.6 + e.dv * 0.25) * (0.4 + rng() * 0.8);
+      const tx = e.ny, ty = -e.nx;
+      particles.push({
+        x: e.x, y: e.y,
+        vx: (e.nx * 0.4 + tx * spread) * speed * (rng() < 0.5 ? -1 : 1), vy: Math.abs(e.ny) * speed * 0.5 + rng() * speed * 0.6,
+        life: 0, maxLife: 0.5 + rng() * 0.8, r: 0.05 + rng() * 0.1, warm: e.car ? 0.4 + rng() * 0.6 : rng() * 0.5,
+      });
+    }
+  }
+}
+
+function updateParticles(dt) {
+  const g = scene.params.gravity * 0.25;
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life += dt;
+    if (p.life > p.maxLife) { particles[i] = particles[particles.length - 1]; particles.pop(); continue; }
+    p.vx *= Math.exp(-2.2 * dt); p.vy = p.vy * Math.exp(-2.2 * dt) - g * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.y < 0.02) { p.y = 0.02; p.vy = Math.abs(p.vy) * 0.2; }
+    p.r += dt * 0.35;
+  }
+}
+
+function updateCamera(dt) {
+  const usableM = usableWidthPx() / viewScale;
+  const car = scene.car;
+  let target = camera.restX;
+  if (state !== 'ready') {
+    // keep the rightmost action (car nose, wall, nearby flying debris) inside the usable view
+    let right = Math.max(car.x + car.hw, scene.wallW);
+    const cap = car.x + car.hw + 6;
+    for (const b of scene.world.bricks) if (!b.asleep && b.maxX > right && b.maxX < cap) right = b.maxX;
+    target = Math.max(camera.restX, right + 0.8 - usableM);
+  }
+  camera.target = target;
+  const k = 1 - Math.exp(-(state === 'ready' ? 12 : 5) * dt);
+  camera.x += (target - camera.x) * k;
+  camera.shake *= Math.exp(-6 * dt);
+  if (camera.shake > 0.05) {
+    camera.shakeX = (rng() - 0.5) * 2 * camera.shake;
+    camera.shakeY = (rng() - 0.5) * 2 * camera.shake;
+  } else { camera.shakeX = 0; camera.shakeY = 0; }
+}
+
+/* =====================================================================
+   Rendering
+   ===================================================================== */
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (scene) { computeViewScale(); if (state === 'ready') camera.x = camera.restX; }
+}
+
+function render() {
+  const scale = viewScale;
+  const groundY = groundScreenY() + camera.shakeY;
+  const camX = camera.x - camera.shakeX / scale;
+  const sx = wx => (wx - camX) * scale;
+  const sy = wy => groundY - wy * scale;
+
+  // sky
+  const sky = ctx.createLinearGradient(0, 0, 0, groundY);
+  sky.addColorStop(0, '#0d1420'); sky.addColorStop(0.55, '#1c2a3f'); sky.addColorStop(1, '#3b4a5e');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  // distant facility silhouettes (parallax)
+  ctx.fillStyle = '#16202e';
+  const par = 0.25, spacing = 9;
+  const firstK = Math.floor((camX * par - 10) / spacing);
+  for (let k = firstK; k < firstK + Math.ceil(W / scale / spacing) + 5; k++) {
+    const h0 = 1.4 + ((k * 7919) % 5) * 0.55, w0 = 5.5 + ((k * 104729) % 4) * 0.8;
+    const bx = (k * spacing - camX * par) * scale;
+    ctx.fillRect(bx, groundY - h0 * scale, w0 * scale, h0 * scale);
+    if (k % 3 === 0) ctx.fillRect(bx + w0 * scale * 0.7, groundY - (h0 + 1.6) * scale, 0.25 * scale, 1.6 * scale);
+  }
+  // horizon glow
+  const glow = ctx.createLinearGradient(0, groundY - 60, 0, groundY);
+  glow.addColorStop(0, 'rgba(255,170,100,0)'); glow.addColorStop(1, 'rgba(255,170,100,0.12)');
+  ctx.fillStyle = glow; ctx.fillRect(0, groundY - 60, W, 60);
+
+  // ground
+  const gnd = ctx.createLinearGradient(0, groundY, 0, H);
+  gnd.addColorStop(0, '#3a3d43'); gnd.addColorStop(0.06, '#2b2e33'); gnd.addColorStop(1, '#15171b');
+  ctx.fillStyle = gnd; ctx.fillRect(0, groundY, W, H - groundY);
+  ctx.fillStyle = '#a8adb5'; ctx.fillRect(0, groundY - 2, W, 2);
+
+  // distance ticks
+  const x0m = Math.floor(camX), x1m = Math.ceil(camX + W / scale);
+  ctx.textAlign = 'center'; ctx.font = '11px ui-monospace, Menlo, monospace';
+  for (let m = x0m; m <= x1m; m++) {
+    const px = sx(m);
+    const major = m % 5 === 0;
+    ctx.fillStyle = major ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.22)';
+    ctx.fillRect(px - 0.5, groundY + 4, 1, major ? 14 : 7);
+    if (major) { ctx.fillText(`${m > 0 ? '+' : ''}${m} m`, px, groundY + 32); }
+  }
+  // impact line
+  ctx.strokeStyle = 'rgba(255,180,90,0.35)'; ctx.setLineDash([6, 8]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(sx(0), groundY); ctx.lineTo(sx(0), groundY - Math.max(scene.wallH + 1.2, 3) * scale); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,180,90,0.7)'; ctx.textAlign = 'left'; ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText('wall face', sx(0) + 6, groundY - Math.max(scene.wallH + 1.2, 3) * scale + 12);
+
+  // skid marks
+  ctx.strokeStyle = 'rgba(15,15,18,0.55)'; ctx.lineWidth = Math.max(2, 0.16 * scale); ctx.lineCap = 'round';
+  for (const arr of skids) {
+    if (arr.length < 2) continue;
+    ctx.beginPath(); ctx.moveTo(sx(arr[0]), groundY - 1);
+    for (let i = 1; i < arr.length; i++) ctx.lineTo(sx(arr[i]), groundY - 1);
+    ctx.stroke();
+  }
+
+  drawBricks(sx, sy, scale);
+  drawCar(sx, sy, scale, groundY);
+  drawParticles(sx, sy, scale);
+}
+
+const cornerX = new Float64Array(4), cornerY = new Float64Array(4);
+function bodyCorners(b, sx, sy, ox, oy) {
+  const c = b.cos, s = b.sin, hw = b.hw, hh = b.hh;
+  const ax = c * hw, ay = s * hw, bx = -s * hh, by = c * hh;
+  cornerX[0] = sx(b.x - ax - bx) + ox; cornerY[0] = sy(b.y - ay - by) + oy;
+  cornerX[1] = sx(b.x + ax - bx) + ox; cornerY[1] = sy(b.y + ay - by) + oy;
+  cornerX[2] = sx(b.x + ax + bx) + ox; cornerY[2] = sy(b.y + ay + by) + oy;
+  cornerX[3] = sx(b.x - ax + bx) + ox; cornerY[3] = sy(b.y - ay + by) + oy;
+}
+
+function drawBricks(sx, sy, scale) {
+  const layers = scene.params.layers;
+  const depth = 0.12 * scale;
+  const ex = depth * 0.7, ey = -depth * 0.5;
+  const vwPad = 2 * scale;
+  for (let k = layers - 1; k >= 0; k--) {
+    const ox = k * ex, oy = k * ey;
+    for (const b of scene.world.bricks) {
+      if (b.layer !== k) continue;
+      const bxs = sx(b.x);
+      if (bxs < -vwPad || bxs > W + vwPad) continue;
+      bodyCorners(b, sx, sy, ox, oy);
+      // extruded faces facing the depth vector
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) & 3;
+        const dx = cornerX[j] - cornerX[i], dy = cornerY[j] - cornerY[i];
+        const nx = -dy, ny = dx;
+        const d = nx * ex + ny * ey;
+        if (d <= 0) continue;
+        const len = Math.hypot(nx, ny) || 1;
+        ctx.fillStyle = (-ny / len) > 0.5 ? b.topCol : b.sideCol;
+        ctx.beginPath();
+        ctx.moveTo(cornerX[i], cornerY[i]); ctx.lineTo(cornerX[j], cornerY[j]);
+        ctx.lineTo(cornerX[j] + ex, cornerY[j] + ey); ctx.lineTo(cornerX[i] + ex, cornerY[i] + ey);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = b.faceCol;
+      ctx.beginPath();
+      ctx.moveTo(cornerX[0], cornerY[0]); ctx.lineTo(cornerX[1], cornerY[1]);
+      ctx.lineTo(cornerX[2], cornerY[2]); ctx.lineTo(cornerX[3], cornerY[3]); ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(30,18,14,0.75)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+}
+
+function drawCar(sx, sy, scale, groundY) {
+  const car = scene.car, hw = car.hw, hh = car.hh;
+  const crush = impacted ? Math.min(0.16, Math.max(0, (impactSpeed - Math.abs(car.vx)) / 45) * 0.16 + Math.min(0.06, peakDecelG / 600)) : 0;
+  const cx = sx(car.x), cy = sy(car.y);
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(cx, groundY + 2, hw * scale * 0.95, 0.1 * scale, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(-car.a); ctx.scale(scale, -scale);
+  const r = Math.min(0.34, hh * 0.5);
+  const yB = -hh + hh * 1.05; // beltline
+  const fx = x => x > 0 ? x * (1 - crush) : x;
+  // body
+  ctx.beginPath();
+  ctx.moveTo(-hw, -hh + r * 0.7);
+  ctx.lineTo(-hw, yB - 0.08);
+  ctx.lineTo(-hw + 0.25, yB);
+  ctx.lineTo(-hw * 0.5, yB);
+  ctx.lineTo(-hw * 0.22, hh);
+  ctx.lineTo(fx(hw * 0.14), hh);
+  ctx.lineTo(fx(hw * 0.5), yB);
+  ctx.lineTo(fx(hw - 0.2), yB - 0.04);
+  ctx.lineTo(fx(hw), yB - 0.32);
+  ctx.lineTo(fx(hw), -hh + r * 0.7);
+  ctx.closePath();
+  const bodyGrad = ctx.createLinearGradient(0, -hh, 0, hh);
+  bodyGrad.addColorStop(0, '#c8ccd3'); bodyGrad.addColorStop(0.5, '#f1f3f6'); bodyGrad.addColorStop(1, '#ffffff');
+  ctx.fillStyle = bodyGrad; ctx.fill();
+  ctx.lineWidth = 0.025; ctx.strokeStyle = '#3b4149'; ctx.stroke();
+  // windows
+  ctx.fillStyle = '#1f2b3a';
+  ctx.beginPath();
+  ctx.moveTo(-hw * 0.46, yB + 0.03); ctx.lineTo(-hw * 0.2, hh - 0.07);
+  ctx.lineTo(fx(hw * 0.12), hh - 0.07); ctx.lineTo(fx(hw * 0.44), yB + 0.03); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#e6e9ee'; ctx.lineWidth = 0.03;
+  ctx.beginPath(); ctx.moveTo(-hw * 0.04, yB + 0.03); ctx.lineTo(-hw * 0.04, hh - 0.07); ctx.stroke();
+  // stripe
+  ctx.fillStyle = '#ff7a2f';
+  ctx.fillRect(-hw + 0.05, yB - 0.33, fx(hw) + hw - 0.15, 0.09);
+  // crash-test target
+  const tx = -hw * 0.05, ty = -hh + r * 0.7 + (yB - (-hh + r * 0.7)) * 0.42, tr = Math.min(0.17, hh * 0.22);
+  for (let q = 0; q < 4; q++) {
+    ctx.fillStyle = q % 2 ? '#111' : '#ffd23f';
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.arc(tx, ty, tr, q * Math.PI / 2, (q + 1) * Math.PI / 2); ctx.closePath(); ctx.fill();
+  }
+  // lights
+  ctx.fillStyle = '#ffe9a6'; ctx.fillRect(fx(hw) - 0.16, yB - 0.3, 0.14, 0.12);
+  ctx.fillStyle = '#e0342a'; ctx.fillRect(-hw + 0.02, yB - 0.3, 0.12, 0.12);
+  // wheels
+  for (const wxl of [-hw * 0.6, hw * 0.6]) {
+    const wx = wxl > 0 ? fx(wxl) : wxl, wy = -hh + r;
+    ctx.fillStyle = '#15171a'; ctx.beginPath(); ctx.arc(wx, wy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9aa1ab'; ctx.beginPath(); ctx.arc(wx, wy, r * 0.58, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#4a5058'; ctx.lineWidth = 0.03;
+    const spin = car.x / r;
+    for (let s = 0; s < 5; s++) {
+      const ang = spin + s * Math.PI * 2 / 5;
+      ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx + Math.cos(ang) * r * 0.5, wy + Math.sin(ang) * r * 0.5); ctx.stroke();
+    }
+    ctx.fillStyle = '#2a2e34'; ctx.beginPath(); ctx.arc(wx, wy, r * 0.14, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawParticles(sx, sy, scale) {
+  for (const p of particles) {
+    const t = p.life / p.maxLife, alpha = (1 - t) * 0.42;
+    const g = Math.round(150 + p.warm * 40), rch = Math.round(160 + p.warm * 60), b = Math.round(135 + (1 - p.warm) * 30);
+    ctx.fillStyle = `rgba(${rch},${g},${b},${alpha.toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), p.r * scale, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+/* =====================================================================
+   UI
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 1) => Number(v).toFixed(d);
+
+function buildControls() {
+  const main = $('mainParams'), adv = $('advParams');
+  for (const def of PARAM_DEFS) {
+    const row = document.createElement('div'); row.className = 'param';
+    row.innerHTML = `<label for="num-${def.key}"><span>${def.label}</span><small>${def.unit}</small></label>
+      <input type="number" id="num-${def.key}" min="${def.min}" max="${def.max}" step="${def.step}">
+      <input type="range" id="rng-${def.key}" min="${def.min}" max="${def.max}" step="${def.step}">`;
+    (def.group === 'main' ? main : adv).appendChild(row);
+    const num = row.querySelector('input[type=number]'), rng = row.querySelector('input[type=range]');
+    num.value = settings[def.key]; rng.value = settings[def.key];
+    const onChange = (raw, commit) => {
+      let v = parseFloat(raw);
+      if (!isFinite(v)) return;
+      if (commit) v = Math.min(def.max, Math.max(def.min, v));
+      settings[def.key] = v;
+      if (commit) { num.value = v; }
+      rng.value = v;
+      onSettingsChanged();
+    };
+    rng.addEventListener('input', () => { onChange(rng.value, true); });
+    num.addEventListener('input', () => onChange(num.value, false));
+    num.addEventListener('change', () => onChange(num.value, true));
+    def.num = num; def.rng = rng;
+  }
+}
+
+function syncControls() {
+  for (const def of PARAM_DEFS) { def.num.value = settings[def.key]; def.rng.value = settings[def.key]; }
+}
+
+function onSettingsChanged() {
+  if (state === 'ready') resetScene();
+  else { pendingChanges = true; updatePendingNote(); }
+}
+
+function updatePendingNote() {
+  $('pendingNote').textContent = pendingChanges ? 'Changes apply on next Test / Reset' : '';
+}
+
+function renderActiveValues() {
+  const p = scene.params;
+  $('activeValues').innerHTML = `Active run
+    <div class="chips">
+      <span class="chip"><b>${fmt(p.carSpeed, 1)}</b> m/s</span>
+      <span class="chip"><b>${p.cols}×${p.rows}</b> bricks</span>
+      <span class="chip"><b>${p.layers}</b> layer${p.layers > 1 ? 's' : ''}</span>
+      <span class="chip"><b>${fmt(p.brickMass, 2)}</b> kg/brick</span>
+      <span class="chip"><b>${fmt(p.brickW, 2)}×${fmt(p.brickH, 2)}</b> m</span>
+      <span class="chip">g <b>${fmt(p.gravity, 2)}</b></span>
+      <span class="chip">μ <b>${fmt(p.brickFriction, 2)}</b> · e <b>${fmt(p.brickRestitution, 2)}</b></span>
+      <span class="chip">car <b>${p.carMass}</b> kg · <b>${fmt(p.carW, 2)}×${fmt(p.carH, 2)}</b> m</span>
+      <span class="chip">ground μ <b>${fmt(p.groundFriction, 2)}</b></span>
+      <span class="chip"><b>${p.scale}</b> px/m</span>
+      <span class="chip">launch <b>${fmt(scene.launchAccel, 1)}</b> m/s² over <b>${fmt(scene.runup, 1)}</b> m</span>
+    </div>`;
+}
+
+function updateHud() {
+  const car = scene.car, world = scene.world;
+  const speed = Math.hypot(car.vx, car.vy);
+  $('tSpeed').textContent = fmt(speed, 1);
+  $('tKmh').textContent = `${fmt(speed * 3.6, 0)} km/h`;
+  $('tTime').textContent = fmt(simTime, 2);
+  let moving = 0, displaced = 0, awake = 0;
+  for (const b of world.bricks) {
+    if (!b.asleep) { awake++; if (b.vx * b.vx + b.vy * b.vy > SLEEP_LIN * SLEEP_LIN || Math.abs(b.w) > SLEEP_ANG) moving++; }
+    if (Math.abs(b.x - b.x0) > 0.05 || Math.abs(b.y - b.y0) > 0.05 || Math.abs(b.a) > 0.05) displaced++;
+  }
+  $('tMoving').textContent = moving;
+  $('tTotal').textContent = world.bricks.length;
+  $('tDisplaced').textContent = fmt(100 * displaced / world.bricks.length, 0);
+  $('tImpact').textContent = impacted ? `${fmt(impactSpeed, 1)} m/s @ ${fmt(impactTime, 2)} s` : '–';
+  $('tDecel').textContent = impacted ? `${fmt(peakDecelG, 1)} g` : '–';
+  const ke = 0.5 * car.mass * (car.vx * car.vx + car.vy * car.vy);
+  $('tKE').textContent = state === 'ready' ? `${fmt(initialKE / 1000, 0)} kJ planned` : `${fmt(ke / 1000, 1)} kJ`;
+  $('energyBar').style.width = `${initialKE > 0 ? Math.min(100, 100 * ke / initialKE) : 0}%`;
+  let contacts = 0; for (const a of world.activeArbs) contacts += a.n;
+  const zoom = Math.abs(viewScale - scene.params.scale) > 0.5 ? ` · view ${fmt(viewScale, 0)} px/m (auto-fit)` : '';
+  $('tSolver').textContent = `${Math.round(1 / stepH)} Hz · ${world.iterations} it · ${world.bodies.length} bodies · ${contacts} contacts · ${awake} awake · ${fmt(fps, 0)} fps${zoom}`;
+
+  const pill = $('statePill'), txt = $('stateText');
+  pill.className = 'pill' + (state === 'running' ? ' running' : state === 'settled' ? ' settled' : '');
+  if (state === 'ready') { pill.textContent = 'Ready'; txt.textContent = 'Press Test to launch the car.'; }
+  else if (state === 'settled') { pill.textContent = 'Settled'; txt.textContent = `Debris at rest after ${fmt(settledAt, 2)} s. Run again or change settings.`; }
+  else { pill.textContent = impacted ? 'Impact' : driving ? 'Launching' : 'Coasting'; txt.textContent = impacted ? 'Momentum transferred into the wall, waiting for debris to settle…' : driving ? 'Sled-assisted acceleration toward the wall.' : 'Target speed reached, coasting into the wall.'; }
+}
+
+/* =====================================================================
+   Main loop
+   ===================================================================== */
+let lastT = performance.now();
+function frame(now) {
+  let dt = (now - lastT) / 1000; lastT = now;
+  if (dt > 0.1) dt = 0.1;
+  fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+
+  if (state === 'running') {
+    accumulator += dt;
+    let steps = 0;
+    while (accumulator >= stepH && steps < maxStepsPerFrame && state === 'running') { simStep(stepH); accumulator -= stepH; steps++; }
+    if (steps >= maxStepsPerFrame) accumulator = 0;
+  }
+  updateCamera(dt);
+  updateParticles(dt);
+  render();
+  updateHud();
+  requestAnimationFrame(frame);
+}
+
+/* =====================================================================
+   Boot
+   ===================================================================== */
+buildControls();
+resize();
+resetScene();
+window.addEventListener('resize', resize);
+$('btnTest').addEventListener('click', startTest);
+$('btnReset').addEventListener('click', resetScene);
+$('btnSettings').addEventListener('click', () => { $('panel').classList.toggle('collapsed'); computeViewScale(); camera.restX = restCameraX(); });
+$('btnDefaults').addEventListener('click', () => { Object.assign(settings, DEFAULTS); syncControls(); onSettingsChanged(); });
+window.addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  if (e.code === 'Space') { e.preventDefault(); startTest(); }
+  else if (e.key === 'r' || e.key === 'R') resetScene();
+});
+requestAnimationFrame(frame);
+
+// read-only inspection hook for verification tooling
+window.crashLab = {
+  get state() { return state; },
+  get time() { return simTime; },
+  snapshot() { return scene.world.bricks.map(b => [b.x, b.y, b.a].map(v => +v.toFixed(6))); },
+  car() { const c = scene.car; return { x: c.x, y: c.y, a: c.a, vx: c.vx }; },
+  stats() {
+    let maxV = 0, maxW = 0, awake = 0, maxPen = 0, n = 0, sumV = 0;
+    for (const b of scene.world.bricks) if (!b.asleep) { awake++; const v = Math.hypot(b.vx, b.vy); sumV += v; if (v > maxV) maxV = v; if (Math.abs(b.w) > maxW) maxW = Math.abs(b.w); }
+    for (const a of scene.world.activeArbs) for (let i = 0; i < a.n; i++) { n++; if (-a.contacts[i].separation > maxPen) maxPen = -a.contacts[i].separation; }
+    return { awake, maxV, maxW, meanV: awake ? sumV / awake : 0, contacts: n, maxPen };
+  },
+};
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Gemini 3.7 Flash</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-dark: #0b0f17;
+      --bg-card: rgba(18, 24, 38, 0.85);
+      --bg-card-border: rgba(255, 255, 255, 0.1);
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.35);
+      --amber: #fbbf24;
+      --amber-glow: rgba(251, 191, 36, 0.35);
+      --danger: #ef4444;
+      --success: #10b981;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      touch-action: none;
+    }
+
+    #canvas-container {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* UI Overlay Layer */
+    .ui-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px 20px;
+    }
+
+    .ui-interactive {
+      pointer-events: auto;
+    }
+
+    /* Top Bar */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .brand-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--bg-card-border);
+      border-radius: 14px;
+      padding: 12px 18px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .brand-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 30%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+
+    /* Telemetry HUD */
+    .telemetry-panel {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--bg-card-border);
+      border-radius: 14px;
+      padding: 12px 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 290px;
+    }
+
+    .telemetry-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 8px;
+    }
+
+    .telemetry-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+    }
+
+    .status-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.2s ease;
+    }
+
+    .status-pill[data-status="READY"] { background: rgba(56, 189, 248, 0.12); color: var(--accent); border-color: rgba(56, 189, 248, 0.3); }
+    .status-pill[data-status="ACCELERATING"] { background: rgba(251, 191, 36, 0.15); color: var(--amber); border-color: rgba(251, 191, 36, 0.4); animation: pulse 1s infinite alternate; }
+    .status-pill[data-status="IMPACT"] { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); }
+    .status-pill[data-status="SETTLING"] { background: rgba(251, 191, 36, 0.12); color: var(--amber); border-color: rgba(251, 191, 36, 0.3); }
+    .status-pill[data-status="SETTLED"] { background: rgba(16, 185, 129, 0.15); color: var(--success); border-color: rgba(16, 185, 129, 0.3); }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 0.85; }
+      100% { transform: scale(1.04); opacity: 1; }
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px 14px;
+    }
+
+    .tel-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .tel-label {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .tel-val {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+    }
+
+    .tel-unit {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .tel-val.highlight {
+      color: var(--amber);
+    }
+
+    .speed-gauge-wrap {
+      margin-top: 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .speed-bar-bg {
+      height: 5px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .speed-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #fbbf24, #ef4444);
+      border-radius: 999px;
+      transition: width 0.06s linear;
+    }
+
+    /* Bottom Control Bar & Floating Dock */
+    .bottom-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+    }
+
+    .control-dock {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--bg-card-border);
+      border-radius: 18px;
+      padding: 8px 12px;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 auto;
+    }
+
+    .btn {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      padding: 10px 18px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+      outline: none;
+      white-space: nowrap;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #fbbf24, #d97706);
+      color: #0f172a;
+      box-shadow: 0 4px 18px var(--amber-glow);
+      border-color: rgba(255, 255, 255, 0.3);
+      font-size: 14px;
+      padding: 11px 24px;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #fcd34d, #f59e0b);
+      box-shadow: 0 6px 24px rgba(251, 191, 36, 0.55);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    .btn-icon {
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+
+    .dock-divider {
+      width: 1px;
+      height: 24px;
+      background: rgba(255, 255, 255, 0.12);
+      margin: 0 2px;
+    }
+
+    .speed-pills {
+      display: flex;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 9px;
+      padding: 3px;
+      gap: 2px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .speed-pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 9px;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+
+    .speed-pill.active {
+      background: rgba(56, 189, 248, 0.25);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* Settings Panel */
+    .settings-panel {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      width: 330px;
+      max-height: calc(100vh - 110px);
+      overflow-y: auto;
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--bg-card-border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transform: translateX(0);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+      z-index: 20;
+    }
+
+    .settings-panel.collapsed {
+      transform: translateX(-370px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .settings-panel::-webkit-scrollbar {
+      width: 5px;
+    }
+    .settings-panel::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+
+    .settings-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 10px;
+    }
+
+    .settings-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .setting-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .setting-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .setting-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .setting-value {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 10px var(--accent-glow);
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .presets-container {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .preset-btn {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 7px 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.14s ease;
+    }
+
+    .preset-btn:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.3);
+      color: var(--text-main);
+    }
+
+    .preset-btn.active {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Floating View Controls */
+    .view-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: absolute;
+      right: 20px;
+      bottom: 20px;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--bg-card-border);
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      transition: all 0.15s ease;
+    }
+
+    .icon-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .icon-btn.active {
+      color: var(--accent);
+      border-color: rgba(56, 189, 248, 0.4);
+      background: rgba(56, 189, 248, 0.15);
+    }
+
+    .kb-hint {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      margin-left: 2px;
+    }
+
+    @media (max-width: 860px) {
+      .telemetry-panel { min-width: 220px; }
+      .settings-panel { width: 280px; }
+      .brand-title { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container">
+    <canvas id="simCanvas"></canvas>
+  </div>
+
+  <div class="ui-layer">
+    <!-- Top Bar -->
+    <div class="top-bar">
+      <!-- Brand & Settings Toggle -->
+      <div class="brand-card ui-interactive">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <button id="btn-toggle-settings" class="btn btn-secondary btn-icon" title="Toggle Settings (S)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+          <div class="brand-title">Gemini 3.7 Flash</div>
+        </div>
+        <div class="brand-subtitle">Rigid-Body Impact & Structural Momentum Transfer</div>
+      </div>
+
+      <!-- Live Telemetry Display -->
+      <div class="telemetry-panel ui-interactive">
+        <div class="telemetry-header">
+          <span class="telemetry-title">Telemetry & Dynamics</span>
+          <span id="telemetry-status" class="status-pill" data-status="READY">READY</span>
+        </div>
+        <div class="telemetry-grid">
+          <div class="tel-item">
+            <span class="tel-label">Car Speed</span>
+            <span class="tel-val highlight"><span id="tel-speed">22.0</span><span class="tel-unit">m/s</span></span>
+          </div>
+          <div class="tel-item">
+            <span class="tel-label">Peak G-Force</span>
+            <span class="tel-val"><span id="tel-gforce">0.0</span><span class="tel-unit">G</span></span>
+          </div>
+          <div class="tel-item">
+            <span class="tel-label">Kinetic Energy</span>
+            <span class="tel-val"><span id="tel-energy">302.5</span><span class="tel-unit">kJ</span></span>
+          </div>
+          <div class="tel-item">
+            <span class="tel-label">Elapsed Time</span>
+            <span class="tel-val"><span id="tel-time">0.00</span><span class="tel-unit">s</span></span>
+          </div>
+          <div class="tel-item">
+            <span class="tel-label">Moving Bricks</span>
+            <span class="tel-val"><span id="tel-moving">0</span><span class="tel-unit">/ <span id="tel-total-bricks">192</span></span></span>
+          </div>
+          <div class="tel-item">
+            <span class="tel-label">Linear Momentum</span>
+            <span class="tel-val"><span id="tel-momentum">27.5</span><span class="tel-unit">k·N·s</span></span>
+          </div>
+        </div>
+        <div class="speed-gauge-wrap">
+          <div class="speed-bar-bg">
+            <div id="speed-bar-fill" class="speed-bar-fill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Panel (Collapsible) -->
+    <div id="settings-panel" class="settings-panel ui-interactive">
+      <div class="settings-header">
+        <span class="settings-title">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+          Experiment Parameters
+        </span>
+        <button id="btn-close-settings" class="btn btn-secondary btn-icon" style="padding: 4px 8px; font-size: 12px;">✕</button>
+      </div>
+
+      <!-- Presets -->
+      <div class="setting-group">
+        <span class="setting-label">Experiment Presets</span>
+        <div class="presets-container">
+          <button class="preset-btn active" data-preset="default">Default Baseline</button>
+          <button class="preset-btn" data-preset="highspeed">High Speed (40 m/s)</button>
+          <button class="preset-btn" data-preset="fortress">Fortified Wall (4 Layer)</button>
+          <button class="preset-btn" data-preset="heavybricks">Heavy Bricks (8 kg)</button>
+          <button class="preset-btn" data-preset="lowspeed">Slow Impact (10 m/s)</button>
+          <button class="preset-btn" data-preset="talltower">Tall Tower (14 Rows)</button>
+        </div>
+      </div>
+
+      <!-- Configurable Sliders -->
+      <div class="setting-group">
+        <div class="setting-label-row">
+          <span class="setting-label">Car Speed</span>
+          <span class="setting-value"><span id="val-speed">22</span> m/s <span style="font-size:10px; color:var(--text-dim);">(<span id="val-speed-kmh">79.2</span> km/h)</span></span>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="input-speed" min="5" max="45" step="1" value="22" />
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label-row">
+          <span class="setting-label">Wall Columns (Width)</span>
+          <span class="setting-value"><span id="val-cols">12</span> bricks (<span id="val-wall-width">6.00</span> m)</span>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="input-cols" min="4" max="24" step="1" value="12" />
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label-row">
+          <span class="setting-label">Wall Rows (Height)</span>
+          <span class="setting-value"><span id="val-rows">8</span> bricks (<span id="val-wall-height">1.92</span> m)</span>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="input-rows" min="3" max="16" step="1" value="8" />
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label-row">
+          <span class="setting-label">Wall Depth Layers</span>
+          <span class="setting-value"><span id="val-layers">2</span> layers</span>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="input-layers" min="1" max="5" step="1" value="2" />
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label-row">
+          <span class="setting-label">Brick Mass</span>
+          <span class="setting-value"><span id="val-mass">2.5</span> kg/brick</span>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="input-mass" min="0.5" max="12" step="0.5" value="2.5" />
+        </div>
+      </div>
+
+      <!-- Advanced Read-only Specs -->
+      <div style="background: rgba(0,0,0,0.25); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-dim);">
+        <div style="display:flex; justify-content:space-between;"><span>Car Mass:</span><span style="font-family:var(--font-mono); color:var(--text-muted);">1,250 kg</span></div>
+        <div style="display:flex; justify-content:space-between;"><span>Car Dimensions:</span><span style="font-family:var(--font-mono); color:var(--text-muted);">4.2m x 1.45m</span></div>
+        <div style="display:flex; justify-content:space-between;"><span>Brick Size:</span><span style="font-family:var(--font-mono); color:var(--text-muted);">0.50m x 0.24m</span></div>
+        <div style="display:flex; justify-content:space-between;"><span>Total Wall Mass:</span><span id="val-total-wall-mass" style="font-family:var(--font-mono); color:var(--accent);">480 kg</span></div>
+        <div style="display:flex; justify-content:space-between;"><span>Friction (Brick/Road):</span><span style="font-family:var(--font-mono); color:var(--text-muted);">0.72 / 0.85</span></div>
+        <div style="display:flex; justify-content:space-between;"><span>Gravity:</span><span style="font-family:var(--font-mono); color:var(--text-muted);">9.81 m/s²</span></div>
+      </div>
+    </div>
+
+    <!-- Bottom Dock Controls -->
+    <div class="bottom-bar">
+      <div class="control-dock ui-interactive">
+        <button id="btn-test" class="btn btn-primary" title="Launch Crash Test (Space)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          TEST <span class="kb-hint">[Space]</span>
+        </button>
+
+        <button id="btn-reset" class="btn btn-secondary" title="Reset Scene (R)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          Reset <span class="kb-hint">[R]</span>
+        </button>
+
+        <div class="dock-divider"></div>
+
+        <button id="btn-pause" class="btn btn-secondary btn-icon" title="Pause/Play (P)">
+          <svg id="icon-pause" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          <svg id="icon-play" style="display:none;" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </button>
+
+        <button id="btn-step" class="btn btn-secondary btn-icon" title="Single Step (F)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4" fill="currentColor"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+        </button>
+
+        <div class="speed-pills">
+          <button class="speed-pill" data-rate="0.1">0.1x</button>
+          <button class="speed-pill" data-rate="0.25">0.25x</button>
+          <button class="speed-pill" data-rate="0.5">0.5x</button>
+          <button class="speed-pill active" data-rate="1.0">1.0x</button>
+        </div>
+
+        <button id="btn-audio" class="btn btn-secondary btn-icon" title="Toggle Sound (M)">
+          <svg id="icon-audio-on" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <svg id="icon-audio-off" style="display:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+        </button>
+      </div>
+
+      <!-- View Floating Buttons -->
+      <div class="view-controls ui-interactive">
+        <button id="btn-follow-cam" class="icon-btn active" title="Follow Car / Auto Frame (C)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <button id="btn-zoom-in" class="icon-btn" title="Zoom In (+)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button id="btn-zoom-out" class="icon-btn" title="Zoom Out (-)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button id="btn-zoom-fit" class="icon-btn" title="Fit Entire Scene (0)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * Gemini 3.7 Flash - High-Fidelity 2D Rigid-Body Crash Simulation Engine
+     * 
+     * Architecture:
+     * - Sequential Impulses (Box2D-style SAT with simultaneous 2-point block solver & split position correction)
+     * - Multi-layer running-bond physical brick wall
+     * - Full momentum & energy conservation
+     * - Procedural audio synthesis & dynamic particle FX
+     * - Sub-stepped continuous collision detection (120 Hz)
+     */
+
+    const DEFAULTS = {
+      carSpeed: 22.0,           // m/s
+      wallCols: 12,             // columns
+      wallRows: 8,              // rows
+      wallLayers: 2,            // depth layers
+      brickMass: 2.5,           // kg
+      brickW: 0.50,             // m
+      brickH: 0.24,             // m
+      gravity: 9.81,            // m/s²
+      brickFriction: 0.72,      // coeff
+      brickRestitution: 0.18,   // coeff
+      carMass: 1250.0,          // kg
+      carW: 4.20,               // m
+      carH: 1.45,               // m
+      groundFriction: 0.85,     // coeff
+      scale: 80.0               // px per meter
+    };
+
+    const CONFIG = { ...DEFAULTS };
+
+    // Math & Physics Constants
+    const REST_TH = 0.8;
+    const BAUMGARTE = 0.22;
+    const SLOP = 0.004;
+    const SPEC = 0.0001;
+    const FIXED_DT = 1 / 120;
+    const VEL_ITERS = 14;
+    const POS_ITERS = 4;
+    const SLEEP_T = 0.5;
+    const LIN_SLEEP = 0.04;
+    const ANG_SLEEP = 0.06;
+
+    function hypot(x, y) { return Math.sqrt(x * x + y * y); }
+    function clamp(v, min, max) { return v < min ? min : v > max ? max : v; }
+
+    let nextBodyId = 1;
+
+    class Body {
+      constructor(px, py, w, h, mass, opts = {}) {
+        this.id = nextBodyId++;
+        this.px = px; this.py = py;
+        this.vx = opts.vx || 0; this.vy = opts.vy || 0;
+        this.av = 0; this.ang = 0;
+        this.hw = w * 0.5; this.hh = h * 0.5;
+        this.w = w; this.h = h;
+        this.c = 1; this.s = 0;
+        this.mass = mass;
+        this.invM = mass > 0 ? 1 / mass : 0;
+        const I = mass > 0 ? (mass * (w * w + h * h)) / 12 : 0;
+        this.I = I;
+        this.invI = I > 0 ? 1 / I : 0;
+        this.mu = opts.mu ?? CONFIG.brickFriction;
+        this.e = opts.e ?? CONFIG.brickRestitution;
+        this.layer = opts.layer ?? 0;
+        this.kind = opts.kind ?? 'brick';
+        this.static = mass <= 0;
+        this.awake = !this.static;
+        this.sleepT = 0;
+        this.isHalf = !!opts.isHalf;
+        this.shade = opts.shade || 0;
+        this.minx = 0; this.maxx = 0; this.miny = 0; this.maxy = 0;
+        this.computeAABB();
+      }
+
+      updateRot() {
+        this.c = Math.cos(this.ang);
+        this.s = Math.sin(this.ang);
+      }
+
+      wake() {
+        if (!this.static) {
+          this.awake = true;
+          this.sleepT = 0;
+        }
+      }
+
+      sleep() {
+        if (!this.static) {
+          this.awake = false;
+          this.vx = this.vy = this.av = 0;
+        }
+      }
+
+      computeAABB() {
+        const ac = Math.abs(this.c), as = Math.abs(this.s);
+        const ex = ac * this.hw + as * this.hh + 0.02;
+        const ey = as * this.hw + ac * this.hh + 0.02;
+        this.minx = this.px - ex; this.maxx = this.px + ex;
+        this.miny = this.py - ey; this.maxy = this.py + ey;
+      }
+    }
+
+    // SAT Primitives
+    const FN = [1, 0, 0, 1, -1, 0, 0, -1];
+    const FV = [1, -1, 1, 1, -1, 1, -1, -1];
+    const _n = { x: 0, y: 0 }, _p = { x: 0, y: 0 }, _v = { x: 0, y: 0 };
+    const _refN = { x: 0, y: 0 }, _tn = { x: 0, y: 0 };
+    const _ip0 = { x: 0, y: 0 }, _ip1 = { x: 0, y: 0 };
+    const _rv0 = { x: 0, y: 0 }, _rv1 = { x: 0, y: 0 };
+    const _mk = () => [{ x: 0, y: 0, id: 0 }, { x: 0, y: 0, id: 0 }];
+    const _cIn = _mk(), _cMid = _mk(), _cOut = _mk();
+    const _sep = { s: 0, i: 0 };
+
+    function worldVert(b, i, o) {
+      const lx = FV[i * 2] * b.hw, ly = FV[i * 2 + 1] * b.hh;
+      o.x = b.px + b.c * lx - b.s * ly;
+      o.y = b.py + b.s * lx + b.c * ly;
+    }
+
+    function worldNorm(b, i, o) {
+      const lx = FN[i * 2], ly = FN[i * 2 + 1];
+      o.x = b.c * lx - b.s * ly;
+      o.y = b.s * lx + b.c * ly;
+    }
+
+    function support(b, dx, dy, o) {
+      const ldx = b.c * dx + b.s * dy;
+      const ldy = -b.s * dx + b.c * dy;
+      const lx = ldx >= 0 ? b.hw : -b.hw;
+      const ly = ldy >= 0 ? b.hh : -b.hh;
+      o.x = b.px + b.c * lx - b.s * ly;
+      o.y = b.py + b.s * lx + b.c * ly;
+    }
+
+    function maxSep(A, B) {
+      let best = -1e30, bi = 0;
+      for (let i = 0; i < 4; i++) {
+        worldNorm(A, i, _n);
+        support(B, -_n.x, -_n.y, _p);
+        worldVert(A, i, _v);
+        const s = _n.x * (_p.x - _v.x) + _n.y * (_p.y - _v.y);
+        if (s > best) { best = s; bi = i; }
+      }
+      _sep.s = best; _sep.i = bi;
+      return _sep;
+    }
+
+    function clipSeg(inn, out, nx, ny, off) {
+      let o = 0;
+      const d0 = nx * inn[0].x + ny * inn[0].y - off;
+      const d1 = nx * inn[1].x + ny * inn[1].y - off;
+      if (d0 <= 0) { out[o].x = inn[0].x; out[o].y = inn[0].y; out[o].id = inn[0].id; o++; }
+      if (d1 <= 0) { out[o].x = inn[1].x; out[o].y = inn[1].y; out[o].id = inn[1].id; o++; }
+      if (d0 * d1 < 0 && o < 2) {
+        const t = d0 / (d0 - d1);
+        out[o].x = inn[0].x + t * (inn[1].x - inn[0].x);
+        out[o].y = inn[0].y + t * (inn[1].y - inn[0].y);
+        out[o].id = d0 < 0 ? inn[1].id : inn[0].id;
+        o++;
+      }
+      return o;
+    }
+
+    class Contact {
+      constructor() {
+        this.x = 0; this.y = 0;
+        this.lax = 0; this.lay = 0; this.lbx = 0; this.lby = 0;
+        this.rax = 0; this.ray = 0; this.rbx = 0; this.rby = 0;
+        this.sep = 0; this.ni = 0; this.ti = 0;
+        this.nmass = 0; this.tmass = 0; this.vbias = 0; this.fid = -1;
+      }
+    }
+
+    class Manifold {
+      constructor(A, B) {
+        this.A = A; this.B = B;
+        this.nx = 0; this.ny = 0; this.count = 0;
+        this.pts = [new Contact(), new Contact()];
+        this.mu = 0; this.e = 0; this.stamp = -1; this.impulse = 0;
+        this.block = false; this.k11 = 0; this.k12 = 0; this.k22 = 0; this.invDet = 0;
+      }
+    }
+
+    function collide(m) {
+      const A = m.A, B = m.B;
+      const sa = maxSep(A, B); const saS = sa.s, saI = sa.i;
+      if (saS > SPEC) return (m.count = 0);
+      const sb = maxSep(B, A); const sbS = sb.s, sbI = sb.i;
+      if (sbS > SPEC) return (m.count = 0);
+
+      let ref, inc, refI, flip;
+      if (sbS > saS + 0.08 * SLOP) { ref = B; inc = A; refI = sbI; flip = true; }
+      else { ref = A; inc = B; refI = saI; flip = false; }
+
+      worldNorm(ref, refI, _refN);
+      let minD = 1e30, incI = 0;
+      for (let i = 0; i < 4; i++) {
+        worldNorm(inc, i, _tn);
+        const d = _tn.x * _refN.x + _tn.y * _refN.y;
+        if (d < minD) { minD = d; incI = i; }
+      }
+      worldVert(inc, incI, _ip0);
+      worldVert(inc, (incI + 1) & 3, _ip1);
+      worldVert(ref, refI, _rv0);
+      worldVert(ref, (refI + 1) & 3, _rv1);
+
+      let tx = _rv1.x - _rv0.x, ty = _rv1.y - _rv0.y;
+      const tl = hypot(tx, ty);
+      if (tl < 1e-9) return (m.count = 0);
+      tx /= tl; ty /= tl;
+
+      _cIn[0].x = _ip0.x; _cIn[0].y = _ip0.y; _cIn[0].id = incI;
+      _cIn[1].x = _ip1.x; _cIn[1].y = _ip1.y; _cIn[1].id = (incI + 1) & 3;
+      if (clipSeg(_cIn, _cMid, -tx, -ty, -(tx * _rv0.x + ty * _rv0.y)) < 2) return (m.count = 0);
+      if (clipSeg(_cMid, _cOut, tx, ty, tx * _rv1.x + ty * _rv1.y) < 2) return (m.count = 0);
+
+      const nx = flip ? -_refN.x : _refN.x;
+      const ny = flip ? -_refN.y : _refN.y;
+      m.nx = nx; m.ny = ny;
+
+      let n = 0;
+      for (let k = 0; k < 2; k++) {
+        const cp = _cOut[k];
+        const sep = _refN.x * (cp.x - _rv0.x) + _refN.y * (cp.y - _rv0.y);
+        if (sep <= SPEC) {
+          const p = m.pts[n];
+          p.x = cp.x; p.y = cp.y;
+          p.sep = sep;
+          p.fid = cp.id;
+          n++;
+        }
+      }
+      m.count = n;
+      return n;
+    }
+
+    // --- Particle System ---
+    class Particle {
+      constructor() {
+        this.x = 0; this.y = 0;
+        this.vx = 0; this.vy = 0;
+        this.rot = 0; this.rotSpeed = 0;
+        this.size = 1; this.color = '#fff';
+        this.alpha = 1; this.life = 0; this.maxLife = 1;
+        this.type = 'dust';
+        this.active = false;
+      }
+    }
+
+    class ParticleSystem {
+      constructor(max = 600) {
+        this.pool = Array.from({ length: max }, () => new Particle());
+      }
+
+      emit(x, y, vx, vy, type = 'dust', color = '#b23b23', count = 4) {
+        for (let i = 0; i < count; i++) {
+          const p = this.pool.find(item => !item.active);
+          if (!p) break;
+          p.active = true;
+          p.type = type;
+          p.x = x + (Math.random() - 0.5) * 0.15;
+          p.y = y + (Math.random() - 0.5) * 0.15;
+          
+          const angle = Math.random() * Math.PI * 2;
+          const spd = (Math.random() * 0.8 + 0.2) * (type === 'spark' ? 7 : 4);
+          p.vx = vx + Math.cos(angle) * spd;
+          p.vy = vy + Math.sin(angle) * spd;
+          p.rot = Math.random() * Math.PI * 2;
+          p.rotSpeed = (Math.random() - 0.5) * 12;
+          p.color = color;
+          p.alpha = 1.0;
+          p.life = 0;
+
+          if (type === 'dust') {
+            p.maxLife = 0.8 + Math.random() * 0.8;
+            p.size = 0.08 + Math.random() * 0.12;
+          } else if (type === 'spark') {
+            p.maxLife = 0.2 + Math.random() * 0.3;
+            p.size = 0.03 + Math.random() * 0.04;
+          } else if (type === 'debris') {
+            p.maxLife = 1.6 + Math.random() * 1.0;
+            p.size = 0.04 + Math.random() * 0.07;
+          } else if (type === 'smoke') {
+            p.maxLife = 1.2 + Math.random() * 0.8;
+            p.size = 0.15 + Math.random() * 0.2;
+          }
+        }
+      }
+
+      update(dt) {
+        for (const p of this.pool) {
+          if (!p.active) continue;
+          p.life += dt;
+          if (p.life >= p.maxLife) { p.active = false; continue; }
+
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.rot += p.rotSpeed * dt;
+
+          if (p.type === 'debris' || p.type === 'spark') {
+            p.vy -= 9.81 * dt;
+          } else if (p.type === 'dust' || p.type === 'smoke') {
+            p.vx *= 0.96; p.vy *= 0.96;
+            p.vy += 0.3 * dt;
+            p.size += dt * 0.08;
+          }
+
+          if (p.y <= 0 && p.type === 'debris') {
+            p.y = 0; p.vy = -p.vy * 0.3; p.vx *= 0.7;
+          }
+          p.alpha = 1.0 - (p.life / p.maxLife);
+        }
+      }
+
+      render(ctx, scale, toScreen) {
+        for (const p of this.pool) {
+          if (!p.active) continue;
+          const sPos = toScreen(p.x, p.y);
+          const pxSize = p.size * scale;
+
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.alpha);
+          ctx.translate(sPos.x, sPos.y);
+          ctx.rotate(p.rot);
+
+          if (p.type === 'spark') {
+            ctx.fillStyle = '#ffedd5';
+            ctx.shadowColor = '#f97316';
+            ctx.shadowBlur = 6;
+            ctx.fillRect(-pxSize, -pxSize * 0.4, pxSize * 2, pxSize * 0.8);
+          } else if (p.type === 'dust' || p.type === 'smoke') {
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(0, 0, pxSize, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-pxSize * 0.5, -pxSize * 0.5, pxSize, pxSize);
+          }
+          ctx.restore();
+        }
+      }
+    }
+
+    // --- Audio Synthesizer ---
+    class AudioSynthesizer {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+        this.engineOsc = null;
+        this.engineGain = null;
+      }
+
+      init() {
+        if (this.ctx) return;
+        try {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        } catch (e) {}
+      }
+
+      startEngine() {
+        if (this.muted || !this.ctx || this.engineOsc) return;
+        try {
+          this.engineOsc = this.ctx.createOscillator();
+          this.engineGain = this.ctx.createGain();
+          const filter = this.ctx.createBiquadFilter();
+
+          this.engineOsc.type = 'sawtooth';
+          this.engineOsc.frequency.setValueAtTime(45, this.ctx.currentTime);
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(180, this.ctx.currentTime);
+
+          this.engineGain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+
+          this.engineOsc.connect(filter);
+          filter.connect(this.engineGain);
+          this.engineGain.connect(this.ctx.destination);
+          this.engineOsc.start();
+        } catch (e) {}
+      }
+
+      updateEngine(ratio) {
+        if (!this.engineOsc || !this.ctx) return;
+        const targetFreq = 40 + ratio * 95;
+        this.engineOsc.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.05);
+      }
+
+      stopEngine() {
+        if (this.engineOsc) {
+          try {
+            this.engineOsc.stop();
+            this.engineOsc.disconnect();
+          } catch (e) {}
+          this.engineOsc = null;
+        }
+      }
+
+      playImpact(intensity = 1.0) {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const vol = Math.min(1.0, Math.max(0.1, intensity));
+
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(140, now);
+          osc.frequency.exponentialRampToValueAtTime(32, now + 0.35);
+
+          gain.gain.setValueAtTime(0.4 * vol, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.45);
+
+          const bufferSize = this.ctx.sampleRate * 0.35;
+          const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.08));
+          }
+
+          const noise = this.ctx.createBufferSource();
+          noise.buffer = buffer;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'bandpass';
+          filter.frequency.setValueAtTime(900, now);
+          filter.Q.setValueAtTime(2.0, now);
+
+          const noiseGain = this.ctx.createGain();
+          noiseGain.gain.setValueAtTime(0.5 * vol, now);
+          noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+          noise.connect(filter);
+          filter.connect(noiseGain);
+          noiseGain.connect(this.ctx.destination);
+          noise.start(now);
+        } catch (e) {}
+      }
+    }
+
+    // --- Physics Simulation World ---
+    class PhysicsWorld {
+      constructor() {
+        this.bodies = [];
+        this.dyn = [];
+        this.stat = [];
+        this.manifolds = new Map();
+        this.stamp = 0;
+
+        this.car = null;
+        this.ground = null;
+        this.particles = new ParticleSystem(800);
+        this.audio = new AudioSynthesizer();
+
+        this.time = 0;
+        this.state = 'READY';
+        this.peakGForce = 0;
+        this.lastCarVx = 0;
+        this.impactTime = 0;
+        this.settleTimer = 0;
+      }
+
+      add(b) {
+        this.bodies.push(b);
+        (b.static ? this.stat : this.dyn).push(b);
+        return b;
+      }
+
+      pairKey(a, b) { return a * 100000 + b; }
+
+      reset() {
+        this.bodies = [];
+        this.dyn = [];
+        this.stat = [];
+        this.manifolds.clear();
+        this.particles = new ParticleSystem(800);
+        this.stamp = 0;
+        this.time = 0;
+        this.state = 'READY';
+        this.peakGForce = 0;
+        this.impactTime = 0;
+        this.settleTimer = 0;
+
+        // 1. Ground Plane at y = -1.0, top at y = 0.0
+        this.ground = this.add(new Body(25.0, -1.0, 100.0, 2.0, 0, { kind: 'ground', mu: CONFIG.groundFriction }));
+
+        // 2. Car waiting at left (px = 3.0m, py = carH / 2)
+        const carStartY = CONFIG.carH * 0.5;
+        this.car = this.add(new Body(3.0, carStartY, CONFIG.carW, CONFIG.carH, CONFIG.carMass, {
+          kind: 'car',
+          vx: 0,
+          mu: CONFIG.groundFriction,
+          e: 0.12
+        }));
+        this.lastCarVx = 0;
+
+        // 3. Wall standing at right (px = 16.0m)
+        const wallOriginX = 16.0;
+        const brickW = CONFIG.brickW;
+        const brickH = CONFIG.brickH;
+        const cols = CONFIG.wallCols;
+        const rows = CONFIG.wallRows;
+        const layers = CONFIG.wallLayers;
+        const mass = CONFIG.brickMass;
+
+        for (let l = 0; l < layers; l++) {
+          for (let r = 0; r < rows; r++) {
+            const isStaggered = (r % 2 === 1);
+            const y = (r + 0.5) * brickH;
+
+            if (!isStaggered) {
+              for (let c = 0; c < cols; c++) {
+                this.add(new Body(wallOriginX + (c + 0.5) * brickW, y, brickW, brickH, mass, {
+                  kind: 'brick',
+                  layer: l,
+                  mu: CONFIG.brickFriction,
+                  e: CONFIG.brickRestitution,
+                  shade: Math.sin(c * 17 + r * 31 + l * 13) * 0.15
+                }));
+              }
+            } else {
+              const halfW = brickW * 0.5;
+              this.add(new Body(wallOriginX + halfW * 0.5, y, halfW, brickH, mass * 0.5, {
+                kind: 'brick',
+                layer: l,
+                isHalf: true,
+                mu: CONFIG.brickFriction,
+                e: CONFIG.brickRestitution,
+                shade: Math.sin(r * 31 + l * 13) * 0.15
+              }));
+
+              for (let c = 0; c < cols - 1; c++) {
+                this.add(new Body(wallOriginX + halfW + (c + 0.5) * brickW, y, brickW, brickH, mass, {
+                  kind: 'brick',
+                  layer: l,
+                  mu: CONFIG.brickFriction,
+                  e: CONFIG.brickRestitution,
+                  shade: Math.sin(c * 23 + r * 47 + l * 19) * 0.15
+                }));
+              }
+
+              this.add(new Body(wallOriginX + (cols - 0.5) * brickW + halfW * 0.5, y, halfW, brickH, mass * 0.5, {
+                kind: 'brick',
+                layer: l,
+                isHalf: true,
+                mu: CONFIG.brickFriction,
+                e: CONFIG.brickRestitution,
+                shade: Math.sin(cols * 17 + r * 31 + l * 13) * 0.15
+              }));
+            }
+          }
+        }
+      }
+
+      launch() {
+        this.reset();
+        this.state = 'ACCELERATING';
+        this.car.vx = CONFIG.carSpeed;
+        this.car.wake();
+        this.lastCarVx = CONFIG.carSpeed;
+        this.audio.init();
+        this.audio.startEngine();
+      }
+
+      frictionOf(A, B) {
+        if ((A.kind === 'car' && B.kind === 'ground') || (B.kind === 'car' && A.kind === 'ground')) {
+          const car = A.kind === 'car' ? A : B;
+          const upright = Math.abs(car.ang) < 0.35 && Math.abs(car.av) < 2.5;
+          return upright ? 0.025 : Math.sqrt(car.mu * CONFIG.groundFriction);
+        }
+        return Math.sqrt(A.mu * B.mu);
+      }
+
+      step(dt) {
+        if (this.state === 'READY') return;
+
+        this.time += dt;
+
+        // Substep at fixed 120Hz
+        const numSubSteps = Math.max(1, Math.round(dt / FIXED_DT));
+        const subDt = dt / numSubSteps;
+        const invDt = 1 / subDt;
+
+        for (let stepIdx = 0; stepIdx < numSubSteps; stepIdx++) {
+          const D = this.dyn;
+          for (let i = 0; i < D.length; i++) {
+            const b = D[i];
+            if (!b.awake) continue;
+            b.vy -= CONFIG.gravity * subDt;
+            b.vx *= 0.9996; b.vy *= 0.9996; b.av *= 0.9982;
+            if (b.av > 40) b.av = 40; else if (b.av < -40) b.av = -40;
+          }
+
+          this.updateContacts();
+          this.prestep(invDt);
+          this.warmStart();
+          this.solveVel(VEL_ITERS);
+
+          for (let i = 0; i < D.length; i++) {
+            const b = D[i];
+            if (!b.awake) continue;
+            b.px += b.vx * subDt; b.py += b.vy * subDt; b.ang += b.av * subDt;
+            if (b.ang > Math.PI) b.ang -= Math.PI * 2;
+            else if (b.ang < -Math.PI) b.ang += Math.PI * 2;
+            b.updateRot();
+          }
+
+          this.solvePos(POS_ITERS);
+          this.sleepPass(subDt);
+        }
+
+        this.particles.update(dt);
+
+        // Calculate Deceleration & G-Force
+        const deltaVx = Math.max(0, this.lastCarVx - this.car.vx);
+        const decelG = (deltaVx / dt) / 9.81;
+        if (decelG > this.peakGForce) this.peakGForce = decelG;
+        this.lastCarVx = this.car.vx;
+
+        // State Machine
+        if (this.state === 'ACCELERATING') {
+          this.audio.updateEngine(this.car.vx / CONFIG.carSpeed);
+          if (this.car.px + this.car.hw >= 15.9) {
+            this.state = 'IMPACT';
+            this.impactTime = this.time;
+            this.audio.playImpact(CONFIG.carSpeed / 22.0);
+          }
+        } else if (this.state === 'IMPACT') {
+          if (this.time - this.impactTime > 0.35) {
+            this.state = 'SETTLING';
+          }
+        } else if (this.state === 'SETTLING') {
+          let movingCount = 0;
+          for (const b of this.dyn) {
+            if (b.kind === 'brick' && hypot(b.vx, b.vy) > 0.15) movingCount++;
+          }
+          if (movingCount === 0 || this.car.vx < 0.05) {
+            this.settleTimer += dt;
+            if (this.settleTimer > 1.2) {
+              this.state = 'SETTLED';
+              this.audio.stopEngine();
+            }
+          } else {
+            this.settleTimer = 0;
+          }
+        }
+      }
+
+      updateContacts() {
+        const stamp = ++this.stamp;
+        const D = this.dyn, S = this.stat;
+        for (let i = 0; i < D.length; i++) D[i].computeAABB();
+        for (let i = 0; i < S.length; i++) S[i].computeAABB();
+
+        for (let i = 0; i < D.length; i++) {
+          const A = D[i];
+          for (let j = i + 1; j < D.length; j++) {
+            const B = D[j];
+            if (!A.awake && !B.awake) continue;
+            if (A.kind === 'brick' && B.kind === 'brick' && A.layer !== B.layer) continue;
+            if (A.maxx < B.minx || B.maxx < A.minx || A.maxy < B.miny || B.maxy < A.miny) continue;
+            const lo = A.id < B.id ? A : B, hi = A.id < B.id ? B : A;
+            this.narrow(lo, hi, this.pairKey(lo.id, hi.id), stamp);
+          }
+        }
+
+        for (let s = 0; s < S.length; s++) {
+          const St = S[s];
+          for (let i = 0; i < D.length; i++) {
+            const B = D[i];
+            if (!B.awake) continue;
+            if (St.maxx < B.minx || B.maxx < St.minx || St.maxy < B.miny || B.maxy < St.miny) continue;
+            const lo = St.id < B.id ? St : B, hi = St.id < B.id ? B : St;
+            this.narrow(lo, hi, this.pairKey(lo.id, hi.id), stamp);
+          }
+        }
+
+        for (const [k, m] of this.manifolds) {
+          if (m.stamp !== stamp) this.manifolds.delete(k);
+        }
+      }
+
+      narrow(A, B, k, stamp) {
+        let m = this.manifolds.get(k);
+        if (!m) { m = new Manifold(A, B); this.manifolds.set(k, m); }
+        else if (m.stamp === stamp) return;
+        m.stamp = stamp;
+        if (collide(m) > 0) {
+          if (!A.static && !B.static) {
+            if (A.awake && !B.awake) B.wake();
+            else if (B.awake && !A.awake) A.wake();
+          } else {
+            if (A.static && !B.awake) B.wake();
+            if (B.static && !A.awake) A.wake();
+          }
+
+          // Emit visual particles
+          if ((A.kind === 'car' && B.kind === 'brick') || (B.kind === 'car' && A.kind === 'brick')) {
+            const relV = hypot(A.vx - B.vx, A.vy - B.vy);
+            if (relV > 3.0) {
+              const cp = m.pts[0];
+              this.particles.emit(cp.x, cp.y, A.vx * 0.3, A.vy * 0.3 + 2, 'spark', '#f97316', 3);
+              this.particles.emit(cp.x, cp.y, A.vx * 0.1, 1, 'dust', '#cbd5e1', 2);
+              this.particles.emit(cp.x, cp.y, A.vx * 0.4, 3, 'debris', '#b23b23', 2);
+            }
+          }
+        }
+      }
+
+      prestep(invDt) {
+        for (const m of this.manifolds.values()) {
+          const A = m.A, B = m.B, nx = m.nx, ny = m.ny;
+          m.mu = this.frictionOf(A, B);
+          m.e = Math.min(A.e, B.e);
+          const tx = -ny, ty = nx;
+          for (let i = 0; i < m.count; i++) {
+            const p = m.pts[i];
+            p.rax = p.x - A.px; p.ray = p.y - A.py;
+            p.rbx = p.x - B.px; p.rby = p.y - B.py;
+            p.lax = p.rax * A.c + p.ray * A.s;
+            p.lay = -p.rax * A.s + p.ray * A.c;
+            p.lbx = p.rbx * B.c + p.rby * B.s;
+            p.lby = -p.rbx * B.s + p.rby * B.c;
+            const rnA = p.rax * ny - p.ray * nx;
+            const rnB = p.rbx * ny - p.rby * nx;
+            const kn = A.invM + B.invM + A.invI * rnA * rnA + B.invI * rnB * rnB;
+            p.nmass = kn > 0 ? 1 / kn : 0;
+            const rtA = p.rax * ty - p.ray * tx;
+            const rtB = p.rbx * ty - p.rby * tx;
+            const kt = A.invM + B.invM + A.invI * rtA * rtA + B.invI * rtB * rtB;
+            p.tmass = kt > 0 ? 1 / kt : 0;
+            const dvx = (B.vx - B.av * p.rby) - (A.vx - A.av * p.ray);
+            const dvy = (B.vy + B.av * p.rbx) - (A.vy + A.av * p.rax);
+            const vn = dvx * nx + dvy * ny;
+            if (p.sep > 0) p.vbias = -p.sep * invDt;
+            else if (vn < -REST_TH) p.vbias = -m.e * vn;
+            else p.vbias = 0;
+          }
+          if (m.count === 2) {
+            const p1 = m.pts[0], p2 = m.pts[1];
+            const rn1A = p1.rax * ny - p1.ray * nx, rn1B = p1.rbx * ny - p1.rby * nx;
+            const rn2A = p2.rax * ny - p2.ray * nx, rn2B = p2.rbx * ny - p2.rby * nx;
+            const im = A.invM + B.invM;
+            const k11 = im + A.invI * rn1A * rn1A + B.invI * rn1B * rn1B;
+            const k22 = im + A.invI * rn2A * rn2A + B.invI * rn2B * rn2B;
+            const k12 = im + A.invI * rn1A * rn2A + B.invI * rn1B * rn2B;
+            const det = k11 * k22 - k12 * k12;
+            if (det > 0 && k11 * k11 < 1000 * det) {
+              m.block = true; m.k11 = k11; m.k12 = k12; m.k22 = k22; m.invDet = 1 / det;
+            } else m.block = false;
+          } else m.block = false;
+        }
+      }
+
+      warmStart() {
+        for (const m of this.manifolds.values()) {
+          const A = m.A, B = m.B, nx = m.nx, ny = m.ny, tx = -ny, ty = nx;
+          for (let i = 0; i < m.count; i++) {
+            const p = m.pts[i];
+            const px = p.ni * nx + p.ti * tx;
+            const py = p.ni * ny + p.ti * ty;
+            A.vx -= px * A.invM; A.vy -= py * A.invM;
+            A.av -= A.invI * (p.rax * py - p.ray * px);
+            B.vx += px * B.invM; B.vy += py * B.invM;
+            B.av += B.invI * (p.rbx * py - p.rby * px);
+          }
+        }
+      }
+
+      solveVel(iters) {
+        for (let it = 0; it < iters; it++) {
+          for (const m of this.manifolds.values()) {
+            if (m.count === 0) continue;
+            const A = m.A, B = m.B, nx = m.nx, ny = m.ny, tx = -ny, ty = nx;
+            for (let i = 0; i < m.count; i++) {
+              const p = m.pts[i];
+              const dvx = (B.vx - B.av * p.rby) - (A.vx - A.av * p.ray);
+              const dvy = (B.vy + B.av * p.rbx) - (A.vy + A.av * p.rax);
+              const vt = dvx * tx + dvy * ty;
+              let dl = -p.tmass * vt;
+              const maxF = m.mu * p.ni;
+              const oldT = p.ti;
+              p.ti = clamp(oldT + dl, -maxF, maxF);
+              dl = p.ti - oldT;
+              const ix = dl * tx, iy = dl * ty;
+              A.vx -= ix * A.invM; A.vy -= iy * A.invM;
+              A.av -= A.invI * (p.rax * iy - p.ray * ix);
+              B.vx += ix * B.invM; B.vy += iy * B.invM;
+              B.av += B.invI * (p.rbx * iy - p.rby * ix);
+            }
+            if (m.block) {
+              const p1 = m.pts[0], p2 = m.pts[1];
+              const a1 = p1.ni, a2 = p2.ni;
+              let dvx = (B.vx - B.av * p1.rby) - (A.vx - A.av * p1.ray);
+              let dvy = (B.vy + B.av * p1.rbx) - (A.vy + A.av * p1.rax);
+              const vn1 = dvx * nx + dvy * ny;
+              dvx = (B.vx - B.av * p2.rby) - (A.vx - A.av * p2.ray);
+              dvy = (B.vy + B.av * p2.rbx) - (A.vy + A.av * p2.rax);
+              const vn2 = dvx * nx + dvy * ny;
+              const b1 = vn1 - p1.vbias - (m.k11 * a1 + m.k12 * a2);
+              const b2 = vn2 - p2.vbias - (m.k12 * a1 + m.k22 * a2);
+              let x1 = -(m.k22 * b1 - m.k12 * b2) * m.invDet;
+              let x2 = -(m.k11 * b2 - m.k12 * b1) * m.invDet;
+              let ok = x1 >= 0 && x2 >= 0;
+              if (!ok) { x1 = -b1 / m.k11; x2 = 0; ok = x1 >= 0 && m.k12 * x1 + b2 >= 0; }
+              if (!ok) { x1 = 0; x2 = -b2 / m.k22; ok = x2 >= 0 && m.k12 * x2 + b1 >= 0; }
+              if (!ok) { x1 = 0; x2 = 0; }
+              const d1 = x1 - a1, d2 = x2 - a2;
+              A.vx -= (d1 + d2) * nx * A.invM; A.vy -= (d1 + d2) * ny * A.invM;
+              A.av -= A.invI * (p1.rax * (d1 * ny) - p1.ray * (d1 * nx) + p2.rax * (d2 * ny) - p2.ray * (d2 * nx));
+              B.vx += (d1 + d2) * nx * B.invM; B.vy += (d1 + d2) * ny * B.invM;
+              B.av += B.invI * (p1.rbx * (d1 * ny) - p1.rby * (d1 * nx) + p2.rbx * (d2 * ny) - p2.rby * (d2 * nx));
+              p1.ni = x1; p2.ni = x2;
+            } else {
+              for (let i = 0; i < m.count; i++) {
+                const p = m.pts[i];
+                const dvx = (B.vx - B.av * p.rby) - (A.vx - A.av * p.ray);
+                const dvy = (B.vy + B.av * p.rbx) - (A.vy + A.av * p.rax);
+                const vn = dvx * nx + dvy * ny;
+                let dl = -p.nmass * (vn - p.vbias);
+                const oldN = p.ni;
+                p.ni = oldN + dl > 0 ? oldN + dl : 0;
+                dl = p.ni - oldN;
+                const ix = dl * nx, iy = dl * ny;
+                A.vx -= ix * A.invM; A.vy -= iy * A.invM;
+                A.av -= A.invI * (p.rax * iy - p.ray * ix);
+                B.vx += ix * B.invM; B.vy += iy * B.invM;
+                B.av += B.invI * (p.rbx * iy - p.rby * ix);
+              }
+            }
+          }
+        }
+      }
+
+      solvePos(iters) {
+        for (let it = 0; it < iters; it++) {
+          for (const m of this.manifolds.values()) {
+            if (m.count === 0) continue;
+            const A = m.A, B = m.B, nx = m.nx, ny = m.ny;
+            const corr = [0, 0], rxA = [0, 0], ryA = [0, 0], rxB = [0, 0], ryB = [0, 0];
+            for (let i = 0; i < m.count; i++) {
+              const p = m.pts[i];
+              const rax = A.c * p.lax - A.s * p.lay;
+              const ray = A.s * p.lax + A.c * p.lay;
+              const rbx = B.c * p.lbx - B.s * p.lby;
+              const rby = B.s * p.lbx + B.c * p.lby;
+              rxA[i] = rax; ryA[i] = ray; rxB[i] = rbx; ryB[i] = rby;
+              const ax = A.px + rax, ay = A.py + ray;
+              const bx = B.px + rbx, by = B.py + rby;
+              const sep = (bx - ax) * nx + (by - ay) * ny;
+              corr[i] = clamp(BAUMGARTE * (sep + SLOP), -0.12, 0);
+            }
+            for (let i = 0; i < m.count; i++) {
+              const rnA = rxA[i] * ny - ryA[i] * nx;
+              const rnB = rxB[i] * ny - ryB[i] * nx;
+              const kn = A.invM + B.invM + A.invI * rnA * rnA + B.invI * rnB * rnB;
+              const d = kn > 0 ? -corr[i] / kn : 0;
+              const ix = d * nx, iy = d * ny;
+              if (!A.static && A.awake) {
+                A.px -= ix * A.invM; A.py -= iy * A.invM;
+                A.ang -= A.invI * (rxA[i] * iy - ryA[i] * ix);
+              }
+              if (!B.static && B.awake) {
+                B.px += ix * B.invM; B.py += iy * B.invM;
+                B.ang += B.invI * (rxB[i] * iy - ryB[i] * ix);
+              }
+            }
+            if (!A.static && A.awake) A.updateRot();
+            if (!B.static && B.awake) B.updateRot();
+          }
+        }
+      }
+
+      sleepPass(dt) {
+        const D = this.dyn;
+        for (let i = 0; i < D.length; i++) {
+          const b = D[i];
+          if (b.static || !b.awake) continue;
+          const lin = b.vx * b.vx + b.vy * b.vy;
+          const ang = b.av * b.av;
+          if (lin < LIN_SLEEP * LIN_SLEEP && ang < ANG_SLEEP * ANG_SLEEP) {
+            b.sleepT += dt;
+            if (b.sleepT > SLEEP_T) b.sleep();
+          } else {
+            b.sleepT = 0;
+          }
+        }
+      }
+    }
+
+    // --- Camera Controller ---
+    class Camera {
+      constructor() {
+        this.x = 10.0;
+        this.y = 2.0;
+        this.zoom = 1.0;
+        this.targetX = 10.0;
+        this.targetY = 2.0;
+        this.targetZoom = 1.0;
+        this.autoFollow = true;
+        this.shake = 0;
+      }
+
+      update(car, state, dt) {
+        if (this.autoFollow && car) {
+          if (state === 'READY') {
+            this.targetX = 10.5;
+            this.targetY = 2.0;
+            this.targetZoom = 1.0;
+          } else if (state === 'ACCELERATING') {
+            this.targetX = car.px + 4.5;
+            this.targetY = 2.0;
+            this.targetZoom = 1.05;
+          } else if (state === 'IMPACT') {
+            this.targetX = 17.5;
+            this.targetY = 2.3;
+            this.targetZoom = 1.12;
+            this.shake = 0.35;
+          } else {
+            this.targetX = 18.0;
+            this.targetY = 2.1;
+            this.targetZoom = 0.95;
+          }
+        }
+
+        this.x += (this.targetX - this.x) * Math.min(1.0, dt * 6.0);
+        this.y += (this.targetY - this.y) * Math.min(1.0, dt * 6.0);
+        this.zoom += (this.targetZoom - this.zoom) * Math.min(1.0, dt * 6.0);
+
+        if (this.shake > 0) {
+          this.shake = Math.max(0, this.shake - dt * 1.5);
+        }
+      }
+
+      getShakeOffset() {
+        if (this.shake <= 0) return { x: 0, y: 0 };
+        return {
+          x: (Math.random() - 0.5) * this.shake * 0.4,
+          y: (Math.random() - 0.5) * this.shake * 0.4
+        };
+      }
+    }
+
+    // --- Canvas Renderer ---
+    class Renderer {
+      constructor(canvas, world, camera) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.world = world;
+        this.camera = camera;
+        this.dpr = window.devicePixelRatio || 1;
+        this.resize();
+      }
+
+      resize() {
+        const rect = this.canvas.parentElement.getBoundingClientRect();
+        this.width = rect.width;
+        this.height = rect.height;
+        this.canvas.width = this.width * this.dpr;
+        this.canvas.height = this.height * this.dpr;
+        this.ctx.resetTransform();
+        this.ctx.scale(this.dpr, this.dpr);
+      }
+
+      worldToScreen(wx, wy) {
+        const scale = CONFIG.scale * this.camera.zoom;
+        const shake = this.camera.getShakeOffset();
+        const screenX = this.width * 0.5 + (wx - this.camera.x + shake.x) * scale;
+        const screenY = this.height * 0.65 - (wy - this.camera.y + shake.y) * scale;
+        return { x: screenX, y: screenY };
+      }
+
+      render() {
+        const ctx = this.ctx;
+        const w = this.width, h = this.height;
+        const scale = CONFIG.scale * this.camera.zoom;
+        const toScreen = (x, y) => this.worldToScreen(x, y);
+
+        // 1. Background Proving Ground
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, '#0f172a');
+        grad.addColorStop(0.55, '#1e293b');
+        grad.addColorStop(1, '#090d16');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Background Metric Grid
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+        ctx.lineWidth = 1;
+
+        const startMeterX = Math.floor(this.camera.x - (w / scale) * 0.6);
+        const endMeterX = Math.ceil(this.camera.x + (w / scale) * 0.6);
+
+        for (let m = startMeterX; m <= endMeterX; m++) {
+          const pt = toScreen(m, 0);
+          ctx.beginPath();
+          ctx.moveTo(pt.x, 0);
+          ctx.lineTo(pt.x, h);
+          ctx.stroke();
+
+          if (m >= 0 && m <= 45 && m % 2 === 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.font = '10px JetBrains Mono';
+            ctx.fillText(`${m}m`, pt.x + 4, pt.y - 12);
+          }
+        }
+
+        for (let ym = 0; ym <= 10; ym++) {
+          const pt = toScreen(0, ym);
+          ctx.beginPath();
+          ctx.moveTo(0, pt.y);
+          ctx.lineTo(w, pt.y);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // 2. Asphalt Track & Hazard Curb Stripes
+        const groundScreen = toScreen(0, 0);
+        ctx.save();
+        ctx.fillStyle = '#1e2530';
+        ctx.fillRect(0, groundScreen.y, w, h - groundScreen.y);
+
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, groundScreen.y);
+        ctx.lineTo(w, groundScreen.y);
+        ctx.stroke();
+
+        const curbH = 8;
+        const stripeW = 20;
+        for (let x = 0; x < w; x += stripeW * 2) {
+          ctx.fillStyle = '#fbbf24';
+          ctx.fillRect(x, groundScreen.y, stripeW, curbH);
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(x + stripeW, groundScreen.y, stripeW, curbH);
+        }
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.lineWidth = 2;
+        for (let m = 0; m <= 45; m += 5) {
+          const pt = toScreen(m, 0);
+          ctx.beginPath();
+          ctx.moveTo(pt.x, groundScreen.y);
+          ctx.lineTo(pt.x, groundScreen.y + 22);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // 3. Render Bricks (Back to Front depth layers)
+        const maxLayer = CONFIG.wallLayers - 1;
+        for (let l = maxLayer; l >= 0; l--) {
+          const layerBricks = this.world.dyn.filter(b => b.kind === 'brick' && b.layer === l);
+          this.renderBrickLayer(ctx, layerBricks, l, scale, toScreen);
+        }
+
+        // 4. Particle Effects
+        this.world.particles.render(ctx, scale, toScreen);
+
+        // 5. Render Car
+        if (this.world.car) {
+          this.renderCar(ctx, this.world.car, scale, toScreen);
+        }
+      }
+
+      renderBrickLayer(ctx, bricks, layerIdx, scale, toScreen) {
+        const depthDim = 1.0 - (layerIdx * 0.18);
+        const zOffset = layerIdx * 3;
+
+        for (const b of bricks) {
+          const sPos = toScreen(b.px, b.py);
+          ctx.save();
+          ctx.translate(sPos.x + zOffset, sPos.y - zOffset);
+          ctx.rotate(b.ang);
+
+          const pw = b.w * scale;
+          const ph = b.h * scale;
+
+          if (b.py > 0.05) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+            ctx.fillRect(-pw * 0.5 + 3, ph * 0.5 - 2, pw, 5);
+          }
+
+          const baseR = Math.floor((178 + b.shade * 40) * depthDim);
+          const baseG = Math.floor((59 + b.shade * 25) * depthDim);
+          const baseB = Math.floor((35 + b.shade * 20) * depthDim);
+
+          ctx.fillStyle = `rgb(${baseR}, ${baseG}, ${baseB})`;
+          ctx.fillRect(-pw * 0.5, -ph * 0.5, pw, ph);
+
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.22 * depthDim})`;
+          ctx.fillRect(-pw * 0.5, -ph * 0.5, pw, 2);
+          ctx.fillRect(-pw * 0.5, -ph * 0.5, 2, ph);
+
+          ctx.fillStyle = `rgba(0, 0, 0, ${0.35 * depthDim})`;
+          ctx.fillRect(-pw * 0.5, ph * 0.5 - 2, pw, 2);
+          ctx.fillRect(pw * 0.5 - 2, -ph * 0.5, 2, ph);
+
+          ctx.strokeStyle = `rgba(30, 20, 15, ${0.4 * depthDim})`;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-pw * 0.5, -ph * 0.5, pw, ph);
+
+          ctx.restore();
+        }
+      }
+
+      renderCar(ctx, car, scale, toScreen) {
+        const sPos = toScreen(car.px, car.py);
+        ctx.save();
+        ctx.translate(sPos.x, sPos.y);
+        ctx.rotate(car.ang);
+
+        const pw = car.w * scale;
+        const ph = car.h * scale;
+
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.beginPath();
+        ctx.ellipse(0, ph * 0.48, pw * 0.52, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // High-Tech Crash Test Vehicle Body
+        const grad = ctx.createLinearGradient(0, -ph * 0.5, 0, ph * 0.5);
+        grad.addColorStop(0, '#fde047');
+        grad.addColorStop(0.5, '#eab308');
+        grad.addColorStop(1, '#ca8a04');
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        const frontX = pw * 0.5;
+        const rearX = -pw * 0.5;
+        const roofTop = -ph * 0.5;
+        const hoodTop = -ph * 0.15;
+        const bottomY = ph * 0.35;
+
+        ctx.moveTo(rearX, bottomY);
+        ctx.lineTo(rearX, -ph * 0.25);
+        ctx.lineTo(rearX + pw * 0.2, roofTop);
+        ctx.lineTo(frontX - pw * 0.32, roofTop);
+        ctx.lineTo(frontX - pw * 0.12, hoodTop);
+        ctx.lineTo(frontX, hoodTop + 8);
+        ctx.lineTo(frontX, bottomY);
+        ctx.closePath();
+        ctx.fill();
+
+        // Cabin Windows
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.moveTo(rearX + pw * 0.24, roofTop + 4);
+        ctx.lineTo(frontX - pw * 0.34, roofTop + 4);
+        ctx.lineTo(frontX - pw * 0.18, hoodTop + 2);
+        ctx.lineTo(rearX + pw * 0.24, hoodTop + 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Window Glare
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.beginPath();
+        ctx.moveTo(frontX - pw * 0.28, roofTop + 5);
+        ctx.lineTo(frontX - pw * 0.32, roofTop + 5);
+        ctx.lineTo(frontX - pw * 0.22, hoodTop + 2);
+        ctx.lineTo(frontX - pw * 0.18, hoodTop + 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Dummy Silhouette
+        ctx.fillStyle = '#fbbf24';
+        const dummyX = -pw * 0.05;
+        const dummyY = roofTop + ph * 0.22;
+        ctx.beginPath();
+        ctx.arc(dummyX, dummyY, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(dummyX, dummyY, 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // ISO Crosshair Targets
+        const drawCrosshair = (cx, cy, r) => {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.fillStyle = '#000000';
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 0.5);
+          ctx.lineTo(0, 0);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(0, 0, r, Math.PI, Math.PI * 1.5);
+          ctx.lineTo(0, 0);
+          ctx.fill();
+
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath();
+          ctx.arc(0, 0, r, Math.PI * 0.5, Math.PI);
+          ctx.lineTo(0, 0);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(0, 0, r, Math.PI * 1.5, Math.PI * 2);
+          ctx.lineTo(0, 0);
+          ctx.fill();
+
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        };
+
+        drawCrosshair(-pw * 0.2, 0, 10);
+        drawCrosshair(pw * 0.15, 0, 10);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 11px JetBrains Mono';
+        ctx.fillText('CRASH TEST', -pw * 0.33, 12);
+
+        // Headlight & Taillight
+        ctx.fillStyle = '#38bdf8';
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 8;
+        ctx.fillRect(frontX - 4, hoodTop + 6, 4, 12);
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(rearX, -ph * 0.15, 4, 10);
+
+        // Rotating Wheels
+        const wheelR = ph * 0.24;
+        const frontWheelX = frontX - pw * 0.22;
+        const rearWheelX = rearX + pw * 0.22;
+        const wheelY = bottomY + 2;
+
+        const drawWheel = (wx, wy) => {
+          ctx.save();
+          ctx.translate(wx, wy);
+          const spin = (car.px / (wheelR / scale));
+          ctx.rotate(spin);
+
+          ctx.fillStyle = '#1e293b';
+          ctx.beginPath();
+          ctx.arc(0, 0, wheelR, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#94a3b8';
+          ctx.beginPath();
+          ctx.arc(0, 0, wheelR * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 2;
+          for (let sp = 0; sp < 5; sp++) {
+            const a = (sp / 5) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(a) * wheelR * 0.58, Math.sin(a) * wheelR * 0.58);
+            ctx.stroke();
+          }
+
+          drawCrosshair(0, 0, wheelR * 0.25);
+          ctx.restore();
+        };
+
+        drawWheel(rearWheelX, wheelY);
+        drawWheel(frontWheelX, wheelY);
+
+        ctx.restore();
+      }
+    }
+
+    // --- Main Application Controller ---
+    class App {
+      constructor() {
+        this.canvas = document.getElementById('simCanvas');
+        this.world = new PhysicsWorld();
+        this.camera = new Camera();
+        this.renderer = new Renderer(this.canvas, this.world, this.camera);
+
+        this.timeScale = 1.0;
+        this.isPaused = false;
+        this.lastTimestamp = performance.now();
+
+        this.initUI();
+        this.bindEvents();
+
+        this.world.reset();
+        this.updateTelemetry();
+
+        requestAnimationFrame(this.loop.bind(this));
+      }
+
+      initUI() {
+        this.inputSpeed = document.getElementById('input-speed');
+        this.inputCols = document.getElementById('input-cols');
+        this.inputRows = document.getElementById('input-rows');
+        this.inputLayers = document.getElementById('input-layers');
+        this.inputMass = document.getElementById('input-mass');
+
+        this.valSpeed = document.getElementById('val-speed');
+        this.valSpeedKmh = document.getElementById('val-speed-kmh');
+        this.valCols = document.getElementById('val-cols');
+        this.valWallWidth = document.getElementById('val-wall-width');
+        this.valRows = document.getElementById('val-rows');
+        this.valWallHeight = document.getElementById('val-wall-height');
+        this.valLayers = document.getElementById('val-layers');
+        this.valMass = document.getElementById('val-mass');
+        this.valTotalWallMass = document.getElementById('val-total-wall-mass');
+
+        this.telSpeed = document.getElementById('tel-speed');
+        this.telGForce = document.getElementById('tel-gforce');
+        this.telEnergy = document.getElementById('tel-energy');
+        this.telTime = document.getElementById('tel-time');
+        this.telMoving = document.getElementById('tel-moving');
+        this.telTotalBricks = document.getElementById('tel-total-bricks');
+        this.telMomentum = document.getElementById('tel-momentum');
+        this.statusPill = document.getElementById('telemetry-status');
+        this.speedBarFill = document.getElementById('speed-bar-fill');
+
+        this.btnTest = document.getElementById('btn-test');
+        this.btnReset = document.getElementById('btn-reset');
+        this.btnPause = document.getElementById('btn-pause');
+        this.btnStep = document.getElementById('btn-step');
+        this.btnAudio = document.getElementById('btn-audio');
+        this.iconPause = document.getElementById('icon-pause');
+        this.iconPlay = document.getElementById('icon-play');
+        this.iconAudioOn = document.getElementById('icon-audio-on');
+        this.iconAudioOff = document.getElementById('icon-audio-off');
+
+        this.settingsPanel = document.getElementById('settings-panel');
+        this.btnToggleSettings = document.getElementById('btn-toggle-settings');
+        this.btnCloseSettings = document.getElementById('btn-close-settings');
+        this.btnFollowCam = document.getElementById('btn-follow-cam');
+
+        this.updateSettingsUI();
+      }
+
+      updateSettingsUI() {
+        this.inputSpeed.value = CONFIG.carSpeed;
+        this.inputCols.value = CONFIG.wallCols;
+        this.inputRows.value = CONFIG.wallRows;
+        this.inputLayers.value = CONFIG.wallLayers;
+        this.inputMass.value = CONFIG.brickMass;
+
+        this.valSpeed.textContent = CONFIG.carSpeed;
+        this.valSpeedKmh.textContent = (CONFIG.carSpeed * 3.6).toFixed(1);
+        this.valCols.textContent = CONFIG.wallCols;
+        this.valWallWidth.textContent = (CONFIG.wallCols * CONFIG.brickW).toFixed(2);
+        this.valRows.textContent = CONFIG.wallRows;
+        this.valWallHeight.textContent = (CONFIG.wallRows * CONFIG.brickH).toFixed(2);
+        this.valLayers.textContent = CONFIG.wallLayers;
+        this.valMass.textContent = CONFIG.brickMass;
+
+        const totalBricks = CONFIG.wallCols * CONFIG.wallRows * CONFIG.wallLayers;
+        const totalMass = totalBricks * CONFIG.brickMass;
+        this.valTotalWallMass.textContent = `${totalMass.toLocaleString()} kg (${totalBricks} bricks)`;
+      }
+
+      bindEvents() {
+        window.addEventListener('resize', () => this.renderer.resize());
+
+        this.btnTest.addEventListener('click', () => this.launchTest());
+        this.btnReset.addEventListener('click', () => {
+          this.world.reset();
+          this.isPaused = false;
+          this.updatePauseUI();
+          this.updateTelemetry();
+        });
+
+        this.btnPause.addEventListener('click', () => {
+          this.isPaused = !this.isPaused;
+          this.updatePauseUI();
+        });
+
+        this.btnStep.addEventListener('click', () => {
+          this.isPaused = true;
+          this.updatePauseUI();
+          this.world.step(1 / 60);
+          this.updateTelemetry();
+        });
+
+        document.querySelectorAll('.speed-pill').forEach(pill => {
+          pill.addEventListener('click', () => {
+            document.querySelectorAll('.speed-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            this.timeScale = parseFloat(pill.dataset.rate);
+          });
+        });
+
+        this.btnAudio.addEventListener('click', () => {
+          this.world.audio.muted = !this.world.audio.muted;
+          if (this.world.audio.muted) {
+            this.world.audio.stopEngine();
+            this.iconAudioOn.style.display = 'none';
+            this.iconAudioOff.style.display = 'block';
+          } else {
+            this.world.audio.init();
+            if (this.world.state === 'ACCELERATING') this.world.audio.startEngine();
+            this.iconAudioOn.style.display = 'block';
+            this.iconAudioOff.style.display = 'none';
+          }
+        });
+
+        const handleSliderChange = () => {
+          CONFIG.carSpeed = parseFloat(this.inputSpeed.value);
+          CONFIG.wallCols = parseInt(this.inputCols.value, 10);
+          CONFIG.wallRows = parseInt(this.inputRows.value, 10);
+          CONFIG.wallLayers = parseInt(this.inputLayers.value, 10);
+          CONFIG.brickMass = parseFloat(this.inputMass.value);
+
+          this.updateSettingsUI();
+          if (this.world.state === 'READY') {
+            this.world.reset();
+            this.updateTelemetry();
+          }
+        };
+
+        this.inputSpeed.addEventListener('input', handleSliderChange);
+        this.inputCols.addEventListener('input', handleSliderChange);
+        this.inputRows.addEventListener('input', handleSliderChange);
+        this.inputLayers.addEventListener('input', handleSliderChange);
+        this.inputMass.addEventListener('input', handleSliderChange);
+
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const p = btn.dataset.preset;
+
+            if (p === 'default') {
+              Object.assign(CONFIG, DEFAULTS);
+            } else if (p === 'highspeed') {
+              CONFIG.carSpeed = 40.0;
+              CONFIG.wallCols = 12;
+              CONFIG.wallRows = 8;
+              CONFIG.wallLayers = 2;
+              CONFIG.brickMass = 2.5;
+            } else if (p === 'fortress') {
+              CONFIG.carSpeed = 24.0;
+              CONFIG.wallCols = 16;
+              CONFIG.wallRows = 10;
+              CONFIG.wallLayers = 4;
+              CONFIG.brickMass = 5.0;
+            } else if (p === 'heavybricks') {
+              CONFIG.carSpeed = 22.0;
+              CONFIG.wallCols = 12;
+              CONFIG.wallRows = 8;
+              CONFIG.wallLayers = 2;
+              CONFIG.brickMass = 8.0;
+            } else if (p === 'lowspeed') {
+              CONFIG.carSpeed = 10.0;
+              CONFIG.wallCols = 10;
+              CONFIG.wallRows = 6;
+              CONFIG.wallLayers = 1;
+              CONFIG.brickMass = 2.5;
+            } else if (p === 'talltower') {
+              CONFIG.carSpeed = 28.0;
+              CONFIG.wallCols = 8;
+              CONFIG.wallRows = 14;
+              CONFIG.wallLayers = 2;
+              CONFIG.brickMass = 3.0;
+            }
+
+            this.updateSettingsUI();
+            this.world.reset();
+            this.updateTelemetry();
+          });
+        });
+
+        this.btnToggleSettings.addEventListener('click', () => {
+          this.settingsPanel.classList.toggle('collapsed');
+        });
+        this.btnCloseSettings.addEventListener('click', () => {
+          this.settingsPanel.classList.add('collapsed');
+        });
+
+        this.btnFollowCam.addEventListener('click', () => {
+          this.camera.autoFollow = !this.camera.autoFollow;
+          this.btnFollowCam.classList.toggle('active', this.camera.autoFollow);
+        });
+
+        document.getElementById('btn-zoom-in').addEventListener('click', () => {
+          this.camera.targetZoom = Math.min(2.5, this.camera.zoom * 1.25);
+          this.camera.autoFollow = false;
+          this.btnFollowCam.classList.remove('active');
+        });
+        document.getElementById('btn-zoom-out').addEventListener('click', () => {
+          this.camera.targetZoom = Math.max(0.4, this.camera.zoom / 1.25);
+          this.camera.autoFollow = false;
+          this.btnFollowCam.classList.remove('active');
+        });
+        document.getElementById('btn-zoom-fit').addEventListener('click', () => {
+          this.camera.targetX = 14.0;
+          this.camera.targetY = 2.2;
+          this.camera.targetZoom = 0.85;
+          this.camera.autoFollow = false;
+          this.btnFollowCam.classList.remove('active');
+        });
+
+        let isDragging = false, lastMouseX = 0, lastMouseY = 0;
+        this.canvas.addEventListener('mousedown', (e) => {
+          isDragging = true;
+          lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
+        });
+        window.addEventListener('mousemove', (e) => {
+          if (!isDragging) return;
+          const dx = e.clientX - lastMouseX;
+          const dy = e.clientY - lastMouseY;
+          lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
+
+          const scale = CONFIG.scale * this.camera.zoom;
+          this.camera.targetX -= dx / scale;
+          this.camera.targetY += dy / scale;
+          this.camera.x = this.camera.targetX;
+          this.camera.y = this.camera.targetY;
+          this.camera.autoFollow = false;
+          this.btnFollowCam.classList.remove('active');
+        });
+        window.addEventListener('mouseup', () => { isDragging = false; });
+
+        this.canvas.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+          this.camera.targetZoom = Math.max(0.4, Math.min(2.5, this.camera.targetZoom * zoomFactor));
+        }, { passive: false });
+
+        window.addEventListener('keydown', (e) => {
+          if (e.target.tagName === 'INPUT') return;
+          if (e.code === 'Space') {
+            e.preventDefault();
+            this.launchTest();
+          } else if (e.key === 'r' || e.key === 'R') {
+            this.world.reset();
+            this.isPaused = false;
+            this.updatePauseUI();
+            this.updateTelemetry();
+          } else if (e.key === 'p' || e.key === 'P') {
+            this.isPaused = !this.isPaused;
+            this.updatePauseUI();
+          } else if (e.key === 'f' || e.key === 'F') {
+            this.isPaused = true;
+            this.updatePauseUI();
+            this.world.step(1 / 60);
+            this.updateTelemetry();
+          } else if (e.key === 'c' || e.key === 'C') {
+            this.camera.autoFollow = !this.camera.autoFollow;
+            this.btnFollowCam.classList.toggle('active', this.camera.autoFollow);
+          } else if (e.key === 's' || e.key === 'S') {
+            this.settingsPanel.classList.toggle('collapsed');
+          }
+        });
+      }
+
+      launchTest() {
+        this.isPaused = false;
+        this.updatePauseUI();
+        this.world.launch();
+        this.updateTelemetry();
+      }
+
+      updatePauseUI() {
+        if (this.isPaused) {
+          this.iconPause.style.display = 'none';
+          this.iconPlay.style.display = 'block';
+        } else {
+          this.iconPause.style.display = 'block';
+          this.iconPlay.style.display = 'none';
+        }
+      }
+
+      updateTelemetry() {
+        const car = this.world.car;
+        const curSpeed = car ? Math.max(0, car.vx) : 0;
+        this.telSpeed.textContent = curSpeed.toFixed(1);
+
+        const speedPct = Math.min(100, (curSpeed / 45.0) * 100);
+        this.speedBarFill.style.width = `${speedPct}%`;
+
+        this.telGForce.textContent = this.world.peakGForce.toFixed(1);
+
+        const ke = car ? (0.5 * car.mass * (car.vx * car.vx + car.vy * car.vy)) / 1000 : 0;
+        this.telEnergy.textContent = ke.toFixed(1);
+
+        const mom = car ? (car.mass * curSpeed) / 1000 : 0;
+        this.telMomentum.textContent = mom.toFixed(1);
+
+        this.telTime.textContent = this.world.time.toFixed(2);
+
+        const bricks = this.world.dyn.filter(b => b.kind === 'brick');
+        const movingCount = bricks.filter(b => (b.vx * b.vx + b.vy * b.vy) > 0.04).length;
+        this.telMoving.textContent = movingCount;
+        this.telTotalBricks.textContent = bricks.length;
+
+        this.statusPill.textContent = this.world.state;
+        this.statusPill.setAttribute('data-status', this.world.state);
+      }
+
+      loop(timestamp) {
+        const dtReal = Math.min(0.1, (timestamp - this.lastTimestamp) / 1000);
+        this.lastTimestamp = timestamp;
+
+        if (!this.isPaused) {
+          const dtSim = dtReal * this.timeScale;
+          this.world.step(dtSim);
+          this.updateTelemetry();
+        }
+
+        this.camera.update(this.world.car, this.world.state, dtReal);
+        this.renderer.render();
+
+        requestAnimationFrame(this.loop.bind(this));
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      window.app = new App();
+    });
+  </script>
+</body>
+</html>

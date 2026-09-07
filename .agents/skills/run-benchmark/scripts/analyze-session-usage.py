@@ -100,6 +100,14 @@ def analyze(path: Path) -> dict[str, Any]:
     last_result: dict[str, Any] | None = None
     last_completed: dict[str, Any] | None = None
     session_id: str | None = None
+    step_input = 0.0
+    step_output = 0.0
+    step_reasoning = 0.0
+    step_cache_read = 0.0
+    step_cache_write = 0.0
+    step_cost = 0.0
+    step_count = 0
+    last_step_tokens: dict[str, Any] | None = None
 
     try:
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -107,14 +115,25 @@ def analyze(path: Path) -> dict[str, Any]:
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(record, dict) or not isinstance(record.get("usage"), dict):
-                candidate_session_id = record.get("session_id") if isinstance(record, dict) else None
-                if isinstance(candidate_session_id, str) and candidate_session_id:
-                    session_id = candidate_session_id
+            if not isinstance(record, dict):
                 continue
-            candidate_session_id = record.get("session_id")
+            candidate_session_id = record.get("session_id") or record.get("sessionID")
             if isinstance(candidate_session_id, str) and candidate_session_id:
                 session_id = candidate_session_id
+            if record.get("type") == "step_finish":
+                part = record.get("part") if isinstance(record.get("part"), dict) else {}
+                tokens = part.get("tokens") if isinstance(part.get("tokens"), dict) else {}
+                cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
+                step_input += number(tokens.get("input")) or 0
+                step_output += number(tokens.get("output")) or 0
+                step_reasoning += number(tokens.get("reasoning")) or 0
+                step_cache_read += number(cache.get("read")) or 0
+                step_cache_write += number(cache.get("write")) or 0
+                step_cost += number(part.get("cost")) or 0
+                step_count += 1
+                last_step_tokens = tokens
+            if not isinstance(record.get("usage"), dict):
+                continue
             if record.get("type") == "result":
                 last_result = record
             elif record.get("type") == "turn.completed":
@@ -124,6 +143,40 @@ def analyze(path: Path) -> dict[str, Any]:
 
     record = last_result or last_completed
     if not record:
+        if step_count:
+            processed_input = step_input + step_cache_read + step_cache_write
+            return {
+                "status": "complete",
+                "schema_version": 1,
+                "source": "step_finish.tokens",
+                "input_tokens": int(step_input) if step_input == int(step_input) else step_input,
+                "processed_input_tokens": int(processed_input)
+                if processed_input == int(processed_input)
+                else processed_input,
+                "cached_input_tokens": int(step_cache_read)
+                if step_cache_read == int(step_cache_read)
+                else step_cache_read,
+                "cache_creation_input_tokens": int(step_cache_write)
+                if step_cache_write == int(step_cache_write)
+                else step_cache_write,
+                "output_tokens": int(step_output) if step_output == int(step_output) else step_output,
+                "reasoning_output_tokens": int(step_reasoning)
+                if step_reasoning == int(step_reasoning)
+                else step_reasoning,
+                "total_tokens": int(processed_input + step_output)
+                if (processed_input + step_output) == int(processed_input + step_output)
+                else processed_input + step_output,
+                "total_cost_usd": step_cost,
+                "duration_ms": None,
+                "duration_api_ms": None,
+                "num_turns": step_count,
+                "service_tier": None,
+                "speed": None,
+                "inference_geo": None,
+                "server_tool_use": None,
+                "model_usage": None,
+                "raw_usage": last_step_tokens,
+            }
         session_path = local_claude_session(session_id)
         recovered = recovered_assistant_usage(session_path) if session_path else None
         if recovered:

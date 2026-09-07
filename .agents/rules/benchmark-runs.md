@@ -4,8 +4,8 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 
 ## Inputs and routing
 
-- Require a model name, harness (`codex`, `ccx`, `cc`, `cckimi`, or `cursor-agent`), and comma-separated task list.
-- Default routing: GPT/OpenAI -> `codex` or `ccx`; Claude -> `cc`; all other models -> `cursor-agent`.
+- Require a model name, harness (`codex`, `ccx`, `cc`, `cckimi`, `cursor-agent`, or `opencode`), and comma-separated task list.
+- Default routing: GPT/OpenAI -> `codex` or `ccx`; Claude -> `cc`; all other models -> `cursor-agent`. Use `opencode` only when the caller explicitly selects it.
 - When a GPT model is run through the Claude Code harness family, use `ccx`; reject `cc` for every `gpt*` model.
 - With `ccx`, accept only `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna`, and pass `--effort` explicitly.
 - Pass the model explicitly. Never silently fall back to a different model.
@@ -59,6 +59,7 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 - Claude: `cc -p --model <claude-model> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `cc --resume <session-id>`. Never use `cc` for GPT models.
 - Kimi through Claude Code: `cckimi -p --model <kimi-model> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `cckimi --resume <session-id>`.
 - Cursor: create a chat with `cursor-agent create-chat`, then use `cursor-agent --resume <chat-id> --model <model> --print --force --trust --output-format stream-json <prompt>`; resume with `cursor-agent --resume <chat-id>`.
+- OpenCode: `opencode run --format json --auto --model <provider/model> <prompt>`; resume with `opencode run --session <session-id> --auto`. Capture `sessionID` and the last `text` event from the JSONL stream.
 
 ## Proof
 

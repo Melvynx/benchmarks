@@ -19,6 +19,7 @@ Canonical names are stable CLI identifiers. Historical directories remain unchan
 | `orbital-rescue-digital-twin` | standalone HTML/Three.js | empty | Canonical: `https://benchmark.melvynx.dev/prompts/orbital-rescue-digital-twin` |
 | `pentest` | standalone HTML/security report | empty | Canonical: `https://benchmark.melvynx.dev/prompts/pentest` |
 | `rocket-launch` | standalone HTML/3D | empty | Canonical: `https://benchmark.melvynx.dev/prompts/rocket-launch-animation` |
+| `saveit-now-landing` | cloned SaaS landing page | `benchmarks/saveit-now-landing/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/saveit-now-landing` |
 | `simulation-life` | web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/ecosystem-evolution-simulator` |
 | `thumbfast` | cloned SaaS app | `benchmarks/thumbfast/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/thumbfast-drawing-inspiration-editor` |
 | `the-last-signal` | standalone HTML/interactive story | empty | Canonical: `https://benchmark.melvynx.dev/prompts/the-last-signal` |

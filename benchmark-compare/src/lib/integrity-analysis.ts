@@ -66,7 +66,77 @@ function compact(value: unknown) {
   }
 }
 
+const cursorToolAliases: Record<string, string> = {
+  shellToolCall: "Bash",
+  readToolCall: "Read",
+  editToolCall: "Edit",
+  writeToolCall: "Write",
+  globToolCall: "Glob",
+  grepToolCall: "Grep",
+  deleteToolCall: "Delete",
+  updateTodosToolCall: "TodoWrite",
+  webSearchToolCall: "WebSearch",
+  webFetchToolCall: "WebFetch",
+  lsToolCall: "Glob",
+}
+
+function cursorToolName(kind: string) {
+  if (cursorToolAliases[kind]) return cursorToolAliases[kind]
+  const base = kind.endsWith("ToolCall") ? kind.slice(0, -"ToolCall".length) : kind
+  return base.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+}
+
+function cursorToolText(payload: unknown) {
+  if (!payload || typeof payload !== "object") return compact(payload)
+  const record = payload as Record<string, unknown>
+  const args =
+    record.args && typeof record.args === "object"
+      ? (record.args as Record<string, unknown>)
+      : record
+  const parts: string[] = []
+  for (const key of [
+    "command",
+    "path",
+    "globPattern",
+    "pattern",
+    "query",
+    "url",
+    "targetDirectory",
+  ] as const) {
+    const value = args[key]
+    if (typeof value === "string" && value) parts.push(value)
+  }
+  if (args.todos) parts.push(compact(args.todos))
+  return parts.join(" ") || compact(args)
+}
+
+function extractCursorAgent(
+  record: Record<string, unknown>,
+  line: number
+): Segment[] {
+  if (record.type === "thinking") {
+    const text = String(record.text || "")
+    return text ? [{ kind: "message", tool: "", text, line }] : []
+  }
+  if (record.type !== "tool_call" || record.subtype !== "started") return []
+  const toolCall = record.tool_call
+  if (!toolCall || typeof toolCall !== "object") return []
+  const kind = Object.keys(toolCall).find((key) => key.endsWith("ToolCall"))
+  if (!kind) return []
+  return [
+    {
+      kind: "tool",
+      tool: cursorToolName(kind),
+      text: cursorToolText((toolCall as Record<string, unknown>)[kind]),
+      line,
+    },
+  ]
+}
+
 function segmentsFor(record: Record<string, unknown>, line: number): Segment[] {
+  const cursor = extractCursorAgent(record, line)
+  if (cursor.length) return cursor
+
   if (record.type === "item.completed") {
     const item = (record.item || {}) as Record<string, unknown>
     const type = String(item.type || "")
@@ -172,15 +242,36 @@ function isFetchTool(name: string) {
   return normalized === "webfetch" || normalized === "web_fetch"
 }
 
-function siblingResultReferences(text: string, appPath: string) {
-  const references = text.match(
-    /\/[^\s"'`]*\/benchmarks\/benchmarks\/[^/\s"'`]+\/[^/\s"'`]+/g
+function isCurrentAppReference(reference: string, appPath: string) {
+  if (!appPath) return false
+  const normalizedApp = appPath.replace(/\/+$/, "")
+  const stripped = reference.replace(/^file:\/\//, "").replace(/\/+$/, "")
+  if (stripped === normalizedApp || stripped.startsWith(`${normalizedApp}/`))
+    return true
+  return (
+    normalizedApp.endsWith(`/${stripped}`) || normalizedApp.endsWith(stripped)
   )
-  if (!references) return []
-  return references.filter((reference) => {
-    const normalized = reference.replace(/^\/{2,}/, "/")
-    return !normalized.startsWith(appPath)
-  })
+}
+
+function siblingResultReferences(text: string, appPath: string) {
+  const nested = [
+    ...text.matchAll(
+      /(?:file:\/\/)?\/[^\s"'`]*\/benchmarks\/benchmarks\/[^/\s"'`]+\/[^/\s"'`]+/g
+    ),
+  ].map((match) => match[0])
+  const dated = [
+    ...text.matchAll(
+      /(?:file:\/\/)?(?:\/[^\s"'`]*)?\/benchmarks\/(?!benchmarks\/)[^/\s"'`]+\/(?:\*|\d{4}-\d{2}-\d{2}[^/\s"'`]*)/g
+    ),
+  ].map((match) => match[0])
+  const relative = [
+    ...text.matchAll(
+      /(?:^|[\s"'`=:\/])(?<!agent-)(benchmarks\/(?!benchmarks\/)[^/\s"'`]+\/(?:\*|\d{4}-\d{2}-\d{2}[^/\s"'`]*))/gm
+    ),
+  ].map((match) => match[1])
+  return [...nested, ...dated, ...relative].filter(
+    (reference) => !isCurrentAppReference(reference, appPath)
+  )
 }
 
 function toolLabel(value: string) {

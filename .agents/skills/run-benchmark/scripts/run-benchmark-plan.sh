@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 source "$SCRIPT_DIR/benchmark-id.sh"
 PLAN="${1:-}"
 DRY_RUN="${2:-}"
@@ -14,13 +15,14 @@ fi
 [[ "$PLAN" == *.md ]] || { echo "Benchmark plan must be a Markdown file" >&2; exit 2; }
 [[ -z "$DRY_RUN" || "$DRY_RUN" == --dry-run ]] || { echo "Unknown option: $DRY_RUN" >&2; exit 2; }
 
-all_tasks="3d-sponge-bob,air-conditioning-understanding,bouncing-ball,car-crash,distributed-systems-playground,earthquake-explorer,elysian-taste-challenge,figma-clone,gmail-clone,little-red-riding-hood-film,living-identity-system,one-button-boss-fight,orbital-rescue-digital-twin,pentest,rocket-launch,simulation-life,thumbfast,the-last-signal,timezone-checker,youtube-thumbnail,openclaw-benchmark"
+all_tasks="3d-sponge-bob,air-conditioning-understanding,bouncing-ball,car-crash,distributed-systems-playground,earthquake-explorer,elysian-taste-challenge,figma-clone,gmail-clone,little-red-riding-hood-film,living-identity-system,one-button-boss-fight,orbital-rescue-digital-twin,pentest,rocket-launch,saveit-now-landing,simulation-life,thumbfast,the-last-signal,timezone-checker,youtube-thumbnail,openclaw-benchmark"
 rows=0
 enabled_rows=0
 pids=()
 labels=()
 benchmark_id="$(generate_benchmark_id)"
 echo "Benchmark ID: $benchmark_id"
+[[ "$DRY_RUN" == --dry-run ]] || "$ROOT/scripts/start-benchmark-live.sh" "$benchmark_id" || true
 
 while IFS=$'\t' read -r enabled model harness effort tasks; do
   rows=$((rows + 1))

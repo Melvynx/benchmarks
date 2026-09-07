@@ -2,15 +2,16 @@
 
 import { createRequire } from "node:module"
 import { createServer } from "node:net"
-import { spawn } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import {
   closeSync,
+  existsSync,
   openSync,
   readFileSync,
   readdirSync,
   writeFileSync,
 } from "node:fs"
-import { basename, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { once } from "node:events"
 import { pathToFileURL } from "node:url"
 
@@ -44,12 +45,41 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"))
 }
 
+/**
+ * The comparison UI lists runs by their rendered app, so every screenshot gets
+ * a downscaled WebP beside it. A missing encoder must not fail a capture; run
+ * `pnpm build:thumbnails` afterwards to backfill.
+ */
+function writeThumbnail(screenshotPath) {
+  const target = join(dirname(screenshotPath), "thumbnail.webp")
+  try {
+    execFileSync(
+      "cwebp",
+      ["-quiet", "-q", "72", "-resize", "480", "0", "-m", "6", screenshotPath, "-o", target],
+      { stdio: "ignore" }
+    )
+  } catch (error) {
+    process.stderr.write(`thumbnail-skipped\t${target}\t${error.message}\n`)
+  }
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
+}
+
+/**
+ * A model may answer a standalone-HTML task with a bundled project whose root
+ * `index.html` only resolves through a dev server. The comparison UI serves
+ * `dist/` in that case, and a static capture must agree with it or it records
+ * an unstyled page the reviewer never sees.
+ */
+function servedRoot(appPath) {
+  const dist = join(appPath, "dist")
+  return existsSync(join(dist, "index.html")) ? dist : appPath
 }
 
 async function availablePort(start) {
@@ -69,24 +99,34 @@ async function availablePort(start) {
   throw new Error(`No capture port available from ${start}`)
 }
 
-async function responds(url) {
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(1_000) })
-    return response.ok
-  } catch {
-    return false
-  }
+// A dev server may bind IPv4, IPv6, or both, so a capture must probe each
+// loopback family and then screenshot the address that actually answered.
+function loopbackUrls(port, path) {
+  return [`http://127.0.0.1:${port}${path}`, `http://[::1]:${port}${path}`]
 }
 
-async function waitForServer(url, child) {
+async function respondingUrl(urls) {
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(1_000) })
+      if (response.ok) return url
+    } catch {
+      // Try the next loopback family.
+    }
+  }
+  return null
+}
+
+async function waitForServer(urls, child) {
   for (let attempt = 0; attempt < 90; attempt += 1) {
-    if (await responds(url)) return
+    const url = await respondingUrl(urls)
+    if (url) return url
     if (child?.exitCode !== null) {
       throw new Error(`Server exited with code ${child.exitCode}`)
     }
     await new Promise((accept) => setTimeout(accept, 1_000))
   }
-  throw new Error(`Timed out waiting for ${url}`)
+  throw new Error(`Timed out waiting for ${urls[0]}`)
 }
 
 function startServer({ appPath, dataDirectory, type, port }) {
@@ -180,24 +220,26 @@ try {
           const finalText = readFileSync(join(dataDirectory, "final.txt"), "utf8")
           await page.setContent(cliEvidenceHtml(metadata, finalText))
         } else {
-          const appPath = resolve(metadata.app_path)
+          const appPath = servedRoot(resolve(metadata.app_path))
+          let candidates
           if (metadata.type === "standalone-html") {
             capturePort = await availablePort(standalonePort)
             standalonePort = capturePort + 1
-            url = `http://127.0.0.1:${capturePort}/index.html`
+            candidates = loopbackUrls(capturePort, "/index.html")
           } else {
             capturePort = metadata.port
-            url = `http://127.0.0.1:${capturePort}/`
+            candidates = loopbackUrls(capturePort, "/")
           }
 
-          if (!(await responds(url))) {
+          url = await respondingUrl(candidates)
+          if (!url) {
             server = startServer({
               appPath,
               dataDirectory,
               type: metadata.type,
               port: capturePort,
             })
-            await waitForServer(url, server.child)
+            url = await waitForServer(candidates, server.child)
           }
 
           await page.goto(url, {
@@ -209,6 +251,7 @@ try {
 
         title = await page.title()
         await page.screenshot({ path: screenshotPath })
+        writeThumbnail(screenshotPath)
         writeFileSync(
           renderPath,
           `${JSON.stringify(
@@ -237,6 +280,7 @@ try {
         )
         title = await page.title()
         await page.screenshot({ path: screenshotPath })
+        writeThumbnail(screenshotPath)
         writeFileSync(
           renderPath,
           `${JSON.stringify(

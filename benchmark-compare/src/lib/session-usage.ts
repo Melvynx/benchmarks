@@ -24,6 +24,12 @@ export type SessionUsage = {
 
 type JsonRecord = Record<string, unknown>
 
+export function usageDurationLabel(model: string) {
+  return model.toLowerCase().startsWith("cursor-")
+    ? "Cursor session"
+    : "API time"
+}
+
 function finiteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null
 }
