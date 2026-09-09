@@ -7,6 +7,7 @@ const GOOGLE_PRICING_URL = "https://ai.google.dev/gemini-api/docs/pricing"
 const KIMI_K3_PRICING_URL = "https://platform.kimi.ai/docs/pricing/chat-k3"
 const XAI_PRICING_URL = "https://docs.x.ai/developers/pricing"
 const CURSOR_GROK_PRICING_URL = "https://cursor.com/grok"
+const META_PRICING_URL = "https://ai.developer.meta.com/docs/pricing-rate-limits"
 const GEMINI_37_FLASH_INTRO_UNTIL = "2026-12-31"
 
 type TokenRates = {
@@ -183,6 +184,31 @@ function isGemini38Flash(normalized: string) {
   )
 }
 
+function museSparkVersion(normalized: string) {
+  const match = normalized.match(/^muse-spark-1[.-]([123])(?:-|$)/)
+  return match ? match[1] : null
+}
+
+function isMuseSparkStandard(normalized: string) {
+  return Boolean(museSparkVersion(normalized)) && !normalized.includes("contributor")
+}
+
+function museSparkPricing(normalized: string) {
+  const version = museSparkVersion(normalized) ?? "3"
+  return {
+    label: `Muse Spark 1.${version}`,
+    sourceLabel: "Meta official pricing",
+    sourceUrl: META_PRICING_URL,
+    rates: {
+      input: 1.25,
+      cacheRead: 0.15,
+      cacheWrite: 1.25,
+      output: 4.25,
+    },
+    note: "Standard Meta Model API rates, which Cursor bills from the Other Models pool. Cached input is $0.15/MTok with no write premium and no long-context multiplier. Aggregate transcripts cannot reveal web-search grounding ($2.50/1k queries).",
+  } satisfies ModelPricing
+}
+
 function normalizePricingModel(model: string) {
   let normalized = model.toLowerCase().trim()
   if (normalized.startsWith("cursor-")) {
@@ -209,6 +235,7 @@ export function getModelPricing(
     return geminiFlashPricing("Gemini 3.8 Flash", usageDate)
   if (isGemini37Flash(normalized))
     return geminiFlashPricing("Gemini 3.7 Flash", usageDate)
+  if (isMuseSparkStandard(normalized)) return museSparkPricing(normalized)
   if (normalized === "gpt-6-astra") return openAiPricing("GPT-6 Astra", 10, 50)
   if (normalized === "gpt-5.6-sol") return openAiPricing("GPT-5.6 Sol", 5, 30)
   if (normalized === "gpt-5.6-terra")
@@ -360,7 +387,7 @@ export function estimateModelCost(
   usage: SessionUsage
 ): ModelCostEstimate | null {
   const pricing = getModelPricing(model, usageDate)
-  if (!pricing) return null
+  if (!pricing || usage.status === "unavailable") return null
 
   const billed = modelUsageTokens(usage, model) ?? sessionUsageTokens(usage)
 

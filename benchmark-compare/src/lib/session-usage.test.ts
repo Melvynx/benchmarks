@@ -9,6 +9,7 @@ import {
 describe("parseSessionUsageTranscript", () => {
   it("labels Cursor duration as end-to-end session time", () => {
     expect(usageDurationLabel("cursor-grok-4.6-high")).toBe("Cursor session")
+    expect(usageDurationLabel("muse-spark-1.3-high")).toBe("Cursor session")
     expect(usageDurationLabel("gpt-5.6-sol")).toBe("API time")
   })
 
@@ -95,5 +96,23 @@ describe("parseSessionUsageTranscript", () => {
         raw_usage: null,
       })
     ).toMatchObject({ status: "partial", total_tokens: 45 })
+  })
+
+  it("keeps recovered Cursor duration on an otherwise empty usage record", () => {
+    expect(
+      parsePersistedSessionUsage({
+        status: "unavailable",
+        schema_version: 1,
+        source: "result.duration",
+        reason: "no terminal token usage record found",
+        duration_ms: 20_394,
+        duration_api_ms: 20_394,
+      })
+    ).toMatchObject({
+      status: "unavailable",
+      duration_ms: 20_394,
+      duration_api_ms: 20_394,
+      total_tokens: null,
+    })
   })
 })

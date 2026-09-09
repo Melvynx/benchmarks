@@ -25,7 +25,8 @@ export type SessionUsage = {
 type JsonRecord = Record<string, unknown>
 
 export function usageDurationLabel(model: string) {
-  return model.toLowerCase().startsWith("cursor-")
+  const normalized = model.toLowerCase()
+  return normalized.startsWith("cursor-") || normalized.startsWith("muse-spark-")
     ? "Cursor session"
     : "API time"
 }
@@ -110,13 +111,46 @@ export function parseSessionUsageTranscript(transcript: string) {
   return normalizeSessionUsage(lastResult || lastCompleted)
 }
 
+function emptySessionUsage(
+  status: SessionUsage["status"],
+  candidate: Partial<SessionUsage>
+): SessionUsage {
+  return {
+    status,
+    schema_version: 1,
+    source: candidate.source,
+    reason: candidate.reason,
+    input_tokens: finiteNumber(candidate.input_tokens),
+    processed_input_tokens: finiteNumber(candidate.processed_input_tokens),
+    cached_input_tokens: finiteNumber(candidate.cached_input_tokens),
+    cache_creation_input_tokens: finiteNumber(
+      candidate.cache_creation_input_tokens
+    ),
+    output_tokens: finiteNumber(candidate.output_tokens),
+    reasoning_output_tokens: finiteNumber(candidate.reasoning_output_tokens),
+    total_tokens: finiteNumber(candidate.total_tokens),
+    total_cost_usd: finiteNumber(candidate.total_cost_usd),
+    duration_ms: finiteNumber(candidate.duration_ms),
+    duration_api_ms: finiteNumber(candidate.duration_api_ms),
+    num_turns: finiteNumber(candidate.num_turns),
+    service_tier: stringValue(candidate.service_tier),
+    speed: stringValue(candidate.speed),
+    inference_geo: stringValue(candidate.inference_geo),
+    server_tool_use: candidate.server_tool_use ?? null,
+    model_usage: candidate.model_usage ?? null,
+    raw_usage: candidate.raw_usage ?? null,
+  }
+}
+
 export function parsePersistedSessionUsage(value: unknown) {
   if (!value || typeof value !== "object") return null
   const candidate = value as Partial<SessionUsage>
-  if (
-    (candidate.status !== "complete" && candidate.status !== "partial") ||
-    candidate.schema_version !== 1
-  )
+  if (candidate.schema_version !== 1) return null
+  if (candidate.status === "unavailable") {
+    return emptySessionUsage("unavailable", candidate)
+  }
+  if (candidate.status !== "complete" && candidate.status !== "partial") {
     return null
+  }
   return candidate as SessionUsage
 }

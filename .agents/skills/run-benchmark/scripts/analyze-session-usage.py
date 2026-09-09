@@ -99,6 +99,7 @@ def recovered_assistant_usage(path: Path) -> dict[str, Any] | None:
 def analyze(path: Path) -> dict[str, Any]:
     last_result: dict[str, Any] | None = None
     last_completed: dict[str, Any] | None = None
+    last_result_timing: dict[str, Any] | None = None
     session_id: str | None = None
     step_input = 0.0
     step_output = 0.0
@@ -132,6 +133,8 @@ def analyze(path: Path) -> dict[str, Any]:
                 step_cost += number(part.get("cost")) or 0
                 step_count += 1
                 last_step_tokens = tokens
+            if record.get("type") == "result":
+                last_result_timing = record
             if not isinstance(record.get("usage"), dict):
                 continue
             if record.get("type") == "result":
@@ -181,6 +184,36 @@ def analyze(path: Path) -> dict[str, Any]:
         recovered = recovered_assistant_usage(session_path) if session_path else None
         if recovered:
             return recovered
+        duration_ms = number(last_result_timing.get("duration_ms")) if last_result_timing else None
+        duration_api_ms = (
+            number(last_result_timing.get("duration_api_ms")) if last_result_timing else None
+        )
+        if duration_ms is not None or duration_api_ms is not None:
+            return {
+                "status": "unavailable",
+                "schema_version": 1,
+                "source": "result.duration",
+                "reason": "no terminal token usage record found",
+                "input_tokens": None,
+                "processed_input_tokens": None,
+                "cached_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "output_tokens": None,
+                "reasoning_output_tokens": None,
+                "total_tokens": None,
+                "total_cost_usd": None,
+                "duration_ms": duration_ms,
+                "duration_api_ms": duration_api_ms,
+                "num_turns": number(last_result_timing.get("num_turns"))
+                if last_result_timing
+                else None,
+                "service_tier": None,
+                "speed": None,
+                "inference_geo": None,
+                "server_tool_use": None,
+                "model_usage": None,
+                "raw_usage": None,
+            }
         return {
             "status": "unavailable",
             "schema_version": 1,

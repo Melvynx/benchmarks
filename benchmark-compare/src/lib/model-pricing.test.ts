@@ -368,6 +368,51 @@ describe("model pricing", () => {
     expect(timezone?.totalUsd).toBeCloseTo(0.940342125, 6)
   })
 
+  it("uses official Muse Spark 1.3 standard rates", () => {
+    expect(getModelPricing("muse-spark-1.3-high", "2026-09-09")?.rates).toEqual({
+      input: 1.25,
+      cacheRead: 0.15,
+      cacheWrite: 1.25,
+      output: 4.25,
+    })
+    expect(getModelPricing("muse-spark-1.3-high", "2026-09-09")?.label).toBe(
+      "Muse Spark 1.3"
+    )
+    expect(getModelPricing("muse-spark-1.3-high", "2026-09-09")?.sourceUrl).toBe(
+      "https://ai.developer.meta.com/docs/pricing-rate-limits"
+    )
+    expect(getModelPricing("muse-spark-1.2", "2026-09-09")?.label).toBe(
+      "Muse Spark 1.2"
+    )
+    expect(
+      getModelPricing("muse-spark-1.3-contributor", "2026-09-09")
+    ).toBeNull()
+  })
+
+  it("estimates a Muse Spark run at Meta standard rates", () => {
+    const estimate = estimateModelCost(
+      "muse-spark-1.3-high",
+      "2026-09-09",
+      usage({
+        input_tokens: 200_000,
+        processed_input_tokens: 1_200_000,
+        cached_input_tokens: 1_000_000,
+        cache_creation_input_tokens: 0,
+        output_tokens: 40_000,
+      })
+    )
+
+    expect(estimate?.pricing.label).toBe("Muse Spark 1.3")
+    expect(estimate?.totalUsd).toBeCloseTo(0.57, 6)
+    expect(
+      estimateModelCost(
+        "muse-spark-1.3-high",
+        "2026-09-09",
+        usage({ status: "unavailable", duration_api_ms: 20_394 })
+      )
+    ).toBeNull()
+  })
+
   it("uses official GPT-6 Astra rates", () => {
     expect(getModelPricing("gpt-6-astra", "2026-09-05")?.rates).toEqual({
       input: 10,
