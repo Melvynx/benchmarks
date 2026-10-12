@@ -1,0 +1,19 @@
+export const defaults={growth:1.1,capacity:6,delay:6,blueUse:1.1,blueSpeed:9,blueVision:75,blueCopy:105,blueEat:1.5,redUse:1,redSpeed:10,redVision:95,strength:45,redCopy:135,redPause:3,trees:22,blue:38,red:9,size:230,seed:42};
+export const presets={'Balanced garden':{},'Fruit-rich garden':{growth:2.2,capacity:9,trees:28},'Red-heavy garden':{red:22,blue:34},'Fragile balance':{trees:15,blue:25,red:7,growth:.75},'Low-fruit garden':{trees:10,growth:.45,capacity:3,blue:20,red:5}};
+export class Garden{
+ constructor(settings={}){this.config={...defaults,...settings};this.state=this.config.seed;this.time=0;this.nextId=1;this.births=0;this.contacts=0;this.history=[];this.blobs=[];this.plants=[];this.effects=[];for(let i=0;i<this.config.trees;i++){let p=this.position();this.plants.push({...p,fruit:this.config.capacity,wait:0,id:i});}for(let type of ['blue','red'])for(let i=0;i<this.config[type];i++)this.add(type);this.record();}
+ random(){this.state=(Math.imul(1664525,this.state)+1013904223)>>>0;return this.state/4294967296;}
+ position(){let a=this.random()*Math.PI*2,r=Math.sqrt(this.random())*(this.config.size-18);return{x:Math.cos(a)*r,y:Math.sin(a)*r};}
+ add(type,parent){const p=parent?{x:parent.x+this.random()*12-6,y:parent.y+this.random()*12-6}:this.position();this.blobs.push({...p,id:this.nextId++,type,energy:parent?45:55+this.random()*25,age:0,pause:0,action:'Wandering',angle:this.random()*Math.PI*2,generation:parent?parent.generation+1:1,parent:parent?.id,alive:true});}
+ counts(){return{fruit:Math.round(this.plants.reduce((n,p)=>n+p.fruit,0)),blue:this.blobs.filter(b=>b.type==='blue').length,red:this.blobs.filter(b=>b.type==='red').length};}
+ record(){this.history.push({time:this.time,...this.counts()});if(this.history.length>900)this.history.shift();}
+ tick(dt){const c=this.config;this.time+=dt;for(const p of this.plants){p.wait=Math.max(0,p.wait-dt);if(!p.wait)p.fruit=Math.min(c.capacity,p.fruit+dt*c.growth*.2);}
+ for(const b of [...this.blobs]){if(!b.alive)continue;b.age+=dt;b.recovery=Math.max(0,(b.recovery||0)-dt);b.energy-=dt*c[b.type+'Use']*(b.pause>0?.45:1);b.pause=Math.max(0,b.pause-dt);if(b.energy<=0){b.alive=false;this.effects.push({x:b.x,y:b.y,life:1,type:b.type});continue;}if(b.pause>0)continue;
+ let target=null,dist=c[b.type+'Vision'],threat=null,threatDist=48;
+ if(b.type==='blue'){for(const p of this.plants){let d=Math.hypot(p.x-b.x,p.y-b.y);if(p.fruit>=1&&d<dist){target=p;dist=d;}}for(const r of this.blobs){if(r.type!=='red'||!r.alive)continue;let d=Math.hypot(r.x-b.x,r.y-b.y);if(d<threatDist){threat=r;threatDist=d;}}}else{for(const p of this.blobs){if(p.type!=='blue'||!p.alive||p.recovery>0)continue;let d=Math.hypot(p.x-b.x,p.y-b.y);if(d<dist){target=p;dist=d;}}}
+ if(target&&dist<12){if(b.type==='blue'){target.fruit-=1;target.wait=c.delay;b.energy+=27;b.pause=c.blueEat;b.action='Munching fruit';}else{const transfer=Math.min(target.energy,c.strength);target.energy-=transfer;target.recovery=10;b.energy+=transfer*.75;b.pause=c.redPause;b.action='Happy little pause';this.contacts++;if(target.energy<=0){target.alive=false;this.effects.push({x:target.x,y:target.y,life:1,type:'blue'});}}this.effects.push({x:b.x,y:b.y,life:1,type:'spark'});}
+ else {if(threat){b.angle=Math.atan2(b.y-threat.y,b.x-threat.x);b.action='Avoiding a red';}else if(target){b.angle=Math.atan2(target.y-b.y,target.x-b.x);b.action=b.type==='blue'?'Looking for fruit':'Following a blue';}else{b.angle+=(this.random()-.5)*2*dt;b.action='Wandering';}const speed=c[b.type+'Speed'];b.x+=Math.cos(b.angle)*speed*dt;b.y+=Math.sin(b.angle)*speed*dt;let r=Math.hypot(b.x,b.y);if(r>c.size-10){b.x*= (c.size-11)/r;b.y*=(c.size-11)/r;b.angle+=Math.PI*.7;}}
+ if(b.energy>=c[b.type+'Copy']&&this.blobs.length<250){b.energy-=52;this.add(b.type,b);this.births++;}}
+ this.blobs=this.blobs.filter(b=>b.alive);this.effects=this.effects.filter(e=>(e.life-=dt)>0);if(Math.floor(this.time)!==Math.floor(this.time-dt))this.record();
+ }
+}

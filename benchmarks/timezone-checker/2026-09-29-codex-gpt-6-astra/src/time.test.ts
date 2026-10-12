@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { awake, offset, localMinute, ranges, formatTime, cities } from './time.ts';
+test('awake boundaries are start-inclusive and end-exclusive',()=>{assert.equal(awake(420,7,23),true);assert.equal(awake(1380,7,23),false);assert.equal(awake(419,7,23),false);});
+test('overnight schedules cross midnight',()=>{assert.equal(awake(1380,22,6),true);assert.equal(awake(300,22,6),true);assert.equal(awake(360,22,6),false);assert.equal(awake(720,22,6),false);});
+test('current-date offset calculation handles seasonal DST',()=>{assert.equal(offset('America/Los_Angeles',new Date('2026-07-01T12:00:00Z')),-420);assert.equal(offset('America/Los_Angeles',new Date('2026-01-01T12:00:00Z')),-480);});
+test('fractional timezones keep all minutes',()=>{assert.equal(offset('Asia/Kolkata'),330);assert.equal(offset('Asia/Kathmandu'),345);assert.equal(localMinute(7,0,345),765);assert.equal(formatTime(765,'12h'),'12:45pm');assert.equal(formatTime(765,'24h'),'12:45');});
+test('separate ranges remain separate and end at exclusive midnight',()=>{assert.deepEqual(ranges(Array.from({length:24},(_,h)=>h<2||h>=22)),[[0,2],[22,24]]);assert.deepEqual(ranges(Array(24).fill(false)),[]);});
+test('default cities have two separate summer windows and pairwise overlap differs',()=>{const zones=['America/Los_Angeles','Asia/Makassar','Europe/Zurich'];const off=zones.map(z=>offset(z,new Date('2026-09-30T12:00:00Z')));const availability=off.map(o=>Array.from({length:24},(_,h)=>awake(localMinute(h,off[0],o),7,23)));const all=Array.from({length:24},(_,h)=>availability.every(a=>a[h]));assert.deepEqual(ranges(all),[[7,8],[22,23]]);const den=availability[0].map((a,h)=>a&&availability[1][h]);const gen=availability[0].map((a,h)=>a&&availability[2][h]);assert.notDeepEqual(den,gen);});
+test('catalog has exactly 34 unique valid cities',()=>{assert.equal(cities.length,34);assert.equal(new Set(cities.map(c=>c.id)).size,34);for(const c of cities)assert.equal(Number.isFinite(offset(c.zone)),true);});

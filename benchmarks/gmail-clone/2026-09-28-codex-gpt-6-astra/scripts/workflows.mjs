@@ -1,0 +1,28 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const storage=new Map();
+const element=()=>({innerHTML:'',value:'',selectionStart:0,selectionEnd:0,addEventListener(){},remove(){},focus(){},setSelectionRange(){},click(){},classList:{toggle(){}},style:{}});
+const app=element();
+const context={console,setTimeout:()=>0,clearTimeout(){},Blob,URL,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},document:{getElementById:id=>id==='app'?app:element(),querySelector:()=>element(),createElement:element,body:{append(){}},addEventListener(){}}};
+const data=fs.readFileSync('src/data.js','utf8').replaceAll('export ','').replace('const labels=','const initialLabels=');
+const source=fs.readFileSync('src/app.js','utf8').replace(/^import .*?;\n/,'');
+vm.createContext(context);vm.runInContext(data+'\n'+source,context);
+function run(s){return vm.runInContext(s,context)}
+assert(app.innerHTML.includes('GPT-6'));
+assert(run('filtered().length')>8);
+run("selected=new Set([1]);action('archive')");assert.equal(run('mail.find(m=>m.id===1).folder'),'archive');
+run("action('undo')");assert.equal(run('mail.find(m=>m.id===1).folder'),'inbox');
+run("selected=new Set([1]);action('delete')");assert.equal(run('mail.find(m=>m.id===1).folder'),'trash');
+run("navigate('Trash')");assert(run('filtered().some(m=>m.id===1)'));
+run("selected=new Set([1]);action('restore')");assert.equal(run('mail.find(m=>m.id===1).folder'),'inbox');
+run("navigate('Inbox');selected=new Set([1]);action('unread')");assert.equal(run('mail.find(m=>m.id===1).read'),false);
+run("startCompose({to:'alex@studio.design',subject:'Workflow check',body:'A message that persists.'});saveDraft()");
+assert(run("mail.some(m=>m.folder==='drafts'&&m.subject==='Workflow check')"));
+run("action('close-compose');navigate('Drafts')");assert(run("filtered().some(m=>m.subject==='Workflow check')"));
+run("startCompose({...mail.find(m=>m.subject==='Workflow check')});send({preventDefault(){}})");assert(run("mail.some(m=>m.folder==='sent'&&m.subject==='Workflow check')"));
+run("navigate('Sent')");assert(run("filtered().some(m=>m.subject==='Workflow check')"));
+run("navigate('Inbox');opened=1;action('reply');compose.body='Thanks, looks great!';send({preventDefault(){}})");assert.equal(run('mail.find(m=>m.id===1).replies.length'),1);
+assert(JSON.parse(storage.get('gpt6-mail')).mail.some(m=>m.subject==='Workflow check'));
+run("query='from:alex has:attachment';opened=null");assert(run('filtered().some(m=>m.id===1)'));
+console.log('PASS: initial render, archive/undo, trash/restore, unread, draft save/reopen/send, Sent navigation, conversation replies, persistence, and search.');

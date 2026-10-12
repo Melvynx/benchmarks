@@ -1,0 +1,13 @@
+const page = await browser.getPage("main");
+const errors = [];
+page.on("pageerror", (e) => errors.push("pageerror: " + String(e).slice(0, 400)));
+await page.setViewportSize({ width: 820, height: 1100 });
+await page.goto("http://127.0.0.1:9228/");
+await page.waitForTimeout(2500);
+await page.evaluate(() => { window.__garden.runner.setSpeed(32); });
+await page.waitForTimeout(4000);
+await page.evaluate(() => { window.__garden.runner.setSpeed(4); });
+const dims = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, sh: document.documentElement.scrollHeight }));
+console.log(JSON.stringify({ dims, errors }));
+const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: true });
+console.log("B64:" + buf.toString("base64"));

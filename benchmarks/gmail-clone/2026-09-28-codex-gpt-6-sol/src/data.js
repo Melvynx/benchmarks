@@ -1,0 +1,52 @@
+const now = Date.now();
+const ago = (days, hours = 0) => now - (days * 24 + hours) * 60 * 60 * 1e3;
+const me = "alex.morgan@gmail.com";
+const mail = (id, name, email, subject, preview, body, days, hours = 0, extra = {}) => ({
+  id,
+  name,
+  email,
+  to: me,
+  subject,
+  preview,
+  body,
+  date: ago(days, hours),
+  folder: "inbox",
+  read: false,
+  starred: false,
+  labels: [],
+  ...extra
+});
+const initialMail = [
+  mail("m1", "Maya Chen", "maya@northstar.design", "The final details for Friday", "I pulled together the last few notes for our review. The updated deck is attached.", "Hi Alex,\n\nI pulled together the last few notes for our review on Friday. The updated deck is attached, along with a short list of decisions we still need to make.\n\nCould you take a look at slides 12\u201315 when you have a moment? Your feedback on the handoff flow would be especially helpful.\n\nThanks,\nMaya", 0, 1, { starred: true, labels: ["Work"], attachments: ["Northstar-review-v4.pdf"], replies: [{ name: "Alex Morgan", email: me, body: "Thanks Maya! The direction looks great. I\u2019ll leave my notes in the deck this afternoon.", date: ago(1, 2) }] }),
+  mail("m2", "Daniel Kim", "daniel@figma.com", "Your workspace is ready for the team", "Invite your teammates, explore the files, and start building together.", "Hey Alex,\n\nYour new workspace is ready. Invite your teammates and move your current files over whenever you are ready. We made a quick starter guide to help everyone get oriented.\n\nSee you in Figma,\nDaniel", 0, 2, { labels: ["Updates"] }),
+  mail("m3", "Sophie Williams", "sophie@fieldnotes.studio", "Coffee next week?", "Would love to catch up and hear how the new project is going.", "Hi Alex,\n\nIt has been a while! I\u2019ll be in your neighborhood next week and would love to grab coffee. Tuesday or Wednesday afternoon both work for me.\n\nI\u2019d love to hear how the new project is going.\n\nSophie", 0, 3, { starred: true }),
+  mail("m4", "The New Yorker", "newsletter@newyorker.com", "The Sunday reading list", "A little more to read, watch, and think about this week.", "This week\u2019s reading list\n\nA collection of stories to spend time with this Sunday: a conversation about the future of cities, a dispatch from the coast, and a recipe worth keeping.\n\nEnjoy the weekend.", 0, 5, { labels: ["Reading"] }),
+  mail("m5", "Notion", "team@email.notion.so", "Your weekly workspace digest", "Here is what happened in your workspace this week.", "Your week in review\n\nYou and your team edited 14 pages, shared 3 documents, and checked off 22 tasks this week. Keep the momentum going.\n\nThe Notion team", 0, 7, { labels: ["Updates"] }),
+  mail("m6", "Oliver Grant", "oliver@atlas.studio", "Re: Summer launch timeline", "This looks good from our side. Let\u2019s lock the dates.", "Hi Alex,\n\nThis looks good from our side. Let\u2019s lock the dates and share the revised timeline with the broader group tomorrow.\n\nI can own the launch checklist if you handle the creative review.\n\nOliver", 1, 1, { read: true, labels: ["Work"], replies: [{ name: "Alex Morgan", email: me, body: "I\u2019ve updated the plan with a two day buffer for QA. Let me know what you think.", date: ago(2) }] }),
+  mail("m7", "Linear", "notifications@linear.app", "You have 3 new updates", "A few things moved forward in the Product team.", "Your team made progress today.\n\n\u2022 Inbox redesign was moved to In review\n\u2022 Search filters was completed\n\u2022 Mobile navigation has a new comment\n\nOpen your workspace to see the full activity.", 1, 3, { read: true, labels: ["Work"] }),
+  mail("m8", "Rachel Adams", "rachel@brightday.co", "Photos from the coast", "Finally got around to sorting these. Thought you would like a few of them.", "Hey!\n\nI finally got around to sorting the photos from our weekend on the coast. I picked a few favorites for you. The sunset one still makes me smile.\n\nLet\u2019s do it again soon,\nRachel", 1, 5, { attachments: ["coast-01.jpg", "coast-02.jpg", "sunset.jpg"], labels: ["Personal"] }),
+  mail("m9", "Stripe", "receipts@stripe.com", "Your receipt from Studio Supply", "Thanks for your purchase. Your receipt is attached.", "Thanks for your purchase from Studio Supply.\n\nTotal: $48.00\nDate: September 25\nPayment method: Visa ending in 4242\n\nKeep this email for your records.", 1, 8, { read: true, labels: ["Receipts"], attachments: ["receipt-september.pdf"] }),
+  mail("m10", "Aisha Patel", "aisha@commonplace.com", "A quick question about the proposal", "Could we clarify the scope of the second phase before we send it?", "Hi Alex,\n\nThe proposal reads really well. Before we send it over, could we clarify whether research interviews are part of the second phase? One sentence in the scope would probably do it.\n\nThanks!\nAisha", 2, 1, { labels: ["Work"] }),
+  mail("m11", "Airbnb", "automated@airbnb.com", "Your upcoming trip to Copenhagen", "Your reservation is confirmed. Here are the details for your stay.", "You\u2019re going to Copenhagen!\n\nYour reservation is confirmed for October 12\u201316. Check in after 3:00 PM. We\u2019ll send the address and arrival details closer to your trip.\n\nSafe travels,\nAirbnb", 2, 3, { read: true, starred: true, labels: ["Travel"], attachments: ["itinerary.pdf"] }),
+  mail("m12", "The Browser", "hello@thebrowser.com", "Five things worth your time", "A considered selection of links for curious people.", "Today\u2019s five things worth your time:\n\n1. A beautiful essay on attention\n2. The return of the neighborhood bookstore\n3. Why maps tell stories\n4. A new way to listen\n5. An archive of ordinary objects\n\nHappy reading.", 2, 6, { read: true, labels: ["Reading"] }),
+  mail("m13", "Jordan Lee", "jordan@harbor.io", "Notes from our workshop", "Thanks again for the thoughtful conversation yesterday.", "Hi Alex,\n\nThanks again for the thoughtful conversation yesterday. I cleaned up my workshop notes and attached the whiteboard export.\n\nThe three themes that came up most often were clarity, trust, and speed. Let\u2019s use those as our starting point.\n\nJordan", 3, 2, { read: true, labels: ["Work"], attachments: ["workshop-notes.pdf", "whiteboard.png"] }),
+  mail("m14", "GitHub", "notifications@github.com", "Your pull request was approved", "Maya approved your changes in northstar/web.", "Maya Chen approved your pull request \u201CImprove inbox keyboard navigation\u201D in northstar/web.\n\nAll checks have passed. Your changes are ready to merge.", 3, 5, { read: true, labels: ["Updates"] }),
+  mail("m15", "Nina Park", "nina@paperplane.co", "Dinner on Saturday", "Found a place I think you would love.", "Hey Alex,\n\nI found a little place near the river I think you\u2019d love. Would Saturday at 7 work for dinner? I can make a reservation if so.\n\nNina", 4, 1, { read: true, labels: ["Personal"] }),
+  mail("m16", "Dropbox", "no-reply@dropboxmail.com", "Shared with you: Brand assets", "Maya shared a folder with you.", "Maya Chen shared \u201CBrand assets\u201D with you.\n\nThis folder includes the latest logos, color palette, and presentation templates for the Northstar project.", 4, 4, { read: true, labels: ["Work"] }),
+  mail("m17", "Monocle", "newsletter@monocle.com", "The weekend edition", "A fresh perspective on culture, business, and design.", "Good morning.\n\nThis weekend: a city guide to Helsinki, a conversation with independent publishers, and the architecture of a slower day.\n\nFrom the Monocle team.", 5, 2, { read: true, labels: ["Reading"] }),
+  mail("m18", "Elliot Ross", "elliot@studioelliot.com", "Invoice for August", "Please find my invoice attached. Thanks!", "Hi Alex,\n\nPlease find my invoice for August attached. Thanks again for a great month of collaboration.\n\nBest,\nElliot", 6, 1, { read: true, labels: ["Receipts"], attachments: ["invoice-august.pdf"] }),
+  mail("m19", "Alex Morgan", me, "Project kickoff recap", "Here are the notes and next steps from today\u2019s call.", "Hi team,\n\nThanks for the great kickoff today. Here are the next steps:\n\n\u2022 Maya will prepare the first round of concepts\n\u2022 I\u2019ll share the updated project brief\n\u2022 We\u2019ll regroup on Friday\n\nTalk soon,\nAlex", 1, 6, { folder: "sent", read: true, to: "maya@northstar.design, oliver@atlas.studio", labels: ["Work"] }),
+  mail("m20", "Alex Morgan", me, "Re: Friday plans", "Looking forward to it. See you there!", "Looking forward to it. See you there!\n\nAlex", 3, 3, { folder: "sent", read: true, to: "sophie@fieldnotes.studio" }),
+  mail("m21", "Alex Morgan", me, "Q4 ideas", "A few rough thoughts on what we could explore next.", "Hi team,\n\nI\u2019ve been thinking about a few directions we could explore for Q4. The biggest opportunity seems to be making the first run experience feel effortless.\n\nMore soon,\nAlex", 7, 2, { folder: "sent", read: true, to: "team@northstar.design", labels: ["Work"] }),
+  mail("m22", "Alex Morgan", me, "Weekend in Copenhagen", "Places to see, coffee shops, and a walking route.", "A few ideas for the trip:\n\n\u2022 Designmuseum Danmark\n\u2022 Coffee at Prolog\n\u2022 A long walk through the old town\n\nStill collecting recommendations!", 0, 4, { folder: "drafts", read: true, to: "rachel@brightday.co", labels: ["Travel"] }),
+  mail("m23", "Alex Morgan", me, "Follow up with Jordan", "Thank him for the workshop and share the draft plan.", "Hi Jordan,\n\nThanks again for the workshop. I\u2019ve started putting together a plan based on our discussion. I\u2019ll send the draft over soon.", 2, 2, { folder: "drafts", read: true, to: "jordan@harbor.io", labels: ["Work"] }),
+  mail("m24", "Daily Deals", "offers@dailydeals.example", "Your exclusive offer expires tonight", "Open for a special discount.", "Today only: take 20% off selected products. Browse the collection and find something you love.", 2, 4, { folder: "trash", read: true }),
+  mail("m25", "Maya Chen", "maya@northstar.design", "Early sketches for the dashboard", "Sharing the first pass. There is plenty to discuss.", "Hi Alex,\n\nHere are the early sketches for the dashboard. I\u2019ve been exploring a calmer layout with clearer status signals.\n\nWould love your thoughts.\n\nMaya", 9, 2, { folder: "archive", read: true, labels: ["Work"], attachments: ["dashboard-sketches.pdf"] })
+];
+const defaultLabels = ["Work", "Personal", "Travel", "Receipts", "Reading", "Updates"];
+const myEmail = me;
+export {
+  defaultLabels,
+  initialMail,
+  myEmail
+};

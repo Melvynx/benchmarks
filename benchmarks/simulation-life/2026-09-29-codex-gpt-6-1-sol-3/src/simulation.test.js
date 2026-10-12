@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {Garden,presets} from './simulation.js';
+const run=(g,seconds)=>{for(let i=0;i<Math.round(seconds*10);i++)g.tick(.1);return g;};
+let g=new Garden({trees:1,blues:1,reds:0,growth:.5,returnDelay:2,blueUse:0});
+g.trees[0].x=g.blobs[0].x=0;g.trees[0].z=g.blobs[0].z=0;
+g.tick(.1);assert.equal(g.trees[0].fruit,5);assert.equal(g.blobs[0].action,'Nibbling fruit');const energy=g.blobs[0].energy;g.tick(.1);assert.equal(g.blobs[0].energy,energy);assert.equal(g.trees[0].fruit,5);g.blobs=[];run(g,4);assert.ok(g.trees[0].fruit>5);console.log('PASS fruit consumption, real pause, delayed regrowth');
+g=new Garden({trees:0,blues:1,reds:1,blueUse:0,redUse:0});g.blobs.forEach(b=>{b.x=0;b.z=0});const blue=g.blobs[0],red=g.blobs[1],before=blue.energy;g.tick(.1);assert.equal(before-blue.energy,g.config.redStrength);assert.ok(red.pause>0);assert.ok(blue.immune>0);const after=blue.energy;run(g,.5);assert.equal(blue.energy,after);console.log('PASS energy transfer and contact cooldown');
+g=new Garden({trees:0,blues:1,reds:0,blueUse:0});g.blobs[0].energy=110;g.tick(.1);assert.equal(g.blobs.length,2);assert.ok(g.blobs.reduce((sum,b)=>sum+b.energy,0)<110);assert.equal(g.blobs[1].parent,g.blobs[0].id);console.log('PASS reproduction consumes stored energy');
+const a=run(new Garden({seed:123}),20),b=run(new Garden({seed:123}),20);assert.deepEqual(a.history,b.history);assert.deepEqual(a.blobs,b.blobs);console.log('PASS seeded reproducibility');
+g=run(new Garden(),1200);assert.ok(g.counts().blue>0&&g.counts().red>0);const late=g.history.filter(p=>p.time>600);for(const key of ['blue','red'])assert.ok(Math.max(...late.map(p=>p[key]))-Math.min(...late.map(p=>p[key]))>=8);assert.ok(g.blobs.length<350);console.log('PASS balanced garden sustains both groups and population waves over 120 days',g.counts());
+const rich=run(new Garden(presets['Fruit-rich garden']),50),low=run(new Garden(presets['Low-fruit garden']),50);assert.ok(rich.counts().blue>low.counts().blue);assert.ok(rich.births>low.births);console.log('PASS fruit-rich growth exceeds low-fruit garden',rich.counts(),low.counts());
+const heavy=run(new Garden(presets['Red-heavy garden']),200);assert.ok(heavy.counts().red<22);const early=heavy.history.find(p=>p.time>=30);assert.ok(early.blue<32);console.log('PASS red-heavy blue decline followed by red energy decline',heavy.counts());
+for(const p of g.history)assert.ok(p.fruit>=0&&p.blue>=0&&p.red>=0);console.log('PASS recorded history stays nonnegative');

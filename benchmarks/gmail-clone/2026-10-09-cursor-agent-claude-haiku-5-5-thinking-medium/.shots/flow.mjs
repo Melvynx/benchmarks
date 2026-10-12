@@ -1,0 +1,123 @@
+import { chromium } from 'playwright-core'
+const browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true })
+const errors = []
+const check = (cond, msg) => console.log((cond ? 'PASS ' : 'FAIL ') + msg)
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+const page = await ctx.newPage()
+page.on('pageerror', (e) => errors.push('pageerror: ' + e.message))
+page.on('console', (m) => m.type() === 'error' && errors.push('console: ' + m.text()))
+await page.goto('http://127.0.0.1:9372/', { waitUntil: 'networkidle' })
+await page.evaluate(() => localStorage.clear())
+await page.reload({ waitUntil: 'networkidle' })
+await page.screenshot({ path: '.shots/d1-inbox.png' })
+const rows = page.getByRole('row')
+const before = await rows.count()
+check(before > 5, `inbox has rows (${before})`)
+
+// archive from reader
+await rows.nth(1).click()
+await page.locator('[aria-label="Conversation"]').getByTitle('Archive (e)').click()
+await page.waitForTimeout(250)
+check((await rows.count()) === before - 1, 'archive removes conversation from inbox')
+check(await page.getByRole('button', { name: 'Undo' }).isVisible(), 'undo toast visible')
+await page.screenshot({ path: '.shots/d2-archived.png' })
+await page.getByRole('button', { name: 'Undo' }).click()
+await page.waitForTimeout(200)
+check((await rows.count()) === before, 'undo restores conversation')
+
+// keyboard navigation and selection
+await page.locator('body').click({ position: { x: 5, y: 5 } })
+await page.keyboard.press('j')
+await page.keyboard.press('j')
+await page.keyboard.press('x')
+await page.waitForTimeout(150)
+check(await page.getByText('1 selected').isVisible(), 'keyboard j + x selects a conversation')
+await page.keyboard.press('s')
+await page.waitForTimeout(150)
+await page.keyboard.press('Escape')
+
+// star by click
+await rows.nth(0).getByRole('button', { name: /Star|Unstar/ }).click()
+await page.waitForTimeout(100)
+await page.getByRole('button', { name: /Starred/ }).first().click()
+await page.waitForTimeout(200)
+check((await rows.count()) >= 1, 'starred folder shows starred conversations')
+await page.getByRole('button', { name: /^Inbox/ }).first().click()
+
+// search
+await page.locator('#search-input').fill('from:sarah has:attachment')
+await page.keyboard.press('Enter')
+await page.waitForTimeout(250)
+check(await page.getByText(/Results for/).first().isVisible(), 'search shows results title')
+await page.screenshot({ path: '.shots/d3-search.png' })
+await page.getByTitle('Clear search').click()
+
+// compose + send
+await page.getByRole('button', { name: 'Compose' }).click()
+await page.getByLabel('To', { exact: true }).fill('priya.nair@lumen-legal.com')
+await page.keyboard.press('Enter')
+await page.getByLabel('Subject').fill('Vendor SLA sign-off')
+await page.getByLabel('Message body').click()
+await page.keyboard.type('Confirmed, engineering is fine with 99.9 percent.')
+await page.waitForTimeout(600)
+await page.getByRole('button', { name: 'Send', exact: true }).click()
+await page.waitForTimeout(300)
+check(await page.getByText('Message sent').isVisible(), 'send shows confirmation toast')
+await page.getByRole('button', { name: /^Sent/ }).first().click()
+await page.waitForTimeout(200)
+check(await page.getByText('Vendor SLA sign-off').first().isVisible(), 'sent folder contains new message')
+
+// scheduled send
+await page.getByRole('button', { name: 'Compose' }).click()
+await page.getByLabel('To', { exact: true }).fill('sam.okafor@northwind.dev')
+await page.keyboard.press('Enter')
+await page.getByLabel('Subject').fill('Board slides v5')
+await page.getByLabel('Message body').click()
+await page.keyboard.type('Attached soon.')
+await page.getByRole('button', { name: 'More send options' }).click()
+await page.getByText('Tomorrow morning').click()
+await page.waitForTimeout(300)
+await page.getByRole('button', { name: /^Scheduled/ }).first().click()
+await page.waitForTimeout(200)
+check(await page.getByText('Board slides v5').first().isVisible(), 'scheduled folder has the scheduled message')
+
+// drafts
+await page.getByRole('button', { name: 'Compose' }).click()
+await page.getByLabel('Subject').fill('Draft check')
+await page.waitForTimeout(600)
+await page.getByTitle('Close (draft is kept)').click()
+await page.getByRole('button', { name: /^Drafts/ }).first().click()
+await page.waitForTimeout(200)
+check(await page.getByText('Draft check').first().isVisible(), 'draft persists after closing compose')
+
+// settings dark mode
+await page.getByTitle('Settings').click()
+await page.getByRole('radio', { name: 'Dark' }).click()
+await page.keyboard.press('Escape')
+await page.waitForTimeout(200)
+await page.getByRole('button', { name: /^Inbox/ }).first().click()
+await page.waitForTimeout(200)
+await page.screenshot({ path: '.shots/d4-dark.png' })
+const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'))
+check(isDark, 'dark theme applied')
+
+// reload persistence
+await page.reload({ waitUntil: 'networkidle' })
+check((await page.getByRole('row').count()) === before, 'state persists across reload')
+
+// mobile
+const m = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+const mp = await m.newPage()
+mp.on('pageerror', (e) => errors.push('mobile pageerror: ' + e.message))
+await mp.goto('http://127.0.0.1:9372/', { waitUntil: 'networkidle' })
+await mp.screenshot({ path: '.shots/m1-list.png' })
+await mp.getByRole('row').nth(0).click()
+await mp.waitForTimeout(200)
+await mp.screenshot({ path: '.shots/m2-reader.png' })
+await mp.getByTitle('Back to list').first().click()
+await mp.getByRole('button', { name: 'Main menu' }).click()
+await mp.waitForTimeout(200)
+await mp.screenshot({ path: '.shots/m3-drawer.png' })
+
+console.log('errors:', errors.slice(0, 10))
+await browser.close()

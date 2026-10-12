@@ -1,0 +1,11 @@
+const page = await browser.getPage("main");
+const errors = [];
+page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errors.push(m.type() + ": " + m.text().slice(0, 300)); });
+page.on("pageerror", (e) => errors.push("pageerror: " + String(e).slice(0, 400)));
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.goto("http://127.0.0.1:9228/");
+await page.waitForTimeout(6000);
+const info = await page.evaluate(() => ({ title: document.title, h1: document.querySelector("h1")?.textContent, t: window.__garden?.runner.world.t }));
+console.log(JSON.stringify({ info, errors }));
+const buf = await page.screenshot({ type: "jpeg", quality: 80 });
+console.log("B64:" + buf.toString("base64"));

@@ -1,0 +1,14 @@
+const page = await browser.getPage("main");
+const errors = [];
+page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 300)); });
+page.on("pageerror", (e) => errors.push("pageerror: " + String(e).slice(0, 400)));
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.goto("http://127.0.0.1:9228/");
+await page.waitForTimeout(2500);
+await page.evaluate(() => { window.__garden.runner.setSpeed(32); });
+await page.waitForTimeout(10000);
+await page.evaluate(() => { window.__garden.runner.setSpeed(4); });
+const info = await page.evaluate(() => { const w = window.__garden.runner.world; return { t: Math.round(w.t), blue: w.blueCount, red: w.redCount, fruit: w.fruitCount, samples: w.history.length, title: document.title, h1: (document.querySelector("h1")||{}).textContent, canvas: !!document.querySelector("canvas"), svgs: document.querySelectorAll("svg").length }; });
+console.log(JSON.stringify({ info, errors }));
+const buf = await page.screenshot({ type: "jpeg", quality: 70 });
+console.log("B64:" + buf.toString("base64"));

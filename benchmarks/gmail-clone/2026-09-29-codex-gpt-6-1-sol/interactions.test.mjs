@@ -1,0 +1,73 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+test('mail controller supports organize, search, draft, send and reply workflows', async () => {
+ const elements=new Map(), handlers=new Map(), storage=new Map();
+ class Element {
+  innerHTML=''; className=''; value=''; listeners={};
+  classList={add(){},remove(){}};
+  addEventListener(name,callback){this.listeners[name]=callback;}
+  focus(){} setSelectionRange(){} insertAdjacentHTML(position,html){this.innerHTML+=html;}
+ }
+ globalThis.document={querySelector(selector){if(!elements.has(selector))elements.set(selector,new Element());return elements.get(selector);},addEventListener(name,callback){handlers.set(name,callback);},activeElement:null};
+ globalThis.localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)};
+ globalThis.window={addEventListener(){}};
+ const snapshot=()=>JSON.parse(storage.get('codex-mail-v1')||'[]');
+ const html=()=>elements.get('#app').innerHTML;
+ const click=(attribute,value)=>handlers.get('click')({target:{closest(selector){return selector===`[data-${attribute}]`?{dataset:{[attribute.replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase())]:value}}:null;}}});
+ const input=(selector,value)=>{const element=elements.get(selector);element.value=value;element.listeners.input({target:{value,selectionStart:value.length}});};
+ await import('./app.js');
+ assert.match(html(),/<h1>Codex<\/h1>/);
+ assert.match(html(),/Website refresh/);
+ click('open','mail-0');
+ assert.equal(snapshot().find(item=>item.id==='mail-0').unread,false);
+ assert.match(html(),/conversation-message/);
+ click('star','mail-0');
+ assert.equal(snapshot().find(item=>item.id==='mail-0').starred,false);
+ click('action','archive');
+ assert.equal(snapshot().find(item=>item.id==='mail-0').folder,'All mail');
+ click('action','undo');
+ assert.equal(snapshot().find(item=>item.id==='mail-0').folder,'Inbox');
+ click('open','mail-0');click('action','delete');
+ assert.equal(snapshot().find(item=>item.id==='mail-0').folder,'Trash');
+ click('folder','Trash');click('open','mail-0');click('action','restore');
+ assert.equal(snapshot().find(item=>item.id==='mail-0').folder,'Inbox');
+ click('open','mail-0');click('apply-label','Personal');
+ assert.ok(snapshot().find(item=>item.id==='mail-0').labels.includes('Personal'));
+ click('action','back');
+ input('#search','from:olivia');
+ assert.match(html(),/Search results/);
+ assert.equal((html().match(/class="mail-row /g)||[]).length,1);
+ click('action','clear-search');
+ click('action','compose');
+ input('#compose-to','hello@example.com');input('#compose-subject','A thoughtful hello');input('#compose-body','This is a locally saved draft.');
+ click('action','close-compose');
+ const draft=snapshot().find(item=>item.subject==='A thoughtful hello');
+ assert.equal(draft.folder,'Drafts');
+ click('open',draft.id);click('action','send');
+ assert.equal(snapshot().find(item=>item.id===draft.id).folder,'Sent');
+ assert.equal(snapshot().find(item=>item.id===draft.id).to,'hello@example.com');
+ click('open','mail-0');click('action','reply');
+ input('#compose-body','Love the new direction!');click('action','send');
+ assert.equal(snapshot().find(item=>item.id==='mail-0').messages.at(-1).body,'Love the new direction!');
+ click('action','snooze');click('snooze','Tomorrow morning');
+ assert.equal(snapshot().find(item=>item.id==='mail-0').folder,'Snoozed');
+ click('folder','Inbox');
+ click('category','Updates');
+ assert.match(html(),/Your weekly workspace digest/);
+ click('category','Primary');
+ assert.doesNotMatch(html(),/Your weekly workspace digest/);
+ handlers.get('change')({target:{id:'select-all',checked:true}});
+ click('action','archive');
+ assert.equal(snapshot().filter(item=>item.folder==='Inbox'&&item.category==='Primary').length,0);
+ click('action','undo');
+ assert.ok(snapshot().some(item=>item.folder==='Inbox'&&item.category==='Primary'));
+ click('action','compose');
+ input('#compose-to','not-an-email');input('#compose-subject','Invalid recipient');
+ click('action','send');
+ assert.equal(snapshot().find(item=>item.subject==='Invalid recipient').folder,'Drafts');
+ click('action','discard-compose');
+ assert.ok(!snapshot().some(item=>item.subject==='Invalid recipient'));
+ await new Promise(resolve=>setTimeout(resolve,80));
+ delete globalThis.document;delete globalThis.localStorage;delete globalThis.window;
+});
