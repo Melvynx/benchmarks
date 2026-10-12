@@ -1,4 +1,12 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync,
+} from "node:fs"
 import {
   basename,
   extname,
@@ -17,10 +25,13 @@ import type {
 import { analyzeIntegrityTranscript } from "@/lib/integrity-analysis"
 import { parseModelReview } from "@/lib/model-review"
 import {
-  parsePersistedSessionUsage,
-  parseSessionUsageTranscript,
+  type SessionUsage,
+  type UsageStep,
 } from "@/lib/session-usage"
 import { activeTranscriptDurationMs } from "@/lib/transcript-duration"
+import { continuationSource } from "@/lib/continuations.server"
+import { readTranscriptAccounting } from "./transcript-accounting.server"
+import type { TranscriptAccounting } from "./transcript-accounting.server"
 
 export type BenchmarkEntry = {
   id: string
@@ -42,6 +53,12 @@ export type BenchmarkEntry = {
   promptUrl: string | null
   source: "build" | "standalone"
   url: string
+  costUsd: number | null
+  accounting?: TranscriptAccounting
+  /** ISO timestamp of the model invocation, or the run folder's timestamp. */
+  startedAt: string | null
+  /** WebP preview of the captured screenshot, when one was built. */
+  thumbnail: string | null
 }
 
 const ignored = new Set([
@@ -65,6 +82,8 @@ const mimeTypes: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
+  // Some builders strip TypeScript while retaining the .ts module extension.
+  ".ts": "text/javascript; charset=utf-8",
   ".mp4": "video/mp4",
   ".png": "image/png",
   ".svg": "image/svg+xml",
@@ -118,6 +137,8 @@ function transcriptFiles(directory: string) {
 }
 
 type RunEvidence = {
+  superseded?: boolean
+  currentDirectory?: string
   directory: string
   harness: string
   model: string
@@ -149,14 +170,51 @@ function normalizeRunToken(value: string) {
     .replace(/^-|-$/g, "")
 }
 
+const TRANSCRIPT_HEAD_BYTES = 16 * 1024
+const activeDurationCache = new Map<
+  string,
+  { mtimeMs: number; size: number; durationMs: number | null }
+>()
+
+function readFileHead(path: string, maxBytes: number) {
+  const fd = openSync(path, "r")
+  try {
+    const buffer = Buffer.alloc(maxBytes)
+    const bytes = readSync(fd, buffer, 0, maxBytes, 0)
+    return buffer.toString("utf8", 0, bytes)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function cachedActiveTranscriptDurationMs(path: string) {
+  const stats = statSync(path)
+  const cached = activeDurationCache.get(path)
+  if (
+    cached &&
+    cached.mtimeMs === stats.mtimeMs &&
+    cached.size === stats.size
+  ) {
+    return cached.durationMs
+  }
+  const durationMs = activeTranscriptDurationMs(readFileSync(path, "utf8"))
+  activeDurationCache.set(path, {
+    mtimeMs: stats.mtimeMs,
+    size: stats.size,
+    durationMs,
+  })
+  return durationMs
+}
+
 function recordedCursorModel(directory: string, fallback: string) {
   const transcript = transcriptFiles(directory)[0]
   if (!transcript) return fallback
 
   try {
-    for (const line of readFileSync(join(directory, transcript), "utf8").split(
-      "\n"
-    )) {
+    for (const line of readFileHead(
+      join(directory, transcript),
+      TRANSCRIPT_HEAD_BYTES
+    ).split("\n")) {
       if (!line.trim()) continue
       const event = JSON.parse(line) as {
         type?: unknown
@@ -463,7 +521,7 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
           task.name,
           readFileSync(appPathFile, "utf8").trim()
         )
-        const value = JSON.parse(readFileSync(metadataFile, "utf8")) as {
+        let value = JSON.parse(readFileSync(metadataFile, "utf8")) as {
           effort?: string
           benchmark_id?: string
           harness?: string
@@ -471,8 +529,24 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
           status?: string
           repair_note?: { status?: unknown } | null
           model_timing?: { duration_ms?: unknown } | null
+          app_path?: string
           prompt_public_url?: unknown
           prompt_source?: unknown
+        }
+        let currentDirectory = taskData
+        let latestAppPath = appPath
+        const iterations = join(taskData, "iterations")
+        if (existsSync(iterations)) {
+          const latest = readdirSync(iterations).filter((name) => /^\d+$/.test(name)).sort((a, b) => Number(b) - Number(a))[0]
+          if (latest) {
+            const iteration = join(iterations, latest)
+            currentDirectory = iteration
+            const latestMetadata = join(iteration, "metadata.json")
+            if (existsSync(latestMetadata)) value = { ...value, ...JSON.parse(readFileSync(latestMetadata, "utf8")) }
+            if (value.app_path) latestAppPath = resolveRecordedAppPath(root, task.name, value.app_path)
+            const latestPath = join(iteration, "app-path.txt")
+            if (existsSync(latestPath)) latestAppPath = resolveRecordedAppPath(root, task.name, readFileSync(latestPath, "utf8").trim())
+          }
         }
         if (value.harness && value.model) {
           const prompt = promptIdentity(
@@ -481,6 +555,7 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
           )
           const candidate = {
             directory: taskData,
+            currentDirectory,
             effort: value.effort || "unknown",
             benchmarkId:
               value.benchmark_id ||
@@ -512,7 +587,8 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
             previous && transcriptFiles(previous.directory).length > 0
           )
           if (!previous || candidateHasTranscript || !previousHasTranscript) {
-            metadata.set(appPath, candidate)
+            if (latestAppPath !== appPath) metadata.set(appPath, { ...candidate, superseded: true })
+            metadata.set(latestAppPath, candidate)
           }
         }
       } catch {
@@ -547,8 +623,11 @@ function inferIdentity(result: string) {
   return { harness: "unknown", model: name }
 }
 
+let catalogCache: { root: string; at: number; entries: BenchmarkEntry[] } | null = null
+
 export function getBenchmarkEntries(): BenchmarkEntry[] {
   const root = benchmarkRoot()
+  if (catalogCache?.root === root && Date.now() - catalogCache.at < 10_000) return catalogCache.entries
   const resultsRoot = benchmarkResultsRoot(root)
   const benchmarkIds = benchmarkIdsByRun(root)
   const evidence = metadataByAppPath(root, benchmarkIds)
@@ -585,7 +664,7 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
       const appDirectory = resolve(resultDirectory)
       const date = /^\d{4}-\d{2}-\d{2}/.exec(result.name)?.[0] || "unknown"
       const inferredIdentity = inferIdentity(result.name)
-      const runEvidence =
+      const runEvidence: RunEvidence | undefined =
         evidence.get(appDirectory) ||
         historicalEvidence(
           root,
@@ -594,6 +673,7 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
           inferredIdentity,
           benchmarkIds
         )
+      if (runEvidence?.superseded) continue
       const identity = runEvidence || inferredIdentity
       const hasTranscript = Boolean(
         runEvidence && transcriptFiles(runEvidence.directory).length > 0
@@ -611,8 +691,8 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
         identity.harness === "cursor-agent" && runEvidence
           ? transcriptFiles(runEvidence.directory)
               .map((file) =>
-                activeTranscriptDurationMs(
-                  readFileSync(join(runEvidence.directory, file), "utf8")
+                cachedActiveTranscriptDurationMs(
+                  join(runEvidence.directory, file)
                 )
               )
               .filter((duration): duration is number => duration !== null)
@@ -629,7 +709,10 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
         harness: identity.harness,
         effort: runEvidence?.effort || "unknown",
         status: runEvidence?.status || "unknown",
-        durationMs: activeDuration ?? runEvidence?.durationMs ?? null,
+        durationMs: withIterationDuration(
+          activeDuration ?? runEvidence?.durationMs ?? null,
+          runEvidence?.directory
+        ),
         benchmarkId:
           runEvidence?.benchmarkId ||
           runEvidence?.runId ||
@@ -646,10 +729,56 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
             : null,
         source: outputDirectory === distDirectory ? "build" : "standalone",
         url: `/view/${id.split("/").map(encodeURIComponent).join("/")}/`,
+        costUsd: catalogCostUsd(
+          identity.model,
+          identity.harness,
+          date,
+          runEvidence?.directory
+        ),
+        accounting: runEvidence ? readTranscriptAccounting(runEvidence.directory) : undefined,
+        startedAt: entryStartedAt(runEvidence),
+        thumbnail: existsSync(join(process.cwd(), "public", "thumbs", `${id.replaceAll("/", "__")}.webp`))
+          ? `/thumbs/${id.replaceAll("/", "__")}.webp`
+          : runEvidence &&
+          existsSync(join(runEvidence.directory, "thumbnail.webp"))
+            ? `/api/run-thumb/${encodeURIComponent(runEvidence.runId)}/${encodeURIComponent(basename(runEvidence.directory))}`
+            : null,
       })
     }
   }
 
+  // One source can be recovered more than once; every recovery's ledger already
+  // covers the whole chain, so only the newest stands in for the original.
+  const recovered = new Map<string, BenchmarkEntry>()
+  for (const recovery of [...entries]) {
+    const directory = evidence.get(resolve(root, recovery.appPath))?.directory
+    if (!directory) continue
+    const source = continuationSource(directory)
+    if (!source) continue
+    const sourcePath = resolve(readOptional(join(source, "app-path.txt")).trim())
+    const previous = recovered.get(sourcePath)
+    if (previous) {
+      if (recovery.result > previous.result) {
+        const merged = { ...recovery, id: previous.id, runId: previous.runId, model: previous.model, harness: previous.harness, effort: previous.effort, benchmarkId: previous.benchmarkId, startedAt: previous.startedAt }
+        entries[entries.indexOf(previous)] = merged
+        recovered.set(sourcePath, merged)
+      }
+      entries.splice(entries.indexOf(recovery), 1)
+      continue
+    }
+    const originalIndex = entries.findIndex((entry) => resolve(root, entry.appPath) === sourcePath)
+    if (originalIndex < 0) continue
+    const original = entries[originalIndex]
+    entries[originalIndex] = { ...recovery, id: original.id, runId: original.runId, model: original.model, harness: original.harness, effort: original.effort, benchmarkId: original.benchmarkId, startedAt: original.startedAt }
+    recovered.set(sourcePath, entries[originalIndex])
+    entries.splice(entries.indexOf(recovery), 1)
+  }
+
+  for (const entry of entries) {
+    const name = `${entry.id.replaceAll("/", "__")}.webp`
+    if (existsSync(join(process.cwd(), "public", "thumbs", name))) entry.thumbnail = `/thumbs/${name}`
+  }
+  catalogCache = { root, at: Date.now(), entries }
   return entries.sort(
     (left, right) =>
       right.result.localeCompare(left.result) ||
@@ -657,8 +786,24 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
   )
 }
 
+function entryStartedAt(runEvidence: RunEvidence | undefined) {
+  if (!runEvidence) return null
+  try {
+    const metadata = JSON.parse(
+      readFileSync(join(runEvidence.directory, "metadata.json"), "utf8")
+    ) as { model_timing?: { started_at?: unknown } | null }
+    const startedAt = metadata.model_timing?.started_at
+    if (typeof startedAt === "string" && !Number.isNaN(Date.parse(startedAt)))
+      return new Date(startedAt).toISOString()
+  } catch {
+    // Historical runs can omit metadata; the folder timestamp remains.
+  }
+  const timestamp = runTimestamp(runEvidence.runId)
+  return timestamp ? new Date(timestamp.milliseconds).toISOString() : null
+}
+
 function usesUncompiledDevSources(htmlPath: string) {
-  return /(?:src|href)=["'][^"']*\/?src\//i.test(readFileSync(htmlPath, "utf8"))
+  return /(?:src|href)=["'][^"']*\/?src\/[^"']*\.(?:ts|tsx|jsx)(?:[?][^"']*)?["']/i.test(readFileSync(htmlPath, "utf8"))
 }
 
 function readOptional(file: string) {
@@ -699,20 +844,50 @@ function readTranscriptAnalysis(directory: string): TranscriptAnalysis | null {
   }
 }
 
-function readSessionUsage(directory: string) {
-  try {
-    const metadata = JSON.parse(
-      readFileSync(join(directory, "metadata.json"), "utf8")
-    ) as { session_usage?: unknown }
-    const persisted = parsePersistedSessionUsage(metadata.session_usage)
-    if (persisted) return persisted
-  } catch {
-    // Historical runs predate persisted usage; derive it from their transcript.
-  }
+/**
+ * Sum model invocation time across the complete recorded attempt chain.
+ */
+function withIterationDuration(baseMs: number | null, directory: string | undefined) {
+  if (!directory) return baseMs
+  const ledger = readTranscriptAccounting(directory)
+  return ledger.durationMs ?? baseMs
+}
 
-  return parseSessionUsageTranscript(
-    readOptional(join(directory, "transcript.jsonl"))
-  )
+const CUMULATIVE_COUNTERS = [
+  "input_tokens", "cached_input_tokens", "cache_creation_input_tokens",
+  "processed_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens",
+] as const
+
+function billedUsageSteps(_harness: string, directory: string, _durationMs: number | null): UsageStep[] {
+  return readTranscriptAccounting(directory).transcripts.flatMap((step) => step.usage ? [{
+    label: `${step.model} · ${step.harness} · ${step.transcript}`,
+    durationMs: step.durationMs, usage: step.usage, model: step.model,
+    costUsd: step.costUsd,
+  }] : [])
+}
+
+const SUMMED_COUNTERS = [...CUMULATIVE_COUNTERS, "duration_api_ms", "total_cost_usd"] as const
+
+/** Pricing is linear in tokens, so the summed usage prices to the summed cost. */
+function aggregateUsage(steps: UsageStep[]): SessionUsage | null {
+  if (!steps.length) return null
+  if (steps.length === 1) return steps[0].usage
+  const total = { ...steps[0].usage, model_usage: null } as SessionUsage
+  const record = total as unknown as Record<string, number | null>
+  for (const key of SUMMED_COUNTERS) {
+    const values = steps.map((step) => step.usage[key])
+    record[key] = values.every((value) => typeof value !== "number")
+      ? null
+      : values.reduce<number>(
+          (sum, value) => sum + (typeof value === "number" ? value : 0),
+          0
+        )
+  }
+  return total
+}
+
+function catalogCostUsd(_model: string, _harness: string, _date: string, directory: string | undefined) {
+  return directory ? readTranscriptAccounting(directory).costUsd : null
 }
 
 function readModelReview(directory: string) {
@@ -762,11 +937,15 @@ export function getBenchmarkEvidence(splat: string) {
   if (!task || !result) return null
   const root = benchmarkRoot()
   const benchmarkIds = benchmarkIdsByRun(root)
-  const entry = getBenchmarkEntries().find(
-    (candidate) => candidate.task === task && candidate.result === result
-  )
+  const id = `${task}/${result}`
+  const entries = getBenchmarkEntries()
+  const entry =
+    entries.find((candidate) => candidate.id === id) ||
+    entries.find(
+      (candidate) => candidate.task === task && candidate.result === result
+    )
   if (!entry) return null
-  const evidence =
+  const evidence: RunEvidence | undefined =
     metadataByAppPath(root, benchmarkIds).get(resolve(root, entry.appPath)) ||
     historicalEvidence(root, entry.task, entry.date, entry, benchmarkIds)
 
@@ -791,12 +970,14 @@ export function getBenchmarkEvidence(splat: string) {
       transcriptPaths: [],
       transcriptOriginalBytes: 0,
       sessionUsage: null,
+      usageSteps: [],
     }
   }
 
-  const recordedTranscripts = transcriptFiles(evidence.directory)
+  const currentDirectory = evidence.currentDirectory ?? evidence.directory
+  const recordedTranscripts = transcriptFiles(currentDirectory)
   const rawTranscriptSegments = recordedTranscripts.map((file) =>
-    readOptional(join(evidence.directory, file))
+    readOptional(join(currentDirectory, file))
   )
   const rawTranscript = rawTranscriptSegments.filter(Boolean).join("\n")
   const transcript = readTranscriptForUi(rawTranscript)
@@ -807,29 +988,38 @@ export function getBenchmarkEvidence(splat: string) {
     entry.harness === "cursor-agent" && activeSegments.length
       ? activeSegments.reduce((total, duration) => total + duration, 0)
       : evidence.durationMs
+  const usageSteps = billedUsageSteps(
+    entry.harness,
+    evidence.directory,
+    activeDurationMs
+  )
   return {
     appPath: entry.appPath,
-    command: readOptional(join(evidence.directory, "command.sh")),
-    evidencePath: repositoryPath(root, evidence.directory),
-    final: readOptional(join(evidence.directory, "final.txt")),
+    command: readOptional(join(currentDirectory, "command.sh")),
+    evidencePath: repositoryPath(root, currentDirectory),
+    final: readOptional(join(currentDirectory, "final.txt")),
     effort: evidence.effort,
-    durationMs: evidence.durationMs,
-    activeDurationMs,
+    durationMs: withIterationDuration(evidence.durationMs, evidence.directory),
+    activeDurationMs: withIterationDuration(
+      activeDurationMs,
+      evidence.directory
+    ),
     benchmarkId: evidence.benchmarkId,
     prompt: readOptional(join(evidence.directory, "prompt.md")),
-    resumeCommand: readOptional(join(evidence.directory, "resume-command.sh")),
+    resumeCommand: readOptional(join(currentDirectory, "resume-command.sh")),
     runId: evidence.runId,
-    sessionId: readOptional(join(evidence.directory, "session-id.txt")).trim(),
-    transcriptAnalysis: readTranscriptAnalysis(evidence.directory),
+    sessionId: readOptional(join(currentDirectory, "session-id.txt")).trim(),
+    transcriptAnalysis: readTranscriptAnalysis(currentDirectory),
     integrityAnalysis: analyzeIntegrityTranscript(
       rawTranscript,
       resolve(root, entry.appPath)
     ),
-    modelReview: readModelReview(evidence.directory),
+    modelReview: readModelReview(currentDirectory),
     transcriptPaths: recordedTranscripts.map((file) =>
-      repositoryPath(root, join(evidence.directory, file))
+      repositoryPath(root, join(currentDirectory, file))
     ),
-    sessionUsage: readSessionUsage(evidence.directory),
+    sessionUsage: aggregateUsage(usageSteps),
+    usageSteps,
     ...transcript,
   }
 }
@@ -841,7 +1031,8 @@ function safeJoin(base: string, requestPath: string) {
 
 function rewriteAbsoluteAssetPaths(content: string, prefix: string) {
   return content.replace(
-    /(^|[("'=,\s])\/(?=[A-Za-z0-9_.-])/gm,
+    // Apps built with a basePath already point inside /view/; prefixing them again 404s.
+    /(^|[("'=,\s])\/(?!view\/)(?=[A-Za-z0-9_.-])/gm,
     (_, boundary: string) => `${boundary}${prefix}`
   )
 }
@@ -872,8 +1063,11 @@ function rewriteJavaScriptAbsolutePaths(
 function appendViewerAssetVersion(content: string, version: string) {
   return content.replace(
     /\b(src|href)=(['"])([^'"?#]+\.(?:css|js|mjs))\2/gi,
-    (_, attribute: string, quote: string, assetPath: string) =>
-      `${attribute}=${quote}${assetPath}?viewer=${version}${quote}`
+    (match: string, attribute: string, quote: string, assetPath: string) =>
+      // Next chunks are content-hashed, and its runtime keys loaded chunks by exact URL.
+      assetPath.includes("/_next/")
+        ? match
+        : `${attribute}=${quote}${assetPath}?viewer=${version}${quote}`
   )
 }
 
@@ -882,16 +1076,20 @@ export function getBenchmarkAsset(splat: string) {
     .split("/")
     .filter(Boolean)
     .map(decodeURIComponent)
-  const entry = getBenchmarkEntries().find(
-    (candidate) => candidate.task === task && candidate.result === result
-  )
+  const id = `${task}/${result}`
+  const entries = getBenchmarkEntries()
+  const entry =
+    entries.find((candidate) => candidate.id === id) ||
+    entries.find(
+      (candidate) => candidate.task === task && candidate.result === result
+    )
   if (!entry) return null
 
   const root = benchmarkRoot()
   const outputDirectory =
     entry.source === "build"
-      ? join(benchmarkResultsRoot(root), task, result, "dist")
-      : join(benchmarkResultsRoot(root), task, result)
+      ? join(root, entry.appPath, "dist")
+      : join(root, entry.appPath)
   const requested = assetParts.length ? assetParts.join("/") : "index.html"
   const file = safeJoin(outputDirectory, requested)
   if (!file || !existsSync(file) || !statSync(file).isFile()) return null

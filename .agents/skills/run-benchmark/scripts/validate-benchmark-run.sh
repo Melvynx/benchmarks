@@ -13,6 +13,19 @@ task_count=0
 
 fail() { echo "FAIL: $*" >&2; failures=$((failures + 1)); }
 
+# A fresh-session iteration writes into a suffixed sibling app, so the newest
+# verified iteration is what the run delivered.
+delivered_app_path() {
+  local data_dir="$1" app_path="$2" task="$3" iteration candidate
+  [[ -d "$data_dir/iterations" ]] || { printf '%s\n' "$app_path"; return; }
+  # A glob, not ls: CLICOLOR_FORCE makes ls color piped names.
+  for iteration in $(cd "$data_dir/iterations" && printf '%s\n' * | sort -rn); do
+    candidate="$($JQ_BIN -r 'select(.status == "harness-verified") | .app_path // empty' "$data_dir/iterations/$iteration/metadata.json" 2>/dev/null || true)"
+    if [[ "$candidate" == "$BENCHMARKS_DIR/$task/"* && -d "$candidate" ]]; then printf '%s\n' "$candidate"; return; fi
+  done
+  printf '%s\n' "$app_path"
+}
+
 for run_dir in "$@"; do
   [[ -f "$run_dir/run.json" ]] || { fail "missing $run_dir/run.json"; continue; }
   run_output_name="$($JQ_BIN -r .output_name "$run_dir/run.json")"
@@ -71,7 +84,7 @@ for run_dir in "$@"; do
       if has("session_usage") then
         if .status == "prepared" then
           .session_usage == null
-        elif .session_usage.status == "complete" then
+        elif .session_usage.status == "complete" or .session_usage.status == "partial" then
           .session_usage.schema_version == 1 and
           (.session_usage.source | type) == "string" and
           (.session_usage.processed_input_tokens | type) == "number" and
@@ -95,6 +108,7 @@ for run_dir in "$@"; do
     esac
     [[ -d "$app_path" ]] || fail "missing app directory: $app_path"
     [[ "$(cat "$data_dir/app-path.txt")" == "$recorded_app_path" ]] || fail "app-path.txt mismatch: $data_dir"
+    app_path="$(delivered_app_path "$data_dir" "$app_path" "$task")"
     while IFS= read -r transcript_file; do
       "$JQ_BIN" -e . "$transcript_file" >/dev/null 2>&1 || fail "invalid transcript JSONL: $transcript_file"
     done < <(find "$data_dir" -maxdepth 1 -type f -name 'transcript*.jsonl' | sort)
@@ -143,7 +157,7 @@ PY
       if [[ -f "$app_path/package.json" ]]; then
         [[ ! -f "$app_path/package-lock.json" ]] || fail "npm lockfile present: $app_path"
         [[ ! -f "$app_path/npm-shrinkwrap.json" ]] || fail "npm shrinkwrap present: $app_path"
-        if rg -n --glob '!node_modules/**' --glob '!package-lock.json' --glob '!npm-shrinkwrap.json' '\bnpm(\s|$)' "$app_path" >/dev/null 2>&1; then
+        if rg -n --glob '!node_modules/**' --glob '!**/node_modules/**' --glob '!package-lock.json' --glob '!npm-shrinkwrap.json' --glob '!sandboxes/**' --glob '!**/sandboxes/**' '\bnpm(\s|$)' "$app_path" >/dev/null 2>&1; then
           fail "npm command/reference present in pnpm app: $app_path"
         fi
       fi
@@ -154,7 +168,11 @@ PY
           ascii_downcase
           | gsub("[^a-z0-9]+"; "-")
           | sub("^-"; "")
-          | sub("-$"; "");
+          | sub("-$"; "")
+          | gsub("-(256k|200k|300k|128k|1m)-"; "-")
+          | gsub("-thinking-"; "-")
+          | sub("-thinking$"; "")
+          | gsub("extra-high"; "xhigh");
         select(
           .type=="system"
           and .subtype=="init"

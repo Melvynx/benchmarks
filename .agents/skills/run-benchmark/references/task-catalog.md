@@ -4,15 +4,19 @@ Canonical names are stable CLI identifiers. Historical directories remain unchan
 
 | Task | Type | Seed | Benchmark wording |
 |---|---|---|---|
+| `video-generation` | standalone HTML/MP4 player | empty | Canonical: `https://benchmark.melvynx.dev/prompts/video-generation` |
 | `3d-sponge-bob` | standalone HTML/WebGL | empty | Canonical: `https://benchmark.melvynx.dev/prompts/spongebob-3d-world-threejs` |
+| `3d-car-crash` | standalone HTML/Three.js | empty | Canonical: `https://benchmark.melvynx.dev/prompts/3d-car-crash` |
 | `air-conditioning-understanding` | standalone HTML/Three.js | empty | Canonical: `https://benchmark.melvynx.dev/prompts/threejs-air-conditioning-understanding` |
 | `bouncing-ball` | standalone HTML/canvas | empty | Canonical: `https://benchmark.melvynx.dev/prompts/bouncing-ball-polygon` |
 | `car-crash` | standalone HTML/canvas | empty | Canonical: `https://benchmark.melvynx.dev/prompts/car-brick-wall-crash` |
+| `cowdie` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/cowdie` |
 | `distributed-systems-playground` | standalone HTML/canvas | empty | Canonical: `https://benchmark.melvynx.dev/prompts/distributed-systems-playground` |
 | `earthquake-explorer` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/earthquake-explorer` |
 | `elysian-taste-challenge` | standalone HTML | empty | Canonical: `https://benchmark.melvynx.dev/prompts/elysian-taste-challenge` |
 | `figma-clone` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/mini-figma-clone` |
 | `gmail-clone` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/gmail-clone` |
+| `lava-lamp-3d` | standalone HTML/Three.js | empty | Canonical: `https://benchmark.melvynx.dev/prompts/lava-lamp-3d` |
 | `little-red-riding-hood-film` | standalone HTML/illustrated film | empty | Canonical: `https://benchmark.melvynx.dev/prompts/little-red-riding-hood-film` |
 | `living-identity-system` | standalone HTML/creative coding | empty | Canonical: `https://benchmark.melvynx.dev/prompts/living-identity-system` |
 | `one-button-boss-fight` | standalone HTML/game | empty | Canonical: `https://benchmark.melvynx.dev/prompts/one-button-boss-fight` |

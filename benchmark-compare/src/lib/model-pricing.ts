@@ -88,6 +88,22 @@ function claudeFable51Pricing() {
   } satisfies ModelPricing
 }
 
+function claudeOpus55Pricing() {
+  return {
+    label: "Claude Opus 5.5",
+    sourceLabel: "Anthropic official pricing",
+    sourceUrl: ANTHROPIC_PRICING_URL,
+    rates: {
+      input: 4,
+      cacheRead: 0.2,
+      cacheWrite: 5,
+      cacheWrite1h: 8,
+      output: 20,
+    },
+    note: "$4/$20 input/output with cache reads at 0.05× input ($0.20/MTok). Cache writes use the 5 min rate unless the transcript records a 1 hour TTL split.",
+  } satisfies ModelPricing
+}
+
 function isClaudeFable51(normalized: string) {
   return (
     normalized === "claude-fable-5-1" ||
@@ -144,6 +160,29 @@ function cursorGrokPricing(fast: boolean) {
       output: fast ? 12 : 6,
     },
     note: "Official Cursor on-demand rates. The transcript records aggregate token totals, so this estimate excludes subscription allowances and promotional included usage.",
+  } satisfies ModelPricing
+}
+
+function isGrok47(rawModel: string) {
+  return (
+    rawModel === "grok-4.7" ||
+    rawModel.startsWith("grok-4.7-") ||
+    rawModel.startsWith("cursor-grok-4.7")
+  )
+}
+
+function grok47Pricing(fast: boolean) {
+  return {
+    label: fast ? "Grok 4.7 Fast" : "Grok 4.7",
+    sourceLabel: "xAI official pricing",
+    sourceUrl: XAI_PRICING_URL,
+    rates: {
+      input: fast ? 4 : 2,
+      cacheRead: fast ? 1 : 0.5,
+      cacheWrite: fast ? 4 : 2,
+      output: fast ? 12 : 6,
+    },
+    note: "Official xAI rates below 200k prompt tokens. Fast is Cursor and Grok Build only, at twice those rates. Aggregate transcripts cannot reveal the ≥200k multiplier (standard $4/$1/$12, fast $6/$1.50/$18) or Cursor subscription allowances.",
   } satisfies ModelPricing
 }
 
@@ -210,12 +249,12 @@ function museSparkPricing(normalized: string) {
 }
 
 function normalizePricingModel(model: string) {
-  let normalized = model.toLowerCase().trim()
+  let normalized = model.toLowerCase().trim().replace(/\s+/g, "-")
   if (normalized.startsWith("cursor-")) {
     normalized = normalized.slice("cursor-".length)
   }
   return normalized.replace(
-    /-(?:none|low|medium|high|xhigh|max|ultra)$/,
+    /-(?:none|low|medium|high|xhigh|max|ultra|1m)$/,
     ""
   )
 }
@@ -228,6 +267,9 @@ export function getModelPricing(
   if (rawModel.startsWith("cursor-grok-4.6")) {
     return cursorGrokPricing(rawModel.endsWith("-fast"))
   }
+  if (isGrok47(rawModel)) {
+    return grok47Pricing(rawModel.endsWith("-fast"))
+  }
 
   const normalized = normalizePricingModel(model)
 
@@ -236,7 +278,14 @@ export function getModelPricing(
   if (isGemini37Flash(normalized))
     return geminiFlashPricing("Gemini 3.7 Flash", usageDate)
   if (isMuseSparkStandard(normalized)) return museSparkPricing(normalized)
+  if (normalized === "gpt-6.1-sol" || normalized === "gpt-6-1-sol") {
+    const pricing = openAiPricing("GPT-6.1 Sol", 2, 10)
+    pricing.rates.cacheRead = 0.1
+    return pricing
+  }
   if (normalized === "gpt-6-astra") return openAiPricing("GPT-6 Astra", 10, 50)
+  if (normalized === "gpt-6-sol") return openAiPricing("GPT-6 Sol", 2, 10)
+  if (normalized === "gpt-6-luna") return openAiPricing("GPT-6 Luna", 0.1, 0.5)
   if (normalized === "gpt-5.6-sol") return openAiPricing("GPT-5.6 Sol", 5, 30)
   if (normalized === "gpt-5.6-terra")
     return openAiPricing("GPT-5.6 Terra", 2.5, 15)
@@ -254,10 +303,19 @@ export function getModelPricing(
       introductory ? 10 : 15
     )
   }
+  if (/^claude-sonnet-5[.-]5$/.test(normalized)) return anthropicPricing("Claude Sonnet 5.5", 2, 10)
+  if (/^claude-haiku-5[.-]5(?:-|$)/.test(normalized)) {
+    const pricing = anthropicPricing("Claude Haiku 5.5", 0.1, 0.5)
+    pricing.rates.cacheRead = 0.01
+    pricing.note =
+      "Rates for prompts up to 100k tokens. Requests over 100k bill 5× ($0.50/$2.50), which aggregate transcripts cannot reveal, so long sessions are a floor."
+    return pricing
+  }
   if (normalized === "opus" || normalized === "claude-opus-4.8")
     return anthropicPricing("Claude Opus 4.8", 5, 25)
   if (normalized === "claude-opus-5")
     return anthropicPricing("Claude Opus 5", 5, 25)
+  if (/^claude-opus-5[.-]5(?:-|$)/.test(normalized)) return claudeOpus55Pricing()
   if (
     normalized === "k3" ||
     normalized === "k3[1m]" ||

@@ -15,6 +15,7 @@ import { Route as RunsIndexRouteImport } from './routes/runs/index'
 import { Route as PromptsIndexRouteImport } from './routes/prompts/index'
 import { Route as ViewSplatRouteImport } from './routes/view/$'
 import { Route as RunsIdRouteImport } from './routes/runs/$id'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiCatalogRouteImport } from './routes/api/catalog'
 import { Route as PromptsNameIndexRouteImport } from './routes/prompts/$name/index'
 import { Route as ApiRunsIndexRouteImport } from './routes/api/runs/index'
@@ -51,6 +52,11 @@ const ViewSplatRoute = ViewSplatRouteImport.update({
 const RunsIdRoute = RunsIdRouteImport.update({
   id: '/runs/$id',
   path: '/runs/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCatalogRoute = ApiCatalogRouteImport.update({
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/run': typeof RunRoute
   '/api/catalog': typeof ApiCatalogRoute
+  '/api/health': typeof ApiHealthRoute
   '/runs/$id': typeof RunsIdRoute
   '/view/$': typeof ViewSplatRoute
   '/prompts/': typeof PromptsIndexRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/run': typeof RunRoute
   '/api/catalog': typeof ApiCatalogRoute
+  '/api/health': typeof ApiHealthRoute
   '/runs/$id': typeof RunsIdRoute
   '/view/$': typeof ViewSplatRoute
   '/prompts': typeof PromptsIndexRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/run': typeof RunRoute
   '/api/catalog': typeof ApiCatalogRoute
+  '/api/health': typeof ApiHealthRoute
   '/runs/$id': typeof RunsIdRoute
   '/view/$': typeof ViewSplatRoute
   '/prompts/': typeof PromptsIndexRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/'
     | '/run'
     | '/api/catalog'
+    | '/api/health'
     | '/runs/$id'
     | '/view/$'
     | '/prompts/'
@@ -156,6 +166,7 @@ export interface FileRouteTypes {
     | '/'
     | '/run'
     | '/api/catalog'
+    | '/api/health'
     | '/runs/$id'
     | '/view/$'
     | '/prompts'
@@ -171,6 +182,7 @@ export interface FileRouteTypes {
     | '/'
     | '/run'
     | '/api/catalog'
+    | '/api/health'
     | '/runs/$id'
     | '/view/$'
     | '/prompts/'
@@ -187,6 +199,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   RunRoute: typeof RunRoute
   ApiCatalogRoute: typeof ApiCatalogRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   RunsIdRoute: typeof RunsIdRoute
   ViewSplatRoute: typeof ViewSplatRoute
   PromptsIndexRoute: typeof PromptsIndexRoute
@@ -241,6 +254,13 @@ declare module '@tanstack/react-router' {
       path: '/runs/$id'
       fullPath: '/runs/$id'
       preLoaderRoute: typeof RunsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/catalog': {
@@ -299,6 +319,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   RunRoute: RunRoute,
   ApiCatalogRoute: ApiCatalogRoute,
+  ApiHealthRoute: ApiHealthRoute,
   RunsIdRoute: RunsIdRoute,
   ViewSplatRoute: ViewSplatRoute,
   PromptsIndexRoute: PromptsIndexRoute,

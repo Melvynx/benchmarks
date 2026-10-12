@@ -82,6 +82,25 @@ function servedRoot(appPath) {
   return existsSync(join(dist, "index.html")) ? dist : appPath
 }
 
+/**
+ * A fresh-session iteration writes into a suffixed sibling app, so the newest
+ * verified iteration is what the run delivered.
+ */
+function deliveredAppPath(dataDirectory, metadata) {
+  const iterationsRoot = join(dataDirectory, "iterations")
+  if (!existsSync(iterationsRoot)) return metadata.app_path
+  const iterations = readdirSync(iterationsRoot)
+    .filter((name) => /^\d+$/.test(name))
+    .sort((left, right) => Number(right) - Number(left))
+  for (const iteration of iterations) {
+    const path = join(iterationsRoot, iteration, "metadata.json")
+    if (!existsSync(path)) continue
+    const { status, app_path: appPath } = readJson(path)
+    if (status === "harness-verified" && appPath && existsSync(appPath)) return appPath
+  }
+  return metadata.app_path
+}
+
 async function availablePort(start) {
   for (let port = start; port < start + 500; port += 1) {
     const server = createServer()
@@ -190,7 +209,16 @@ function cliEvidenceHtml(metadata, finalText) {
 </html>`
 }
 
-const browser = await chromium.launch({ headless: true })
+// Headless Chromium has no GPU; without SwiftShader every WebGL task captures black.
+const browser = await chromium.launch({
+  headless: true,
+  args: [
+    "--use-angle=swiftshader",
+    "--enable-unsafe-swiftshader",
+    "--ignore-gpu-blocklist",
+    "--autoplay-policy=no-user-gesture-required",
+  ],
+})
 let standalonePort = 9600
 
 try {
@@ -220,7 +248,9 @@ try {
           const finalText = readFileSync(join(dataDirectory, "final.txt"), "utf8")
           await page.setContent(cliEvidenceHtml(metadata, finalText))
         } else {
-          const appPath = servedRoot(resolve(metadata.app_path))
+          const deliveredPath = resolve(deliveredAppPath(dataDirectory, metadata))
+          const appPath =
+            metadata.type === "standalone-html" ? servedRoot(deliveredPath) : deliveredPath
           let candidates
           if (metadata.type === "standalone-html") {
             capturePort = await availablePort(standalonePort)

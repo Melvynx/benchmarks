@@ -1,3 +1,4 @@
+import type { TranscriptAccounting } from "@/lib/transcript-accounting.server"
 import { ExternalLinkIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +12,7 @@ import { estimateModelCost, getModelPricing } from "@/lib/model-pricing"
 import {
   usageDurationLabel,
   type SessionUsage,
+  type UsageStep,
 } from "@/lib/session-usage"
 import { cn } from "@/lib/utils"
 
@@ -77,6 +79,8 @@ export function EvidenceOverview({
   activeDuration,
   wallDuration,
   usage,
+  usageSteps,
+  accounting,
   analysis,
   integrity,
   review,
@@ -88,6 +92,8 @@ export function EvidenceOverview({
   activeDuration: string
   wallDuration: string
   usage: SessionUsage | null
+  usageSteps: UsageStep[]
+  accounting?: TranscriptAccounting
   analysis: TranscriptAnalysis | null
   integrity: IntegrityAnalysis | null
   review: ModelReviewData | null
@@ -107,7 +113,16 @@ export function EvidenceOverview({
     usage?.cached_input_tokens ?? null,
     usage?.processed_input_tokens ?? null
   )
-  const pricedLines = estimate?.lines.filter((line) => line.tokens > 0) ?? []
+  const approximateSteps = accounting?.transcripts.filter((step) => step.costKind === "approximate").length ?? 0
+  const harnessClaims = accounting?.transcripts.flatMap((step) => step.harnessCostUsd === null ? [] : [step.harnessCostUsd]) ?? []
+  const pricedLines = (accounting?.transcripts.length ?? 0) > 1 ? [] : estimate?.lines.filter((line) => line.tokens > 0) ?? []
+  const pricedSteps = accounting ? accounting.transcripts.map((step) => ({ label: `${step.model} · ${step.harness} · ${step.transcript}`, durationMs: step.durationMs, costUsd: step.costUsd, approximate: step.costKind === "approximate", note: step.note })) :
+    usageSteps.length > 1
+      ? usageSteps.map((step) => ({
+          ...step,
+          costUsd: step.costUsd ?? estimateModelCost(step.model ?? model, date, step.usage)?.totalUsd ?? null,
+        }))
+      : []
   const activeTime = activeDuration.replace(/^Time:\s*/, "")
   const wallTime = wallDuration.replace(/^Time:\s*/, "")
   const apiTime = elapsedLabel(usage?.duration_api_ms)
@@ -123,7 +138,11 @@ export function EvidenceOverview({
             </Badge>
             <Badge variant="outline">{model}</Badge>
             {usage?.status === "partial" && (
-              <Badge variant="outline">Recovered usage · lower bound</Badge>
+              <Badge variant="outline">
+                {usage.source === "user-prompt.estimated_tokens"
+                  ? "Prompt-estimated usage · lower bound"
+                  : "Recovered usage · lower bound"}
+              </Badge>
             )}
           </div>
           <dl className="ml-auto flex items-baseline gap-4 font-mono tabular-nums">
@@ -147,9 +166,9 @@ export function EvidenceOverview({
               </div>
             )}
           </dl>
-          {apiTime && apiTimeLabel === "Cursor session" && (
+          {wallTime && (
             <p className="basis-full text-right text-[11px] text-muted-foreground">
-              Wall time {wallTime} · background-process waits excluded from active time
+              Wall time {wallTime}
             </p>
           )}
         </div>
@@ -165,23 +184,34 @@ export function EvidenceOverview({
                   id={`overview-cost-${sectionId}`}
                   className="text-sm font-semibold text-balance"
                 >
-                  Estimated API cost
+                  Known cost subtotal
                 </h3>
                 <p className="mt-0.5 text-xs text-pretty text-muted-foreground">
-                  Official base rates applied to this run
+                  {accounting ? `${accounting.transcripts.length} transcripts · ${accounting.unknownCosts} unknown costs · ${accounting.partialCosts} partial. API list-rate estimates${approximateSteps ? `; ≈ marks ${approximateSteps === 1 ? "a Cursor attempt" : `${approximateSteps} Cursor attempts`} approximated from its transcript` : ""}.` : "Official base rates applied to this run"}
                 </p>
               </div>
               <p className="shrink-0 font-mono text-2xl font-semibold tabular-nums">
-                {costLabel(estimate?.totalUsd ?? null)}
+                {costLabel(accounting ? accounting.costUsd : estimate?.totalUsd ?? null)}
               </p>
             </div>
 
-            {estimate ? (
+            {harnessClaims.length > 0 ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Claude Code claimed <span className="font-mono text-foreground">{costLabel(harnessClaims.reduce((sum, value) => sum + value, 0))}</span> at an unknown rate (Sonnet billed as Opus); re-priced from its tokens.
+              </p>
+            ) : usage?.total_cost_usd != null && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Harness-reported cost: <span className="font-mono text-foreground">{costLabel(usage.total_cost_usd)}</span>
+              </p>
+            )}
+
+            {estimate || accounting ? (
               <>
                 {usage?.status === "partial" && (
                   <p className="mt-4 text-xs text-amber-500">
-                    Recovered from completed API calls. A response that was still
-                    in flight when the run stopped may not be included.
+                    {usage.source === "user-prompt.estimated_tokens"
+                      ? "Input estimated from the submitted prompt (~4 characters/token). The harness omitted token usage; output is treated as 0."
+                      : "Recovered from completed API calls. A response that was still in flight when the run stopped may not be included."}
                   </p>
                 )}
                 <dl className="mt-4 divide-y border-y text-xs">
@@ -202,7 +232,30 @@ export function EvidenceOverview({
                     </div>
                   ))}
                 </dl>
-                <div className="mt-3 flex flex-wrap items-start justify-between gap-2 text-[11px] text-muted-foreground">
+                {pricedSteps.length > 0 && (
+                  <dl className="mt-3 divide-y rounded-lg border text-xs">
+                    {pricedSteps.map((step) => (
+                      <div
+                        key={step.label}
+                        className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-3 px-3 py-1.5"
+                      >
+                        <dt className="truncate text-muted-foreground" title={"note" in step ? step.note : undefined}>
+                          {step.label}
+                        </dt>
+                        <dd className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                          {elapsedLabel(step.durationMs) ?? "—"}
+                        </dd>
+                        <dd
+                          className={`min-w-16 text-right font-mono font-medium tabular-nums${"approximate" in step && step.approximate ? " text-amber-300" : ""}`}
+                          title={"note" in step ? step.note : undefined}
+                        >
+                          {"approximate" in step && step.approximate ? "≈" : ""}{costLabel(step.costUsd)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {estimate && pricedSteps.length < 2 && <div className="mt-3 flex flex-wrap items-start justify-between gap-2 text-[11px] text-muted-foreground">
                   <div className="max-w-[52ch] space-y-1 text-pretty">
                     <p>
                       Rates per MTok: input {costLabel(pricing?.rates.input ?? null)},
@@ -224,7 +277,7 @@ export function EvidenceOverview({
                     Official rates
                     <ExternalLinkIcon className="size-3" aria-hidden="true" />
                   </a>
-                </div>
+                </div>}
               </>
             ) : pricing ? (
               <div className="mt-4 space-y-3 text-sm text-muted-foreground">

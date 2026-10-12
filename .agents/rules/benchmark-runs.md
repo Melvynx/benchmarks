@@ -30,6 +30,7 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 - Standalone HTML tasks have no port and must open directly from an HTML file.
 - Assign non-standalone GPT apps ports `9100-9199`, Claude apps `9200-9299`, and other apps `9300-9399`.
 - Allocate ports atomically and skip ports already locked, listening, or recorded in `runs/`; concurrency must never produce duplicate ports.
+- Never allocate outside the harness family's 100-port range. Once every port in that range has been used, reuse a port that is not listening and not recorded by a live run (a run directory without `run.json`), claimed atomically under `.benchmark-port-locks/<port>/<benchmark_id>`.
 - Add this sentence to every non-standalone app prompt: `During setup, configure your app and package scripts to use port <port>, then use that port for runtime verification.`
 - Add this sentence to every generated task prompt: `Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.`
 - Add this sentence to every non-CLI generated task prompt: `Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title.`
@@ -54,7 +55,7 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 
 ## Harness commands
 
-- Codex: `codex exec --model <model> --json --sandbox workspace-write --skip-git-repo-check --output-last-message <final> <prompt>`; resume with `codex exec resume <session-id>`.
+- Codex: `env -u NODE_USE_SYSTEM_CA codex exec --model <model> --json --sandbox workspace-write --skip-git-repo-check --output-last-message <final> <prompt>`; resume with `env -u NODE_USE_SYSTEM_CA codex exec resume <session-id>`. The workspace-write sandbox denies Keychain access, so an inherited `NODE_USE_SYSTEM_CA=1` makes `pnpm` and `node` crash with `SecItemCopyMatching failed -50` (exit 139).
 - Claudex: `ccx -p --model <gpt-5.6-sol|gpt-5.6-terra|gpt-5.6-luna> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `ccx --resume <session-id>`.
 - Claude: `cc -p --model <claude-model> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `cc --resume <session-id>`. Never use `cc` for GPT models.
 - Kimi through Claude Code: `cckimi -p --model <kimi-model> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `cckimi --resume <session-id>`.

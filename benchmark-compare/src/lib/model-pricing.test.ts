@@ -98,6 +98,22 @@ describe("model pricing", () => {
     expect(estimate?.totalUsd).toBe(73.5)
   })
 
+  it("prices every Cursor Haiku 5.5 alias at official rates", () => {
+    for (const model of [
+      "claude-haiku-5-5-thinking-medium",
+      "claude-haiku-5-5-thinking-xhigh",
+      "claude-haiku-5.5-300k-extra-high",
+    ]) {
+      expect(getModelPricing(model, "2026-10-09")?.rates).toMatchObject({
+        input: 0.1,
+        cacheRead: 0.01,
+        cacheWrite: 0.125,
+        cacheWrite1h: 0.2,
+        output: 0.5,
+      })
+    }
+  })
+
   it("uses Sonnet 5 introductory pricing only through August 2026", () => {
     expect(
       getModelPricing("claude-sonnet-5", "2026-08-31")?.rates
@@ -165,6 +181,22 @@ describe("model pricing", () => {
     )
     expect(getModelPricing("cursor-grok-4.6-high", "2026-08-13")?.sourceUrl).toBe(
       "https://cursor.com/grok"
+    )
+    expect(getModelPricing("grok-4.7-high", "2026-09-22")?.rates).toEqual({
+      input: 2,
+      cacheRead: 0.5,
+      cacheWrite: 2,
+      output: 6,
+    })
+    expect(getModelPricing("grok-4.7-high-fast", "2026-09-22")?.rates).toEqual({
+      input: 4,
+      cacheRead: 1,
+      cacheWrite: 4,
+      output: 12,
+    })
+    expect(getModelPricing("grok-4.7-high", "2026-09-22")?.label).toBe("Grok 4.7")
+    expect(getModelPricing("grok-4.7-high", "2026-09-22")?.sourceUrl).toBe(
+      "https://docs.x.ai/developers/pricing"
     )
   })
 
@@ -378,6 +410,12 @@ describe("model pricing", () => {
     expect(getModelPricing("muse-spark-1.3-high", "2026-09-09")?.label).toBe(
       "Muse Spark 1.3"
     )
+    expect(getModelPricing("muse-spark-1.3-1m", "2026-09-09")?.label).toBe(
+      "Muse Spark 1.3"
+    )
+    expect(getModelPricing("Muse Spark 1.3 1M", "2026-09-09")?.label).toBe(
+      "Muse Spark 1.3"
+    )
     expect(getModelPricing("muse-spark-1.3-high", "2026-09-09")?.sourceUrl).toBe(
       "https://ai.developer.meta.com/docs/pricing-rate-limits"
     )
@@ -404,6 +442,19 @@ describe("model pricing", () => {
 
     expect(estimate?.pricing.label).toBe("Muse Spark 1.3")
     expect(estimate?.totalUsd).toBeCloseTo(0.57, 6)
+    expect(
+      estimateModelCost(
+        "muse-spark-1.3-high",
+        "2026-09-09",
+        usage({
+          status: "partial",
+          input_tokens: 1_681,
+          processed_input_tokens: 1_681,
+          cached_input_tokens: 0,
+          output_tokens: 0,
+        })
+      )?.totalUsd
+    ).toBeCloseTo(0.002101, 6)
     expect(
       estimateModelCost(
         "muse-spark-1.3-high",

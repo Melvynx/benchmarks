@@ -10,7 +10,7 @@ import {
 } from "node:fs"
 import { join, normalize, resolve, sep } from "node:path"
 
-import { benchmarkRoot } from "@/lib/benchmarks.server"
+import { benchmarkRoot, getBenchmarkEntries } from "@/lib/benchmarks.server"
 import type {
   RunActivity,
   RunCover,
@@ -275,7 +275,24 @@ function scanRuns(root: string, now: number): RawRun[] {
     if (tasks.length) runs.push({ runId: entry.name, runDir, createdAtMs, benchmarkId, tasks })
   }
 
-  return runs
+  // The catalog resolves continuations and fresh iterations to one current app.
+  // Use that identity for the current group instead of counting old launchers.
+  const marker = readJson<{ benchmark_id?: string }>(join(root, ".benchmark-live", "current.json"))
+  if (marker?.benchmark_id) {
+    const current = new Map(getBenchmarkEntries().filter((entry) => entry.benchmarkId === marker.benchmark_id).map((entry) => [`${entry.runId}/${entry.task}`, entry]))
+    for (const run of runs) {
+      if (run.benchmarkId !== marker.benchmark_id) continue
+      run.tasks = run.tasks.flatMap((task) => {
+        const entry = current.get(task.key)
+        if (!entry) return []
+        const latest = [...(entry.accounting?.transcripts ?? [])].sort((a, b) => (b.completedAt ?? b.startedAt ?? "").localeCompare(a.completedAt ?? a.startedAt ?? ""))[0]
+        const transcript = latest ? join(root, "runs", latest.transcript) : task.transcript
+        const transcriptStat = existsSync(transcript) ? statSync(transcript) : null
+        return [{ ...task, model: entry.model, effort: entry.effort, done: ["harness-verified", "verified", "terminated"].includes(entry.status), stale: false, verification: entry.status, appPath: resolve(root, entry.appPath), durationMs: entry.durationMs ?? task.durationMs, transcript, transcriptBytes: entry.accounting?.transcripts.reduce((sum, item) => sum + item.bytes, 0) ?? task.transcriptBytes, transcriptMtimeMs: transcriptStat?.mtimeMs ?? task.transcriptMtimeMs, thumbnail: entry.thumbnail }]
+      })
+    }
+  }
+  return runs.filter((run) => run.tasks.length)
 }
 
 /**
@@ -359,7 +376,7 @@ function summarize(id: string, runs: RawRun[]): RunGroupSummary {
     total: tasks.length,
     done: done.length,
     failed: done.filter(
-      (task) => task.verification && task.verification !== "harness-verified"
+      (task) => task.verification && !["harness-verified", "verified", "terminated"].includes(task.verification)
     ).length,
     live: tasks.some((task) => !task.done && !task.stale),
     transcriptBytes: tasks.reduce((sum, task) => sum + task.transcriptBytes, 0),

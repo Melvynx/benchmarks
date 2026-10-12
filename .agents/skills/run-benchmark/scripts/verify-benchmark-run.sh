@@ -7,6 +7,9 @@ BENCHMARKS_DIR="$ROOT/benchmarks"
 JQ_BIN="$(type -P jq)"
 [[ $# -gt 0 ]] || { echo "Usage: $0 <run-dir>..." >&2; exit 2; }
 mkdir -p "$ROOT/.benchmark-verification-port-locks"
+# Apps pin the pnpm version the model had; the verifier's corepack pnpm may
+# differ and would otherwise refuse to run the app's scripts at all.
+export npm_config_pm_on_fail=ignore pnpm_config_pm_on_fail=ignore
 # Background jobs need their own process group so the whole dev-server tree dies
 # with them; killing the pnpm wrapper alone leaves the bundler holding the port.
 set -m
@@ -25,6 +28,19 @@ stop_server() {
   wait "$pid" 2>/dev/null || true
 }
 
+# A fresh-session iteration writes into a suffixed sibling app, so the newest
+# verified iteration is what the run delivered.
+delivered_app_path() {
+  local data_dir="$1" app_path="$2" task="$3" iteration candidate
+  [[ -d "$data_dir/iterations" ]] || { printf '%s\n' "$app_path"; return; }
+  # A glob, not ls: CLICOLOR_FORCE makes ls color piped names.
+  for iteration in $(cd "$data_dir/iterations" && printf '%s\n' * | sort -rn); do
+    candidate="$($JQ_BIN -r 'select(.status == "harness-verified") | .app_path // empty' "$data_dir/iterations/$iteration/metadata.json" 2>/dev/null || true)"
+    if [[ "$candidate" == "$BENCHMARKS_DIR/$task/"* && -d "$candidate" ]]; then printf '%s\n' "$candidate"; return; fi
+  done
+  printf '%s\n' "$app_path"
+}
+
 for run_dir in "$@"; do
   [[ -f "$run_dir/run.json" ]] || { echo "Missing run.json: $run_dir" >&2; exit 1; }
   while IFS= read -r data_dir; do
@@ -38,6 +54,7 @@ for run_dir in "$@"; do
       "$app_path"|*/"$task"/"$app_name") ;;
       *) echo "Invalid recorded app path: $recorded_app_path" >&2; exit 1 ;;
     esac
+    app_path="$(delivered_app_path "$data_dir" "$app_path" "$task")"
     type="$($JQ_BIN -r .type "$metadata")"
     port="$($JQ_BIN -r '.port // empty' "$metadata")"
     [[ -d "$app_path" ]] || { echo "Missing app: $app_path" >&2; exit 1; }
@@ -62,9 +79,20 @@ for run_dir in "$@"; do
       build_ok=true
     elif [[ "$type" == web-app || "$type" == cloned-web-app ]]; then
       [[ -f "$app_path/package.json" ]] || { echo "Missing package.json: $app_path" >&2; exit 1; }
-      (cd "$app_path" && PORT="$port" pnpm run build) > "$data_dir/build.log" 2>&1 && build_ok=true
+      # Apps live below the repository's pnpm workspace but are standalone
+      # projects, and a sandboxed harness may have left dependencies uninstalled.
+      if "$JQ_BIN" -e '((.dependencies // {}) + (.devDependencies // {})) | length > 0' "$app_path/package.json" >/dev/null; then
+        (cd "$app_path" && pnpm --ignore-workspace install --prefer-offline) > "$data_dir/install.log" 2>&1 ||
+          { echo "Install failed: $app_path (see $data_dir/install.log)" >&2; exit 1; }
+      fi
+      if "$JQ_BIN" -e '.scripts.build // empty' "$app_path/package.json" >/dev/null; then
+        (cd "$app_path" && PORT="$port" pnpm --ignore-workspace run build) > "$data_dir/build.log" 2>&1 && build_ok=true
+      else
+        echo "No build script declared; nothing to build." > "$data_dir/build.log"
+        build_ok=true
+      fi
       [[ "$build_ok" == true ]] || { echo "Build failed: $app_path (see $data_dir/build.log)" >&2; exit 1; }
-      (cd "$app_path" && PORT="$port" pnpm run dev) > "$data_dir/runtime.log" 2>&1 &
+      (cd "$app_path" && PORT="$port" pnpm --ignore-workspace run dev) > "$data_dir/runtime.log" 2>&1 &
       server_pid=$!
       trap 'stop_server "$server_pid"' EXIT
       # A cold dependency re-optimization can outlast a short probe window.

@@ -24,8 +24,8 @@ usage() {
 
 task_type() {
   case "$1" in
-    3d-sponge-bob|air-conditioning-understanding|bouncing-ball|car-crash|distributed-systems-playground|elysian-taste-challenge|little-red-riding-hood-film|living-identity-system|one-button-boss-fight|orbital-rescue-digital-twin|pentest|rocket-launch|the-last-signal) echo standalone-html ;;
-    earthquake-explorer|figma-clone|gmail-clone|simulation-life|timezone-checker|youtube-thumbnail) echo web-app ;;
+    video-generation|3d-sponge-bob|3d-car-crash|air-conditioning-understanding|bouncing-ball|car-crash|distributed-systems-playground|elysian-taste-challenge|lava-lamp-3d|little-red-riding-hood-film|living-identity-system|one-button-boss-fight|orbital-rescue-digital-twin|pentest|rocket-launch|the-last-signal) echo standalone-html ;;
+    cowdie|earthquake-explorer|figma-clone|gmail-clone|simulation-life|timezone-checker|youtube-thumbnail) echo web-app ;;
     saveit-now-landing|thumbfast) echo cloned-web-app ;;
     openclaw-benchmark) echo cli ;;
     *) return 1 ;;
@@ -34,15 +34,19 @@ task_type() {
 
 task_wording() {
   case "$1" in
+    video-generation) echo "Create a Lumail marketing launch MP4 with a minimal HTML player." ;;
     3d-sponge-bob) echo "Build an interactive 3D Bikini Bottom / SpongeBob-inspired scene as a standalone HTML experience." ;;
+    3d-car-crash) echo "Build a cinematic full-3D car crash on a short track, with breakable car parts, a brick wall, and real 3D physics, as one HTML file." ;;
     air-conditioning-understanding) echo "Build an interactive Three.js explainer for split-system and monoblock reversible air conditioning." ;;
     bouncing-ball) echo "Build a polished physics-based bouncing-ball simulation as a standalone HTML experience." ;;
     car-crash) echo "Build a cinematic interactive car-crash simulation as a standalone HTML experience." ;;
+    cowdie) echo "Build a polished 3D virtual pet that users can feed and care for like a Tamagotchi, with full creative freedom over features and style." ;;
     distributed-systems-playground) echo "Build a deterministic visual distributed-systems playground as a standalone HTML experience." ;;
     earthquake-explorer) echo "Build a live-data earthquake exploration product using the canonical USGS-backed product brief." ;;
     elysian-taste-challenge) echo "Create an unforgettable landing page for the fictional premium brand Elysian." ;;
     figma-clone) echo "Build a polished Figma-inspired collaborative design editor with practical editing interactions." ;;
     gmail-clone) echo "Build the strongest Gmail-inspired email application you can, with polished, functional inbox and message workflows." ;;
+    lava-lamp-3d) echo "Build a photoreal full-3D lava lamp with merging, heat-driven wax, refractive glass, and real glow lighting, as one HTML file." ;;
     little-red-riding-hood-film) echo "Create a complete illustrated browser film of Little Red Riding Hood with deterministic autoplay and cinematic continuity." ;;
     living-identity-system) echo "Create a living visual identity expressed as a poster, kinetic title sequence, and interactive generative instrument." ;;
     one-button-boss-fight) echo "Create a polished one-screen boss fight controlled by exactly one gameplay action." ;;
@@ -62,15 +66,19 @@ task_wording() {
 
 prompt_slug() {
   case "$1" in
+    video-generation) echo video-generation ;;
     3d-sponge-bob) echo spongebob-3d-world-threejs ;;
+    3d-car-crash) echo 3d-car-crash ;;
     air-conditioning-understanding) echo threejs-air-conditioning-understanding ;;
     bouncing-ball) echo bouncing-ball-polygon ;;
     car-crash) echo car-brick-wall-crash ;;
+    cowdie) echo cowdie ;;
     distributed-systems-playground) echo distributed-systems-playground ;;
     earthquake-explorer) echo earthquake-explorer ;;
     elysian-taste-challenge) echo elysian-taste-challenge ;;
     figma-clone) echo mini-figma-clone ;;
     gmail-clone) echo gmail-clone ;;
+    lava-lamp-3d) echo lava-lamp-3d ;;
     little-red-riding-hood-film) echo little-red-riding-hood-film ;;
     living-identity-system) echo living-identity-system ;;
     one-button-boss-fight) echo one-button-boss-fight ;;
@@ -124,8 +132,42 @@ print(time.time_ns() // 1_000_000)
 PY
 }
 
+port_listening() {
+  lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+port_recorded_runs() {
+  rg -l "\"port\"[[:space:]]*:[[:space:]]*$1\b" "$ROOT/runs" -g 'ports.json' || true
+}
+
+# run.json is written only when a run finishes, so its absence marks a live session.
+port_in_active_run() {
+  local ports_file
+  while IFS= read -r ports_file; do
+    [[ -n "$ports_file" && ! -e "$(dirname "$ports_file")/run.json" ]] && return 0
+  done < <(port_recorded_runs "$1")
+  return 1
+}
+
+claim_port() {
+  local port
+  for ((port = port_base + web_index; port <= port_base + 99; port++)); do
+    port_listening "$port" && continue
+    [[ -n "$(port_recorded_runs "$port")" ]] && continue
+    mkdir "$ROOT/.benchmark-port-locks/$port" 2>/dev/null && { echo "$port"; return 0; }
+  done
+  # Historical runs keep their ports forever; once the range is spent, reuse a port no live session holds.
+  for ((port = port_base; port <= port_base + 99; port++)); do
+    port_listening "$port" && continue
+    port_in_active_run "$port" && continue
+    mkdir -p "$ROOT/.benchmark-port-locks/$port"
+    mkdir "$ROOT/.benchmark-port-locks/$port/$BENCHMARK_ID" 2>/dev/null && { echo "$port"; return 0; }
+  done
+  return 1
+}
+
 list_tasks() {
-  for task in 3d-sponge-bob air-conditioning-understanding bouncing-ball car-crash distributed-systems-playground earthquake-explorer elysian-taste-challenge figma-clone gmail-clone little-red-riding-hood-film living-identity-system one-button-boss-fight orbital-rescue-digital-twin pentest rocket-launch saveit-now-landing simulation-life thumbfast the-last-signal timezone-checker youtube-thumbnail openclaw-benchmark; do
+  for task in video-generation 3d-sponge-bob 3d-car-crash air-conditioning-understanding bouncing-ball car-crash cowdie distributed-systems-playground earthquake-explorer elysian-taste-challenge figma-clone gmail-clone lava-lamp-3d little-red-riding-hood-film living-identity-system one-button-boss-fight orbital-rescue-digital-twin pentest rocket-launch saveit-now-landing simulation-life thumbfast the-last-signal timezone-checker youtube-thumbnail openclaw-benchmark; do
     printf '%-20s %s\n' "$task" "$(task_type "$task")"
   done
 }
@@ -157,6 +199,14 @@ valid_benchmark_id "$BENCHMARK_ID" || {
 [[ -n "$MODEL" && -n "$HARNESS" ]] || { usage >&2; exit 2; }
 [[ "$HARNESS" == codex || "$HARNESS" == ccx || "$HARNESS" == cc || "$HARNESS" == cckimi || "$HARNESS" == cursor-agent || "$HARNESS" == opencode ]] || { echo "Unsupported harness: $HARNESS" >&2; exit 2; }
 [[ -n "$TASKS" || "$SMOKE" == 1 ]] || { echo "--tasks is required unless --smoke is used" >&2; exit 2; }
+# A run whose cost the comparison UI cannot show is not a usable benchmark.
+if [[ "$SMOKE" != 1 ]] && ! node --experimental-strip-types --no-warnings -e '
+  const { getModelPricing } = await import(process.argv[1])
+  process.exit(getModelPricing(process.argv[2], new Date().toISOString().slice(0, 10)) ? 0 : 1)
+' "$ROOT/benchmark-compare/src/lib/model-pricing.ts" "$MODEL"; then
+  echo "No pricing for model $MODEL: add its official rates to benchmark-compare/src/lib/model-pricing.ts before benchmarking it." >&2
+  exit 2
+fi
 model_lower="$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')"
 if [[ "$HARNESS" == cc && "$model_lower" == gpt* ]]; then
   echo "GPT models using the Claude Code harness must use --harness ccx, never cc." >&2
@@ -295,26 +345,27 @@ for index in "${!task_list[@]}"; do
   mkdir -p "$data_dir"
   [[ "$DRY_RUN" == 1 ]] || mkdir -p "$app_dir"
   printf '%s\n' "$app_dir" > "$data_dir/app-path.txt"
-  if [[ "$DRY_RUN" == 0 && "$task" == thumbfast ]]; then cp -R "$BENCHMARKS_DIR/thumbfast/base-repo/." "$app_dir/"; fi
-  if [[ "$DRY_RUN" == 0 && "$task" == saveit-now-landing ]]; then cp -R "$BENCHMARKS_DIR/saveit-now-landing/base-repo/." "$app_dir/"; fi
+  # Harnesses walk up to the git root and inject its AGENTS.md, and sibling
+  # output directories are named after other models, so real runs execute in
+  # an isolated directory outside the repository and are moved in afterwards.
+  work_dir="$app_dir"
+  if [[ "$DRY_RUN" == 0 && "$SMOKE" == 0 ]]; then
+    work_dir="$(mktemp -d "${TMPDIR:-/tmp}/workspace.XXXXXX")/app"
+    mkdir -p "$work_dir"
+    printf '%s\n' "$work_dir" > "$data_dir/isolated-workdir.txt"
+  fi
+  if [[ "$DRY_RUN" == 0 && "$task" == thumbfast ]]; then cp -R "$BENCHMARKS_DIR/thumbfast/base-repo/." "$work_dir/"; fi
+  if [[ "$DRY_RUN" == 0 && "$task" == saveit-now-landing ]]; then cp -R "$BENCHMARKS_DIR/saveit-now-landing/base-repo/." "$work_dir/"; fi
   if [[ "$DRY_RUN" == 0 && "$task" == openclaw-benchmark ]]; then
     for seed_item in package.json tsconfig.json src benchmarks; do
-      cp -R "$BENCHMARKS_DIR/openclaw-benchmark/$seed_item" "$app_dir/"
+      cp -R "$BENCHMARKS_DIR/openclaw-benchmark/$seed_item" "$work_dir/"
     done
   fi
 
   port_json=null
   port_line=""
   if [[ "$type" == web-app || "$type" == cloned-web-app ]]; then
-    port=$((port_base + web_index))
-    while true; do
-      if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 || rg -l "\"port\"[[:space:]]*:[[:space:]]*$port" "$ROOT/runs" -g 'ports.json' | grep -q .; then
-        port=$((port + 1)); continue
-      fi
-      if mkdir "$ROOT/.benchmark-port-locks/$port" 2>/dev/null; then break; fi
-      port=$((port + 1))
-    done
-    if ((port > port_base + 99)); then echo "Port range exhausted" >&2; exit 2; fi
+    port="$(claim_port)" || { echo "Port range exhausted" >&2; exit 2; }
     web_index=$((port - port_base + 1))
     port_json="$port"
     port_line="During setup, configure your app and package scripts to use port $port, then use that port for runtime verification."
@@ -329,11 +380,18 @@ for index in "${!task_list[@]}"; do
     if [[ "$type" != cli ]]; then
       title_line="Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title."
     fi
-    if [[ "$task" == pentest ]]; then
+    if [[ "$task" == video-generation ]]; then
+      title_line="Set only the browser title to your model name. Keep the player minimal, without a visible heading. The video must retain Lumail branding."
+      workspace_line="Work inside the current working directory. Research Lumail using public web sources; do not inspect local projects outside this directory."
+      checks_line="Verify the MP4 duration, 16:9 dimensions, and playback in the HTML player."
+    elif [[ "$task" == pentest ]]; then
       workspace_line="Keep the standalone HTML deliverable in the current working directory. The web-pentest skill is authorized to create and update only its required engagement directory outside the current working directory; do not edit other external files."
       checks_line="Run the relevant checks yourself."
+    elif [[ "$task" == 3d-car-crash ]]; then
+      workspace_line="Work only inside the current working directory. Do not read, list, search, or edit files outside the current working directory. Treat it as a standalone project root."
+      checks_line="Implement the complete file in one shot. Do not open a browser, do not click through the page, do not run the simulation, and do not iterate after a visual test. Reason carefully once, then write the finished file. Do not edit files outside the current working directory."
     else
-      workspace_line="Work only inside the current working directory. Do not edit files outside the current working directory."
+      workspace_line="Work only inside the current working directory. Do not read, list, search, or edit files outside the current working directory. Treat it as a standalone project root."
       checks_line="Run the relevant checks yourself. Do not edit files outside the current working directory."
     fi
     prompt="$wording
@@ -362,9 +420,9 @@ $checks_line"
 
   case "$HARNESS" in
     codex)
-      printf '%q ' codex exec --model "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" --json --sandbox workspace-write --skip-git-repo-check --output-last-message "$final" "$prompt" > "$command_file"
+      printf '%q ' env -u NODE_USE_SYSTEM_CA codex exec --model "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" --json --sandbox workspace-write --skip-git-repo-check --output-last-message "$final" "$prompt" > "$command_file"
       printf '\n' >> "$command_file"
-      if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
+      if [[ "$DRY_RUN" == 0 ]]; then (cd "$work_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
       if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.type == "thread.started") | .thread_id' "$transcript" | head -1 > "$session_file" || true; fi
       [[ -e "$session_file" ]] || printf '%s\n' '<captured-at-runtime>' > "$session_file"
       ;;
@@ -374,7 +432,7 @@ $checks_line"
       printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$command_file"
       printf '%q ' ccx -p --model "$MODEL" --effort "$EFFORT" --permission-mode bypassPermissions --output-format stream-json --verbose --session-id "$session_id" "$prompt" >> "$command_file"
       printf '\n' >> "$command_file"
-      if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
+      if [[ "$DRY_RUN" == 0 ]]; then (cd "$work_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
       if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.type == "result") | .result // empty' "$transcript" | tail -1 > "$final" || true; fi
       ;;
     cc)
@@ -383,7 +441,7 @@ $checks_line"
       printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' 'unalias cc 2>/dev/null || true' 'cc() { claude --dangerously-skip-permissions "$@"; }' > "$command_file"
       printf '%q ' cc -p --model "$MODEL" --effort "$EFFORT" --permission-mode bypassPermissions --output-format stream-json --verbose --session-id "$session_id" "$prompt" >> "$command_file"
       printf '\n' >> "$command_file"
-      if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
+      if [[ "$DRY_RUN" == 0 ]]; then (cd "$work_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
       if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.type == "result") | .result // empty' "$transcript" | tail -1 > "$final" || true; fi
       ;;
     cckimi)
@@ -392,15 +450,15 @@ $checks_line"
       printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$command_file"
       printf '%q ' cckimi -p --model "$MODEL" --effort "$EFFORT" --permission-mode bypassPermissions --output-format stream-json --verbose --session-id "$session_id" "$prompt" >> "$command_file"
       printf '\n' >> "$command_file"
-      if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
+      if [[ "$DRY_RUN" == 0 ]]; then (cd "$work_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
       if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.type == "result") | .result // empty' "$transcript" | tail -1 > "$final" || true; fi
       ;;
     cursor-agent)
-      if [[ "$DRY_RUN" == 0 ]]; then cursor-agent create-chat > "$session_file"; else printf '%s\n' '<created-at-runtime>' > "$session_file"; fi
+      if [[ "$DRY_RUN" == 0 ]]; then (cd "$work_dir" && cursor-agent create-chat) > "$session_file"; else printf '%s\n' '<created-at-runtime>' > "$session_file"; fi
       session_id="$(tr -d '[:space:]' < "$session_file")"
       printf '%q ' cursor-agent --resume "$session_id" --model "$MODEL" --print --force --trust --output-format stream-json "$prompt" > "$command_file"
       printf '\n' >> "$command_file"
-      if [[ "$DRY_RUN" == 0 ]]; then (cd "$app_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
+      if [[ "$DRY_RUN" == 0 ]]; then (cd "$work_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi
       if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.type == "result") | .result // .text // empty' "$transcript" | tail -1 > "$final" || true; fi
       ;;
     opencode)
@@ -411,7 +469,7 @@ $checks_line"
       if [[ "$DRY_RUN" == 1 ]]; then
         printf '%s\n' '<captured-at-runtime>' > "$session_file"
       else
-        (cd "$app_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?
+        (cd "$work_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?
         if [[ -s "$transcript" ]]; then
           "$JQ_BIN" -r 'select(.sessionID != null) | .sessionID' "$transcript" | head -1 > "$session_file" || true
           "$JQ_BIN" -r 'select(.type == "text") | .part.text // empty' "$transcript" | awk 'NF { line = $0 } END { if (line) print line }' > "$final" || true
@@ -425,6 +483,10 @@ $checks_line"
     model_completed_ms="$(epoch_milliseconds)"
     model_completed_at="$(utc_now)"
     model_duration_ms=$((model_completed_ms - model_started_ms))
+    if [[ "$work_dir" != "$app_dir" ]]; then
+      (shopt -s dotglob nullglob; for entry in "$work_dir"/*; do mv "$entry" "$app_dir/"; done)
+      rmdir "$work_dir" && ln -s "$app_dir" "$work_dir"
+    fi
     model_timing_json="$($JQ_BIN -n \
       --arg started_at "$model_started_at" \
       --arg completed_at "$model_completed_at" \
@@ -434,7 +496,7 @@ $checks_line"
 
   session_id="$(tr -d '[:space:]' < "$session_file" 2>/dev/null || true)"
   case "$HARNESS" in
-    codex) printf '%q ' codex exec resume "$session_id" > "$resume_file" ;;
+    codex) printf '%q ' env -u NODE_USE_SYSTEM_CA codex exec resume "$session_id" > "$resume_file" ;;
     ccx) printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$resume_file"; printf '%q ' ccx --resume "$session_id" >> "$resume_file" ;;
     cc) printf '%q ' cc --resume "$session_id" > "$resume_file" ;;
     cckimi) printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' > "$resume_file"; printf '%q ' cckimi --resume "$session_id" >> "$resume_file" ;;

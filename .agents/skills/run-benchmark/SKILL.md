@@ -12,6 +12,7 @@ Create one independently resumable session per task. Put the app in `benchmarks/
 1. Read [references/task-catalog.md](references/task-catalog.md) for task names, application types, and seed sources.
 2. Read canonical prompts locally from `<benchmark-repository>/prompts/<slug>/` (or `BENCHMARK_PROMPTS_DIR` when explicitly overridden). Select the numerically highest `v<number>.md`, including uncommitted local versions, and fail closed if the version is missing. Save the exact local file path, `https://benchmark.melvynx.dev/prompts/<slug>/<version>`, and prompt in the immutable run snapshot; do not fetch either website.
 3. Confirm the requested model exists in the chosen harness when the harness exposes a model catalog. Never substitute a model silently.
+   Every benchmarked model must have a price in the comparison UI. Before the first run of a new model, add its official per-MTok rates (input, cache read, cache write, output) to `benchmark-compare/src/lib/model-pricing.ts` with a test in `model-pricing.test.ts`. `run-benchmark.sh` refuses unpriced models. After a run, confirm the run page shows a dollar cost for every model, not "Not recorded".
 4. Run:
 
    ```bash
@@ -32,6 +33,7 @@ Create one independently resumable session per task. Put the app in `benchmarks/
 5. Inspect the printed run directory and each `verification.json`. A completed process is not proof unless the transcript is valid, a session ID was captured, and a non-empty final response was captured.
 6. Run `scripts/verify-benchmark-run.sh <run-dir>...` for task-appropriate build/runtime checks, then `scripts/validate-benchmark-run.sh <run-dir>...` as the deterministic final gate.
 7. Resume a task using its generated `resume-command.sh`; append new output to a new transcript file rather than overwriting the original.
+8. When a one-shot result fails verification, send a neutral fix prompt with `scripts/iterate-benchmark-task.sh <run-dir>/data/<task> <prompt-file>`. It resumes the same session inside the original isolated workspace and records `iterations/<n>/` with prompt, transcript, timing, and usage. Keep the one-shot score separate and list every iteration prompt and cost in the plan's `## Iterations` notes.
 
 ## Modes
 

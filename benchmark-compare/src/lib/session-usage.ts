@@ -22,6 +22,15 @@ export type SessionUsage = {
   raw_usage: unknown
 }
 
+/** One billed harness session: the one-shot or a resumed follow-up. */
+export type UsageStep = {
+  label: string
+  model?: string
+  costUsd?: number | null
+  durationMs: number | null
+  usage: SessionUsage
+}
+
 type JsonRecord = Record<string, unknown>
 
 export function usageDurationLabel(model: string) {

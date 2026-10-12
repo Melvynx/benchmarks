@@ -50,10 +50,10 @@ function hasUnbuildableDevSources(directory) {
   );
 }
 
-function failedResultIds() {
-  const failed = new Set();
+function resultIdsByStatus(statuses) {
+  const matches = new Set();
   const runsDirectory = join(root, "runs");
-  if (!existsSync(runsDirectory)) return failed;
+  if (!existsSync(runsDirectory)) return matches;
 
   for (const run of readdirSync(runsDirectory, { withFileTypes: true })) {
     if (!run.isDirectory()) continue;
@@ -68,24 +68,33 @@ function failedResultIds() {
       try {
         const metadata = JSON.parse(readFileSync(metadataPath, "utf8"));
         if (
-          metadata.status !== "failed" ||
+          !statuses.has(metadata.status) ||
           typeof metadata.app_path !== "string"
         ) {
           continue;
         }
-        failed.add(`${task.name}/${basename(metadata.app_path)}`);
+        matches.add(`${task.name}/${basename(metadata.app_path)}`);
       } catch {
-        // Partial historical metadata cannot identify a failed result reliably.
+        // Partial historical metadata cannot identify a result reliably.
       }
     }
   }
 
-  return failed;
+  return matches;
+}
+
+function failedResultIds() {
+  return resultIdsByStatus(new Set(["failed"]));
+}
+
+function completedResultIds() {
+  return resultIdsByStatus(new Set(["harness-verified", "verified"]));
 }
 
 function discoverTargets() {
   const targets = [];
   const failed = failedResultIds();
+  const completed = completedResultIds();
 
   for (const task of readdirSync(benchmarksRoot, { withFileTypes: true })) {
     if (!task.isDirectory() || task.name.startsWith(".")) continue;
@@ -103,6 +112,13 @@ function discoverTargets() {
 
       const id = `${task.name}/${result.name}`;
       if (failed.has(id) || hasUnbuildableDevSources(directory)) continue;
+      if (
+        needsCompiledOutput(directory) &&
+        !existsSync(join(directory, "dist", "index.html")) &&
+        !completed.has(id)
+      ) {
+        continue;
+      }
 
       targets.push({
         directory,

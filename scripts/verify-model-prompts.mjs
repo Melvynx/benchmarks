@@ -49,6 +49,7 @@ for (const directory of promptDirectories) {
 const runner = await readFile(runnerPath, "utf8");
 const requiredRunnerText = [
   "Work only inside the current working directory.",
+  "Do not read, list, search, or edit files outside the current working directory. Treat it as a standalone project root.",
   titleInstruction,
   "Run the relevant checks yourself. Do not edit files outside the current working directory.",
 ];
