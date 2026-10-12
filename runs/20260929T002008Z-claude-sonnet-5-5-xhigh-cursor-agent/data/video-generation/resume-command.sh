@@ -1,0 +1,1 @@
+cursor-agent --resume 1cb55b75-1a41-45e3-9e10-0180514aea99 --model claude-sonnet-5-5-xhigh

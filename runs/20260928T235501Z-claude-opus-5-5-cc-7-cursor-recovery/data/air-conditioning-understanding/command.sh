@@ -1,0 +1,1 @@
+/Users/melvynx/Developer/agent-benchmarks/runs/20260928T235501Z-claude-opus-5-5-cc-7-cursor-recovery/data/air-conditioning-understanding/iterations/1/command.sh

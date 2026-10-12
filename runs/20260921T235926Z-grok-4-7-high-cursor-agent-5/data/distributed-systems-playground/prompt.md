@@ -1,0 +1,151 @@
+# Distributed Systems Playground
+
+## Mission
+
+Create a single-file interactive browser experience that makes the invisible behavior of a production distributed backend visible, understandable, and satisfying to manipulate.
+
+The page is a live operations playground, not a static architecture diagram. Requests must travel through an API gateway, queue, workers, cache, primary database, replica, and dead-letter queue. Every packet, metric, log entry, state transition, retry, cache response, and failure shown on screen must come from one coherent deterministic simulation.
+
+The result must look excellent when embedded in a visual comparison gallery, while rewarding genuine systems reasoning rather than decorative animation.
+
+## System topology
+
+Visualize this logical system clearly:
+
+`Clients -> API Gateway -> Work Queue -> Worker Pool -> Primary Database`
+
+With meaningful connections to:
+
+- a TTL cache used by reads;
+- a read replica that follows the primary with configurable lag;
+- a retry scheduler using exponential backoff;
+- a dead-letter queue for permanently failed work;
+- an observability stream containing metrics and structured events.
+
+Components must expose their actual live state. Show queue depth, in-flight work, health, saturation, stored records, replica lag, cache entries, circuit state, and dead-letter count where relevant.
+
+## Required simulation behavior
+
+Implement a deterministic discrete-time simulation with a seeded pseudo-random generator. It must not depend on display refresh rate.
+
+Model at least:
+
+- requests with stable IDs, tenant IDs, operation types, creation time, attempt count, and idempotency keys;
+- bounded gateway throughput and a token-bucket rate limiter;
+- a FIFO work queue with visible backpressure;
+- multiple workers processing concurrently with configurable service time;
+- idempotent writes so duplicated requests commit only once;
+- transient failures followed by exponential-backoff retries;
+- permanent failures routed to the dead-letter queue after a maximum attempt count;
+- a circuit breaker with closed, open, and half-open states;
+- read-through caching with TTL, hits, misses, expiry, and invalidation after writes;
+- primary-to-replica propagation lag and visibly stale reads;
+- database unavailability without fabricated successful commits;
+- worker failure without losing acknowledged durable work;
+- latency and throughput derived from simulated request histories.
+
+The implementation may be an educational approximation, but the relationships must be internally consistent. Increasing workers should normally drain a backlog faster. Lowering gateway capacity should throttle intake. Database failure should cause downstream pressure. Duplicate idempotency keys must never create duplicate committed records.
+
+## Visual experience
+
+Design a premium dark operations console with strong information hierarchy and a distinctive visual identity.
+
+The main topology should dominate the page. Animate small request packets along real routes between components. Packet appearance must distinguish reads, writes, retries, cache hits, failures, and dead letters without relying on color alone. Components should visibly react to load and failure.
+
+Include:
+
+- a live topology view with directional connections;
+- an event inspector showing the selected request's complete lifecycle;
+- compact live charts for throughput, P95 latency, error rate, and queue depth;
+- a scrolling structured event log;
+- a status strip for simulated time, completed requests, duplicates prevented, cache hit rate, and current scenario;
+- clear nominal, degraded, throttled, and failed states;
+- responsive behavior suitable for wide screenshots and narrower embedded panels.
+
+Avoid generic cards floating without spatial meaning. Make the flow of work legible at a glance.
+
+## Operator controls
+
+Every visible control must work. Provide:
+
+- Play/Pause;
+- deterministic single-step;
+- Reset with seed;
+- 0.5x, 1x, 2x, and 4x simulation speed;
+- a traffic-rate control;
+- worker-count control from 1 to 12;
+- buttons to send one request, a burst, and a burst containing duplicates;
+- switches to fail or recover the primary database, stop or restore one worker, and add or clear replica lag;
+- a control to replay an individual dead-letter item;
+- a control to select and inspect packets or stored records.
+
+Provide one-click scenarios:
+
+1. **Healthy baseline** — moderate mixed traffic with stable processing.
+2. **Flash crowd** — a sharp traffic burst creates backpressure and rate limiting before recovery.
+3. **Database outage** — the primary fails, the circuit opens, retries accumulate, and recovery drains work safely.
+4. **Poison message** — one deterministic request repeatedly fails, reaches the dead-letter queue, and can be repaired/replayed.
+5. **Stale replica** — writes succeed while delayed replication makes selected reads visibly stale until convergence.
+
+## Explainability
+
+Include concise explanations tied to actual events. Important transitions should say what happened and why, for example:
+
+- rate limiter rejected a request because no token was available;
+- retry scheduled for a precise future simulated time;
+- circuit opened after its failure threshold;
+- write skipped because its idempotency key was already committed;
+- read returned stale data because the replica had not applied a version;
+- dead-letter replay succeeded after the poison condition was cleared.
+
+## Deterministic engineering interface
+
+Expose a documented diagnostic object at `window.__DSP__` with callable methods:
+
+- `reset(seed)` — reset the current scenario using the supplied integer seed;
+- `setScenario(name)` — accept `healthy`, `flash-crowd`, `database-outage`, `poison-message`, or `stale-replica`;
+- `step(milliseconds)` — advance simulated time deterministically without wall-clock dependence;
+- `sendRequest(options)` — inject a request and return its ID;
+- `snapshot()` — return a JSON-safe summary of time, gateway, queue, workers, cache, primary, replica, retry scheduler, circuit breaker, dead-letter queue, metrics, and requests;
+- `runSelfTest()` — run isolated deterministic checks and return `{ passed, tests }`, with a name, boolean pass value, and short detail for every test.
+
+The self-test must genuinely exercise the same simulation functions and report at least these invariants:
+
+1. identical seed and actions produce identical snapshots;
+2. pause prevents simulation-time advancement by the animation loop;
+3. a duplicated idempotency key creates at most one committed record;
+4. a failed primary cannot report a successful new commit;
+5. retry timestamps increase according to backoff;
+6. poison work reaches the dead-letter queue after the configured attempt limit;
+7. replay can complete after the poison condition is cleared;
+8. expired cache entries are not counted as hits;
+9. replica state eventually converges after lag is removed;
+10. all numeric metrics remain finite during a flash crowd.
+
+Show the latest self-test results in a small diagnostics drawer. Never hard-code passing results.
+
+## Technical constraints
+
+- Create exactly one complete `index.html` file.
+- Put all HTML, CSS, simulation logic, rendering, charts, and UI logic in that file.
+- Use browser-native HTML, CSS, SVG, and Canvas only.
+- Do not load external libraries, fonts, images, APIs, data, or other assets.
+- The file must open directly in a modern browser without a server or build step.
+- Use a fixed simulation timestep or discrete event scheduler and cap visual frame deltas.
+- Handle resize, high-DPI displays, tab visibility changes, reduced motion, keyboard focus, and narrow layouts gracefully.
+- Keep the console free of avoidable errors.
+- Do not use fake controls, decorative random charts, pre-scripted packet outcomes, or placeholder panels.
+
+## Quality bar
+
+The finished result should feel like a flagship interactive exhibit created by a distributed-systems engineer, simulation engineer, data-visualization specialist, and exceptional product designer working together.
+
+Prioritize a coherent and deeply functional system, but make it immediately impressive in a screenshot. A viewer should understand both the architecture and the current incident without reading documentation.
+
+Build the experience directly. After implementation, run a concise validation of page load, all scenarios, deterministic reset, pause/step, fault recovery, duplicate protection, dead-letter replay, responsive layout, and the diagnostic self-test. Fix blocking failures found, then stop. Keep the final response brief.
+
+Work only inside the current working directory. Do not edit files outside the current working directory.
+
+Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.
+Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title.
+Run the relevant checks yourself. Do not edit files outside the current working directory.

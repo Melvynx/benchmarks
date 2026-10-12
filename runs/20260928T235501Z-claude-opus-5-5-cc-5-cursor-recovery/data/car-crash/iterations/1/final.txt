@@ -1,0 +1,33 @@
+I'll read the original requirements and previous conversation first.The wheel patch is in place. Next I'll write a temporary harness in the working directory and re-run the diagnostics on the patched file.Wheel loads are small now, but the car still gains 4.4 m/s of vertical velocity within 0.1 s of impact, so the lift is coming from hull contacts. I'll log which contacts push the car upward.That fixed the launch: at 45 m/s the car now rides over the rubble with at most about 0.35 m of lift. I'll run the full suite, including the 1,960-brick extremes.Now the suite plus the determinism check, both via Portly.The browser script hit its 30 s cap, so I'll split it into shorter scripts on a persistent named page.The final "resume" click failed only because the run had already settled; both screenshots were saved.Next I'll verify the settings path, the resize behavior, and page errors in the browser.The compact layout fits now. The only remaining nit is the scale bar clipping the chip row, so I'll anchor it just above the telemetry cards.Both layouts are clean at 1440×900 and 900×620. I'll run a final regression pass on the finished file: the physics suite, the determinism check, and the file-format checks.Results are unchanged, as expected after visual-only edits. Removing the temporary test harnesses.`index.html` is finished and verified. I found and fixed four physics bugs left in the previous session's version; the physics now stays stable across the full settings range and repeats exactly in the browser.
+
+**What was broken, and the fixes**
+1. **Restitution fed energy back into pinned bricks.** A brick trapped between the car's nose and the road got its bounce re-applied every step, and its speed ran away (up to 122 m/s at the default settings). Bounce now applies only to fresh impacts (`arb.impact`). Brick speeds now peak at about 1.18× car speed, which is what a 0.18 restitution predicts.
+2. **Wheels hitting debris used unbounded forces.** A wheel landing on a brick could push about 100 kN into a 2.5 kg brick in one step, which also launched the car. The tyre force is now an upward push plus grip at the contact patch, with a force cap. Tyres absorb half the height of a brick they roll onto (`envelope: 0.5`), have a separate lower cap on debris (`FmaxDebris`), and wheels only ride on debris directly under the tyre.
+3. **The sloped lower nose worked as a ramp.** Flat bricks got wedged under the car and lifted it. The lower front is now a vertical plow face. At 45 m/s the car used to fly to 6 m; it now rides over rubble with about 0.35 m of lift.
+4. **The result label was misleading.** Any brick that moved 5 cm counted against the wall, so every run said "Wall breached". A new "Fallen" count tracks bricks that dropped, toppled or got knocked out. The possible results are now "Wall held", "Wall shoved, still standing", "Partial collapse" and "Wall breached".
+
+I also toned down the impact dust, which was hiding the car. And I added a compact layout, so on a narrow screen the telemetry cards no longer cover the road.
+
+**What I verified**
+- **Physics runs:** 12 configurations run headlessly, including the 1,960-brick extremes (24×16×5 at 45 m/s, and at 5 m/s with 12 kg bricks). All reach "settled", and the result changes with the settings:
+
+| Settings | Outcome |
+|---|---|
+| 5 m/s, 12 kg bricks | 0 of 200 fallen, "Wall shoved, still standing" |
+| 5 m/s, 2.5 kg bricks | 168 of 200 fallen |
+| Defaults | 200 of 200 fallen, 16.6 g peak deceleration |
+
+- **Determinism:** repeated default runs match exactly, both in Node and in Chrome. The live run in the page matches the in-page simulator (t = 8.2958 s, 45 cm crush).
+- **In the browser (Chrome 145):**
+  - Title and heading are "Claude Opus 5.5", and all 11 inputs load with the mandatory defaults.
+  - Changing a setting leaves the others untouched, and typing 99 columns clamps to 24.
+  - Test, Pause and Reset work, and the canvas resizes cleanly at 1440×900 and 900×620.
+  - No page errors, the file starts with `<!DOCTYPE html>` and ends with `</html>`, and there's no `Math.random`.
+- **Tooling:** Portly ran the physics suites, and the temporary test scripts are deleted. No dependencies were needed, so pnpm wasn't used. No port was assigned; it's a static file.
+
+**Things to know**
+- A Node run and a Chrome run of the same default test end differently, because tiny math-library differences grow in the chaotic collapse. Each browser repeats its own result exactly, and peak deceleration, measured before the collapse, is identical.
+- At 45 m/s the car can still tumble after it re-hits bricks it launched ahead of itself. I left this in because the angular rates are about 4 rad/s with no speed spikes, which looks like real physics rather than a numerical blow-up.
+- In rare pinches with 0.5 kg bricks at 45 m/s, a brick reaches the 90 m/s safety cap.
+- The largest walls (about 2,000 bricks) run at roughly a third of real time, and the display slows down instead of stuttering.
+- The camera zooms out to fit the 24 m run-up, then zooms in to up to 80 px/m around the impact.

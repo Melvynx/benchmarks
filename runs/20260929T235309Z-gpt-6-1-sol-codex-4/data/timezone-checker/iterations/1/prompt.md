@@ -1,0 +1,102 @@
+<instructions>
+Build a timezone overlap checker web app using a popular web framework of your choice. Do NOT use vanilla JS or a raw Node.js `http` server. The app must run with a single command (`npm run dev` or equivalent).
+
+You have **full creative freedom** on everything: technology choices, code architecture, file structure, component separation, state management, styling approach, design system, and UX. Own every decision — make it clean, well-structured, and something you're proud of.
+</instructions>
+
+<purpose>
+A tool for remote workers, distributed teams, and digital nomads who need to find common meeting windows or compare their schedule against colleagues in other timezones.
+</purpose>
+
+<modes>
+The app has two modes the user can toggle between:
+
+**Meeting Mode** (default)
+Find hours when everyone across all selected cities is simultaneously awake. All cities share the same highlighted overlap window. Think: scheduling a group call where every participant must be available.
+
+**Base Mode**
+One city is the "base" (the reference). Each other city gets its own independent overlap calculated only against the base. Different cities may highlight different hours. Think: a person living in one city who works with people in several other cities and wants to see per-person availability.
+</modes>
+
+<cities>
+- Users maintain a list of cities to compare. Default: San Francisco, Denpasar, Geneva.
+- Cities come from a predefined catalog of ~34 cities spanning all major world regions (North America, South America, Europe, Africa, Middle East, Asia, Oceania).
+- Users add cities via a searchable dropdown (search by city name or country). Remove any city from the list. No duplicates allowed.
+- No custom/arbitrary timezone entries — only the predefined catalog.
+</cities>
+
+<reference-city>
+- The first city in the list is always the **reference city**, visually marked (e.g. a "REF" badge).
+- All hour calculations are anchored to the reference city's timezone.
+- Users can click any city's name to promote it as the new reference (it moves to the top).
+- In Base Mode, overlap is computed between the reference city and each other city independently.
+</reference-city>
+
+<availability>
+Users configure their personal "awake window" via a settings panel:
+
+- **Wake-up hour** (0–23, default: 7)
+- **Sleep hour** (0–23, default: 23)
+- **Time format**: 12h or 24h (default: 12h)
+
+The awake window applies uniformly to all cities (everyone shares the same sleep schedule). Overnight ranges are supported (e.g. wake at 22, sleep at 6 for night-shift workers). Changes take effect immediately.
+</availability>
+
+<grid>
+The core visualization is a **24-column grid** (one column per hour of the reference city's day, 0–23).
+
+Each cell shows what hour it is **locally** in that city when it's that column's hour in the reference city.
+
+Three visual states per cell:
+1. **Sleeping** — the local hour falls outside the awake window → faded/muted
+2. **Awake, no overlap** — awake but not part of the overlap → neutral
+3. **Overlap** — awake AND this hour qualifies as overlap → highlighted (e.g. green), bold text
+</grid>
+
+<overlap-summary>
+Displayed above the grid when 2+ cities are present:
+
+- **Meeting Mode**: total overlap hours count + time range(s) in the reference city's timezone. Zero overlap → warning message.
+- **Base Mode**: one line per non-reference city, each with its own overlap count + time range(s). Zero overlap → individual warning.
+
+Time ranges are inclusive start → exclusive end (e.g. "9am — 12pm" = hours 9, 10, 11). Non-contiguous windows are shown as separate badges/ranges.
+</overlap-summary>
+
+<timezone-math>
+- UTC offsets derived from the current date → DST is automatically handled.
+- Fractional offsets supported (e.g. India UTC+5:30, Nepal UTC+5:45).
+- Each city displays its current UTC offset.
+</timezone-math>
+
+<responsive>
+**Desktop (≥768px)**: cities as rows, hours as columns (horizontal grid). Left: city info + REF badge + UTC offset. Center: 24 hour cells. Right: remove button.
+
+**Mobile (<768px)**: cities as columns, hours as rows (vertical layout). These are **two separate layouts**, not a single responsive grid.
+</responsive>
+
+<persistence>
+All state (city list, settings, active mode) is persisted to localStorage. Refreshing restores the last configuration. A new browser/incognito session starts with defaults.
+</persistence>
+
+<defaults>
+On first visit:
+- 3 cities: San Francisco, Denpasar, Geneva
+- Meeting mode active
+- Awake window: 7am–11pm
+- 12-hour format
+- Overlap summary showing common availability across the 3 default cities
+- A hint at the bottom: "Green cells = everyone awake"
+</defaults>
+
+<important>
+- `<title>` and page heading must be your model name (e.g. "Claude Sonnet 4.5" or "GPT-4o")
+- The grid must make overlaps **instantly obvious** — alignment is critical
+- Full creative freedom on colors, typography, and visual style — design the best possible UI/UX
+- Polished, production-quality — not a prototype
+</important>
+
+Work only inside the current working directory. Do not read, list, search, or edit files outside the current working directory. Treat it as a standalone project root.
+During setup, configure your app and package scripts to use port 9188, then use that port for runtime verification.
+Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.
+Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title.
+Run the relevant checks yourself. Do not edit files outside the current working directory.

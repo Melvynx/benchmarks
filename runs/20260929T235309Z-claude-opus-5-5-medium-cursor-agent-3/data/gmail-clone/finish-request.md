@@ -1,0 +1,1 @@
+Continue from the existing implementation. Complete the requested Gmail app. Run the build through Portly, repair any build errors, then provide your final response. Do not run additional long browser test suites. Preserve all deliverables and use pnpm exclusively. Work only inside the current directory.

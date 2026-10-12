@@ -1,0 +1,39 @@
+I'll read the original requirements and previous conversation first.While the preset sweeps run, I'll write the UI. Starting with the pseudo-3D dish renderer.Checking the preset sweep results.Now the charts module (timeline, phase plot, trait trends) and run summary.That `blueGoneAt` line is garbled and `findLastIndex` needs ES2023 lib; fixing with a helper.Spreading long history arrays into `Math.max` can overflow the stack on long runs; switching to loop helpers.Now checking the second sweep.Now the HTML shell and styles.Now the main app wiring: loop, controls, presets, input, inspector, charts.Running typecheck and production build through Portly.Build is clean. Registering the dev server on port 9236 with Portly.Server responds with the right title. Now I'll verify visually in a browser; checking the dev-browser skill.Page loads with the correct title (the script runner hangs after completing, but output arrives). Taking a screenshot and reading sim state.No output, so something is blocking. Testing a bare evaluate to see whether the page's main thread is saturated.The browser daemon itself is wedged (even a blank page times out). Restarting it.Stopping the daemon could kill other sessions' browsers, so I'll use a separate named browser instance instead.Dedicated instance works. Loading the garden there and measuring frame responsiveness.Runs at 61 fps. Taking a screenshot after a few seconds of simulation.Screenshot capture stalls because the compositor is busy with the continuously redrawn canvas. Trying a raw CDP capture instead.Reloading, then clicking a blob to test the inspector, and capturing a full shot plus a zoomed crop.Inspector works (the selected blob gets a vision ring and target line), but the card gets cut off at the bottom of the world panel. Moving it to the top-right and tightening the rows.Now a close-up (zoomed in 2.6×) with an eating blob selected, to check faces, fruit, and the eating timer.Final browser pass: reload, collect console errors, switch to the red-heavy preset, drag to rotate, step, run at 16×, and screenshot.Rebuilding, then one last browser run: balanced preset at 32× for about 20 real seconds to check the long-run summary.The garden simulator is finished and running at http://localhost:9236 (Portly server `living-garden-9236/web`). The type check and production build pass, there are no console errors in the browser, and I checked every preset headlessly and in the browser.
+
+**What the previous session left:** the simulation engine (`src/sim.ts`), the settings and presets (`src/params.ts`) and some tuning scripts. The balanced preset was tuned; the other presets weren't, and there was no UI at all.
+
+**What I finished:**
+- **Preset tuning.** Fruit-rich used to boom and then wipe out both groups. It now uses a softer red payoff (contact 12, vision 4.5). Red-heavy starts with 26 reds and low-fruit uses stingier trees.
+- **World view (`src/render.ts`).** A raised clay dish drawn in 3D-looking perspective. Drag to spin, vertical or Shift-drag to tilt, scroll to zoom.
+  - Trees carry fruit on their canopies. A fruit disappears from the tree while a blue chews it, shrinks in the blob's hands, then regrows after the return delay.
+  - Blobs are glossy ovals with faces. They hop, lean, blink, squash and stretch, and get worried eyes when fleeing, frowning brows when hunting, and "z"s when resting.
+  - Eating, contact, births and fades each have short effects: sparkles, hearts, rings, puffs and floating energy numbers.
+- **Charts and summary (`src/charts.ts`).**
+  - The main timeline shows blobs on the left axis and ripe fruit on the right, with hover values.
+  - A blue-vs-red phase loop and inherited speed/vision trends.
+  - A run summary written from the recorded history, using cross-correlation to find which group leads and by how much.
+- **Controls and inspector (`index.html`, `src/main.ts`, `src/style.css`).**
+  - All 19 rule sliders plus a simulation speed slider (0.25× to 32×). Rule changes apply live; starting-world settings apply on reset, and the Reset button pulses when one is waiting.
+  - Play, pause, step, reset and randomize buttons, the 5 presets, and +5 blue / +3 red buttons.
+  - Clicking a blob opens an inspector with group, energy bar, age, current action, speed, sensing range, time left in any eating or pause animation, genes, generation, parent and number of babies. The map also shows its vision circle and a line to its target.
+- **Title.** The browser title and the visible heading are both "Claude Opus 5.5".
+
+**Headless check (`pnpm verify:sim`, 4 seeds × 900 simulated seconds per preset):**
+
+| Preset | Result |
+|---|---|
+| Balanced | Both groups survive in 4 of 4 seeds, with repeated waves where reds trail blues by 20–120s |
+| Fruit-rich | Blues go from 30 to about 220 within 85s; waves continue in 3 of 4 seeds |
+| Red-heavy (26 reds) | Blues dip to about 10, then reds fade, then both settle; survives in 6 of 7 seeds |
+| Fragile | Survives in 2 of 4 seeds, which fits the name |
+| Low-fruit | Stays at 15–27 blues, and reds can't sustain themselves |
+
+On the app's default seed (42), all five presets behave as described. None of these numbers are scripted; they come from the energy rules.
+
+**Browser check:**
+- The dish holds 61 fps at 1600×1000.
+- Clicking a blob fills the inspector.
+- Preset switching, drag-rotate, step (advances exactly 1.0s) and 16× speed all work.
+- A 718-second balanced run summarised itself as "5 red waves… stayed balanced… blues peaked at 73 but hover near 33."
+
+Headless Chromium can't take normal screenshots of the animated canvas, so I captured screenshots through the browser's debugging protocol instead. My attempt to delete the scratch `.verify/` screenshot folder was blocked; it's in `.gitignore`, so you can delete it by hand.

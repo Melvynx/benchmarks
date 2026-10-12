@@ -1,0 +1,1 @@
+cursor-agent --resume 67f8bb01-41e2-43a6-9190-d5942bc766c3 

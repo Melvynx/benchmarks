@@ -1,0 +1,177 @@
+<instructions>
+Generate a single self-contained HTML file that runs directly in a browser.
+
+Build a cinematic full-3D car crash. A recognizable car accelerates down a short asphalt race track and hits a freestanding brick wall. The wall is made of individual 3D bricks. The car is made of separate physical parts. On impact the car must break apart in a way you can actually see: panels tear off, glass shatters, wheels detach, the front crumples, and debris keeps moving under 3D rigid-body physics. This is a simulation, not a scripted animation.
+
+The page must also be a usable experiment: pause and play, slow motion, switchable cameras, and a settings panel where every control actually rebuilds the next run.
+</instructions>
+
+<core-experience>
+The page is one fullscreen 3D scene with a compact control bar.
+
+- A short straight race track, about 40 meters, with the car starting on the left.
+- A freestanding brick wall standing across the track near the far end.
+- The default crash starts by itself as soon as the page loads. Do not require a click, a Test button, or any other interaction before the car reaches the wall and breaks.
+- After the debris settles, the scene holds on the wreck.
+- Replay rebuilds a fresh run from the current settings. The first automatic run must use the mandatory defaults exactly.
+
+The result should feel like a real 3D physics experiment filmed with a good camera, not a game cutscene with canned part trajectories.
+</core-experience>
+
+<playback>
+Add a visible, compact playback bar. These controls drive the simulation clock, not CSS animations.
+
+- Pause / Play. Pause freezes physics and the clock. Play continues from that exact state. Replay still rebuilds a fresh run. Space toggles pause unless a number input is focused.
+- Simulation speed: at least 0.25×, 0.5×, 1×, and 2×. The selected speed must survive Replay and settings Apply.
+- The first automatic run starts at 1×, playing.
+</playback>
+
+<camera>
+Add an obvious view switcher. Switching is immediate, does not reset physics, and stays selected across Replay.
+
+Required views:
+
+- Impact / cinematic: three-quarter shot that shows the car, the track, and the wall, then holds a readable frame of the breakup
+- Follow: chase the car through the approach and past the wall
+- Top: straight overhead of the track
+- Orbit: free look. Drag to orbit. The crash must still be understandable with no interaction
+
+Keep the car and the collapsing wall inside the frame at the moment of impact on Impact and Follow. Default view on first load is Impact.
+</camera>
+
+<default-experiment-values>
+These defaults are mandatory. They must be the initial values on first load so every implementation runs the same baseline crash.
+
+- Car speed at impact target: 22 m/s
+- Car mass, assembled: 1,250 kg
+- Car length: 4.2 m
+- Car width: 1.8 m
+- Car height: 1.45 m
+- Wall columns: 12 bricks across the track
+- Wall rows: 8 bricks tall
+- Wall depth: 2 bricks thick
+- Brick mass: 2.5 kg
+- Brick size: 0.50 m wide x 0.24 m tall x 0.20 m deep
+- Gravity: 9.81 m/s2
+- Brick friction: 0.72
+- Brick restitution: 0.18
+- Ground friction: 0.85
+- Track length: 40 m
+</default-experiment-values>
+
+<settings>
+A settings panel is required. Every visible numeric control must change the next run when the user hits Replay or Apply. If a control is on screen, it is wired. Decorative or read-only fields are not allowed.
+
+Required live controls:
+
+- impact speed
+- car mass
+- car length, width, height
+- wall columns, rows, depth
+- brick mass
+- brick width, height, depth
+- gravity
+- brick friction, brick restitution
+- ground friction
+- track length
+
+Changing wall counts or brick size must rebuild the wall. Changing car size or mass must rebuild the car. Changing speed, gravity, or friction must change the next run. The first automatic run still uses the mandatory defaults.
+</settings>
+
+<track-and-wall>
+The track is a short race straight, not an empty ground plane.
+
+- Asphalt with lane markings, a start area, curbs, and grass or gravel shoulders so scale reads immediately.
+- The wall stands on the track, freestanding, not embedded in an invisible collider.
+- Bricks use a staggered running bond. Mortar gaps are visible. Both depth layers are real separate bricks, not a texture on a box.
+- Bricks are individual rigid bodies with mass, friction, gravity, contact, rotation, and momentum transfer.
+- The wall may crack, slide, topple, or partially survive. Heavier bricks and lower speed must visibly change the outcome.
+- Add enough environment to read the crash: sky, horizon, a few trackside barriers or lights. Do not hide the car or the wall.
+</track-and-wall>
+
+<car-destruction>
+The car must be built from separate 3D rigid bodies held together by breakable constraints. A single box with a particle puff is not acceptable.
+
+Required parts, each simulated:
+
+- Chassis, split so the front clip can crumple or detach from the cabin
+- Hood
+- Trunk lid
+- Four doors, or at least both front doors and one rear door
+- Front and rear bumpers
+- Windshield and side glass, which shatter into multiple shard bodies
+- Four wheels with visible rims and tires
+
+Before impact the car must read as a car: body, cabin, glass, wheels, headlights, and a clear front. Parts stay attached while it drives.
+
+On impact with the wall:
+
+- Constraints break when the contact force or impulse passes a finite threshold. Do not detach every part on a timer, and do not break the car on spawn.
+- The hood buckles or flips. Bumpers separate. Doors swing or tear off. Wheels can detach and roll. Glass becomes shards with their own collisions.
+- The front of the car shortens, folds, or breaks into segments so the crumple is obvious from the camera.
+- The cabin may deform but should remain recognizable.
+- Detached parts collide with the car, the bricks, the ground, and each other, then settle under gravity and friction.
+- The car must not tunnel through the wall. Momentum has to move into both the bricks and the broken car parts.
+
+Use a real 3D rigid-body engine loaded from a CDN, such as Rapier, cannon-es, or ammo.js. Do not fake the crash with keyframed part positions.
+</car-destruction>
+
+<rendering>
+Push the lighting and materials as far as a single HTML file allows, then keep the frame cost down. Flat unlit colors on the car, bricks, or track are not acceptable.
+
+- Three.js, loaded from a pinned CDN version. three/addons from that same version are allowed.
+- Physically based materials: car paint with metalness and clearcoat, glass with transmission or a convincing refractive look, rough bricks with color variation, rough asphalt.
+- A real shadow map on the sun light. Use soft PCF shadows, a shadow map of at least 2048, and a frustum tight on the track, car, and wall. The car, every broken part, and the bricks must cast and receive shadows, including after they scatter.
+- Contact shadows so parts sit on the ground. Prefer cheap contact blobs or a tight shadow setup over a heavy screen-space AO pass that tanks the frame rate.
+- Image-based or environment reflections on the paint and glass. Generate the environment in code or with Three.js RoomEnvironment. Do not depend on an external HDR file.
+- Tone mapping (ACES or filmic) is required. Extra post (bloom, SSAO, multi-pass stacks) is allowed only if the crash stays smooth. Drop post that does not change the crash.
+- Impact feedback that does not replace the physics: dust, a few sparks, brief camera shake, skid marks. Seed any visual randomness so it cannot change the physical result.
+</rendering>
+
+<performance>
+The crash must stay the same while the page stays fast. Design for a stable high frame rate on a single HTML file.
+
+- Fixed physics timestep. Cap the number of steps per frame so a hitch cannot explode the solver.
+- Keep body, constraint, and collision-pair counts only as high as the visible breakup needs.
+- Merge static environment meshes. Share materials. Limit shadow casters to the car, debris, and bricks.
+- One main light with a tight shadow frustum is enough. Do not add extra lights that do not read.
+- Do not use Math.random in the physical setup, constraints, or collision response.
+
+Do not remove the breakup, the wall collapse, or the contact shadows to hit the budget.
+</performance>
+
+<determinism>
+- Use the mandatory default values exactly on first load.
+- The same defaults must produce the same physical outcome on reload and on Replay at 1×.
+- Slow motion changes the clock, not the physical result of a given settings set.
+- Do not precompute brick or panel positions for the crash.
+</determinism>
+
+<delivery>
+Write the finished page in one shot.
+
+- Do not open a browser.
+- Do not click the page.
+- Do not run the simulation to visually test it.
+- Do not iterate after a preview.
+- Reason through the body layout, the breakable constraints, the shadow setup, the materials, the control bar, and the settings wiring once, then write the complete file.
+</delivery>
+
+<output-format>
+One HTML file only. No extra JS, CSS, images, models, or texture files. No package manager and no dev server. Three.js and the physics engine may load from a CDN. Everything else is inline.
+
+The file must start with `<!DOCTYPE html>` and end with `</html>`.
+</output-format>
+
+<important>
+- You MUST write the result directly into a file named "index.html" in the current working directory.
+- The page `<title>` must be your model name.
+- The only visible title or brand in the page must also be your model name. Add nothing else to either title.
+- Do not ask clarifying questions. Make the design and engineering decisions yourself.
+</important>
+
+Work only inside the current working directory. Do not read, list, search, or edit files outside the current working directory. Treat it as a standalone project root.
+
+Use pnpm exclusively if dependency installation or package scripts are needed. Do not use npm.
+Set the browser title and the primary visible title to your model name, using only identity information already available to you. Add nothing else to either title.
+Implement the complete file in one shot. Do not open a browser, do not click through the page, do not run the simulation, and do not iterate after a visual test. Reason carefully once, then write the finished file. Do not edit files outside the current working directory.

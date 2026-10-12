@@ -1,0 +1,1 @@
+Continue from the existing files and session context. Your last invocation stopped emitting events after a completed thinking event for over ten minutes and was interrupted. Finish remaining implementation and run the relevant checks. Keep the assigned port, pnpm and Portly requirements. Do not restart from scratch. Report actual completed work and remaining limitations.

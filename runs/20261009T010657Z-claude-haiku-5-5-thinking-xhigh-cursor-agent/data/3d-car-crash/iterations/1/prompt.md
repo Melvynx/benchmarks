@@ -1,0 +1,1 @@
+You have not written any file yet: index.html does not exist. Stop planning in your head. Build it in small pieces instead: first write a minimal working index.html, then extend it with a series of small edits (one feature per edit), saving after each piece. Keep every write short, and keep going until the whole task is finished.

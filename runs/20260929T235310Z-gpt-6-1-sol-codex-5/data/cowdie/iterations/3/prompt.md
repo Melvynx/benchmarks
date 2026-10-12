@@ -1,0 +1,3 @@
+Finish and repair your existing Cowdie benchmark app. The build currently fails:
+src/PetScene.tsx:203: Type 'MeshBasicMaterial' is missing properties from 'MeshStandardMaterial' when assigning star.material.
+Fix the material typing without changing the intended visual behavior. Run the production build and verify the app loads, then provide your final response. Use pnpm and Portly for bounded checks. Avoid extra features and lengthy unrelated test suites. Preserve existing files; no destructive cleanup. If pnpm tries an interactive dependency reinstall, use pnpm --config.verify-deps-before-run=false run build with installed dependencies.

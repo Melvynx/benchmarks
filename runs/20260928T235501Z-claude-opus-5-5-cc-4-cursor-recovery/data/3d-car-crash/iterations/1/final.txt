@@ -1,0 +1,38 @@
+I'll read the original requirements and previous conversation first.The workspace is empty, so let me check the raw transcript for any partial file content.Now a parse-only syntax check of the module script via Portly. This doesn't run the simulation or open a browser.The check ran from the wrong directory (the shell was still in `/tmp`). Rerunning with an absolute path.Syntax passes. Last checks: no `Math.random` anywhere, and every CDN URL resolves.`index.html` is written: one self-contained file, 1,431 lines, in the working directory. Nothing survived from the previous session (empty folder, and the transcript's only content block was an empty thinking block), so I rewrote it from scratch against the original spec. The module script passes a parse-only syntax check, but the crash itself is unverified. Per the task rules I didn't open a browser or run the simulation, so the default breakup is reasoned, not observed.
+
+**Verified:**
+- `node --check` on the module script passes (run as a Portly temp job).
+- The file starts with `<!DOCTYPE html>` and ends with `</html>`.
+- Every CDN URL returns 200: `three@0.160.0` with its addons, and `cannon-es@0.20.0`.
+- There is no `Math.random` anywhere. Physics and visual effects each use their own seeded generator.
+- I checked the cannon-es APIs I rely on against its source, not from memory: `equation.multiplier` as solver force, the Y-aligned `Cylinder`, the hinge motor API, the friction formula, and how sleeping bodies are solved.
+- No package manager, server or port is needed; it's a static file.
+
+**How it's built:**
+- **Physics:** cannon-es with a fixed 1/120 s step, at most 6 steps per frame, and rendering interpolated between steps. Joint stiffness is reset for the 1/120 step, because cannon hardcodes 1/60 for constraints.
+- **Car:** 20 rigid bodies:
+  - cabin, two front-clip segments, two hood panels, trunk lid;
+  - four doors, two bumpers, four wheels;
+  - windshield, rear glass and four side windows.
+
+  Joints break in stages when the solver's joint force, or the contact force on the part, passes a finite threshold:
+  - Bumpers go from locked, to hanging by one corner, to free.
+  - Doors go from locked, to swinging on a hinge, to torn off.
+  - The hood has a fold hinge that buckles upward.
+- **Crumple:** when a front-clip joint breaks, it becomes 8 springs that yield under compression and don't spring back. The segments can overlap, so the front visibly shortens. If they stretch too far apart, they tear free.
+- **Wheels:** they roll as spheres while mounted. When the nose is pushed back into them, the hinge breaks and they become cylinders so they can fall flat.
+- **Glass:** panes are replaced by 6 to 15 shard bodies that keep the pane's motion.
+- **Wall:** 192 bricks by default, each its own body, in a staggered running bond. Both depth layers are real bricks and half-bricks are used at the ends. The wall is woken just before contact, because a sleeping brick acts as immovable for one step.
+- **Rendering:**
+  - clearcoat paint; reflective, transparent glass;
+  - a 2048 soft shadow map that stays tight around the car and wall;
+  - cheap contact-shadow blobs, and a sky environment generated in code;
+  - ACES tone mapping, and dust, sparks, skid marks and camera shake as visual-only effects.
+- **Controls:**
+  - Pause/Play (Space), Replay (R), and 0.25× to 2× speed, which survives Replay and Apply.
+  - Four cameras (keys 1–4): Impact is the default and Orbit rotates on its own until you drag.
+  - All 17 settings rebuild the next run through Apply or Replay. The first run uses the mandatory defaults and starts by itself at 1×.
+
+**Risks to check on first load:**
+- **Thresholds:** they are estimated from momentum. If the default crash breaks too little or too much, tune the `thr` values in `buildCar`.
+- **Friction:** cannon caps friction at μ·g·(the body's own mass), which ignores the load it carries. Stacked bricks therefore slide more easily than real ones would. For the mounted wheels I compensated with a 12× friction multiplier (`TIRE_LOAD`).
