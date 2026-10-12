@@ -1,0 +1,2182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Opus 5.5</title>
+<style>
+  :root {
+    --bg: #0e1013;
+    --panel: rgba(14, 17, 22, 0.84);
+    --panel-border: rgba(255, 255, 255, 0.09);
+    --ink: #f2f4f7;
+    --ink-2: #b4bcc7;
+    --ink-3: #7d8794;
+    --amber: #ffb81c;
+    --red: #ff5b3a;
+    --green: #39d98a;
+    --blue: #5aa9ff;
+    --radius: 14px;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+  body { font: 13px/1.4 var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased; user-select: none; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #scene.dragging { cursor: grabbing; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow: 0 12px 32px -14px rgba(0, 0, 0, 0.5);
+  }
+
+  /* ---------- top area ---------- */
+  .top { position: fixed; top: 12px; left: 12px; right: 12px; z-index: 3; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .top > * { pointer-events: auto; }
+  .row1 { display: flex; justify-content: space-between; align-items: stretch; gap: 10px; pointer-events: none; }
+  .row1 > * { pointer-events: auto; }
+  .brand { padding: 9px 16px; display: flex; flex-direction: column; justify-content: center; }
+  .brand h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand p { margin: 1px 0 0; color: var(--ink-2); font-size: 12px; }
+  .actions { display: flex; gap: 8px; padding: 7px; align-items: center; }
+  .btn {
+    appearance: none; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.06);
+    color: var(--ink); font: 600 13px var(--sans); height: 38px; padding: 0 13px; border-radius: 10px;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s, transform 0.08s, filter 0.15s;
+  }
+  .btn svg { width: 15px; height: 15px; flex: none; }
+  .btn:hover { background: rgba(255, 255, 255, 0.12); }
+  .btn:active { transform: translateY(1px); }
+  .btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  .btn.primary {
+    background: linear-gradient(180deg, #ffc93f, #ff9f0a); color: #1d1300; border-color: rgba(0, 0, 0, 0.25);
+    padding: 0 22px; font-size: 14px; font-weight: 750; box-shadow: 0 6px 20px -6px rgba(255, 160, 10, 0.75);
+  }
+  .btn.primary:hover { filter: brightness(1.07); background: linear-gradient(180deg, #ffc93f, #ff9f0a); }
+  .btn[aria-pressed="true"] { background: rgba(90, 169, 255, 0.17); border-color: rgba(90, 169, 255, 0.55); }
+  .sep { width: 1px; align-self: stretch; background: var(--panel-border); margin: 4px 2px; }
+
+  /* ---------- telemetry strip ---------- */
+  .telemetry { display: grid; grid-template-columns: repeat(9, minmax(92px, 1fr)) minmax(170px, 1.6fr); align-items: stretch; padding: 0; overflow: hidden; }
+  .metric { padding: 8px 12px 9px; border-left: 1px solid var(--panel-border); min-width: 0; }
+  .metric:first-child { border-left: 0; }
+  .metric dt { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .metric dd { margin: 3px 0 0; font: 600 15px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .metric dd small { font-size: 11px; color: var(--ink-2); font-weight: 500; margin-left: 3px; }
+  .metric.speed dd { font-size: 19px; line-height: 1.1; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font: 700 12px var(--sans); letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--ink-2); }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .status[data-state="launch"] { color: var(--amber); background: rgba(255, 184, 28, 0.14); }
+  .status[data-state="impact"] { color: var(--red); background: rgba(255, 91, 58, 0.15); }
+  .status[data-state="settled"] { color: var(--green); background: rgba(57, 217, 138, 0.14); }
+  .status.paused { color: var(--ink); background: rgba(255, 255, 255, 0.16); }
+  .spark-wrap { border-left: 1px solid var(--panel-border); padding: 6px 10px 6px; display: flex; flex-direction: column; min-width: 0; }
+  .spark-wrap dt { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  #spark { width: 100%; height: 30px; display: block; margin-top: 2px; }
+
+  .verdict {
+    position: fixed; left: 50%; top: 0; transform: translate(-50%, -8px); z-index: 3; opacity: 0; pointer-events: none;
+    padding: 10px 16px; max-width: min(640px, 90vw); text-align: center; font-size: 13px; color: var(--ink);
+    transition: opacity 0.35s, transform 0.35s;
+  }
+  .verdict.show { opacity: 1; transform: translate(-50%, 0); }
+  .verdict b { color: var(--amber); }
+
+  /* ---------- settings dock ---------- */
+  .dock {
+    position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 2;
+    display: grid; grid-template-columns: minmax(360px, 1.25fr) minmax(320px, 1fr) minmax(280px, 0.95fr); overflow: hidden;
+  }
+  body.dock-hidden .dock { display: none; }
+  .dock-col { padding: 11px 16px 13px; border-left: 1px solid var(--panel-border); min-width: 0; }
+  .dock-col:first-child { border-left: 0; }
+  .dock-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); min-height: 20px; }
+  .pending { font-size: 10px; letter-spacing: 0.04em; color: #1d1300; background: var(--amber); border-radius: 999px; padding: 2px 8px; }
+  .pending[hidden] { display: none; }
+  .link { appearance: none; border: 0; background: none; color: var(--blue); font: 600 11px var(--sans); cursor: pointer; padding: 2px 4px; border-radius: 6px; text-transform: none; letter-spacing: 0; }
+  .link:hover { text-decoration: underline; }
+  .link:focus-visible { outline: 2px solid var(--amber); }
+  .sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 18px; }
+  .field { display: block; min-width: 0; }
+  .field-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+  .field-top label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .field.changed .field-top label::after { content: " \2022"; color: var(--amber); }
+  .num { display: inline-flex; align-items: baseline; gap: 3px; color: var(--ink-3); font: 500 11px var(--mono); }
+  .num input {
+    width: 60px; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--ink);
+    font: 600 12px var(--mono); text-align: right; padding: 1px 4px; -moz-appearance: textfield;
+  }
+  .num input::-webkit-outer-spin-button, .num input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .num input:hover, .num input:focus { border-color: rgba(255, 255, 255, 0.2); outline: none; background: rgba(255, 255, 255, 0.05); }
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; margin: 1px 0 0; cursor: pointer; }
+  input[type="range"]:focus-visible { outline: none; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--amber) 0 var(--fill, 50%), rgba(255, 255, 255, 0.15) var(--fill, 50%) 100%); }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; margin-top: -5px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45); }
+  input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(255, 184, 28, 0.6); }
+  input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.15); }
+  input[type="range"]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--amber); }
+  input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #fff; }
+  .param-list { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 3px 10px; margin: 0; font-size: 12px; }
+  .param-list dt { color: var(--ink-3); white-space: nowrap; }
+  .param-list dd { margin: 0; font: 600 12px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink); }
+  .param-list dd.fixed { color: var(--ink-2); font-weight: 500; }
+  .param-list dd.diff { color: var(--amber); }
+  .hint { margin: 8px 0 0; color: var(--ink-3); font-size: 11px; }
+  kbd { font: 600 10px var(--mono); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.18); color: var(--ink-2); }
+
+  @media (max-width: 1240px) {
+    .telemetry { grid-template-columns: repeat(5, minmax(90px, 1fr)); }
+    .spark-wrap { display: none; }
+    .dock { grid-template-columns: 1fr 1fr; }
+    .dock-col.params { display: none; }
+  }
+  @media (max-width: 760px) {
+    .row1 { flex-direction: column; }
+    .actions { flex-wrap: wrap; }
+    .telemetry { grid-template-columns: repeat(3, 1fr); }
+    .dock { grid-template-columns: 1fr; max-height: 42vh; overflow: auto; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="Side view of a crash test track: a car on the left, a brick wall on the right"></canvas>
+
+<div class="top">
+  <div class="row1">
+    <header class="brand panel">
+      <h1>Claude Opus 5.5</h1>
+      <p>Brick-wall crash experiment &middot; real-time 2D rigid-body simulation</p>
+    </header>
+    <nav class="actions panel" aria-label="Experiment controls">
+      <button class="btn primary" id="btnTest" title="Launch the car (Space)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>Test
+      </button>
+      <button class="btn" id="btnReset" title="Reset the scene to the current settings (R)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2v3h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Reset
+      </button>
+      <span class="sep" aria-hidden="true"></span>
+      <button class="btn" id="btnSlow" aria-pressed="false" title="Play the simulation at 0.25x speed (S)">Slow-mo 0.25&times;</button>
+      <button class="btn" id="btnFollow" aria-pressed="true" title="Camera follows the car; drag the scene to pan (F)">Follow cam</button>
+      <button class="btn" id="btnSettings" aria-pressed="true" title="Show or hide the settings panel (H)">Settings</button>
+    </nav>
+  </div>
+  <dl class="telemetry panel" aria-label="Experiment telemetry" aria-live="off">
+    <div class="metric"><dt>Status</dt><dd><span class="status" id="telStatus" data-state="ready">Ready</span></dd></div>
+    <div class="metric speed"><dt>Car speed</dt><dd><span id="telSpeed">0.0</span><small>m/s</small> <small id="telKmh">0 km/h</small></dd></div>
+    <div class="metric"><dt>Elapsed</dt><dd id="telTime">0.00<small>s</small></dd></div>
+    <div class="metric"><dt>Moving bricks</dt><dd id="telMoving">0</dd></div>
+    <div class="metric"><dt>Impact speed</dt><dd id="telImpact">&mdash;</dd></div>
+    <div class="metric"><dt>Peak decel.</dt><dd id="telPeak">&mdash;</dd></div>
+    <div class="metric"><dt>Displaced</dt><dd id="telDisp">&mdash;</dd></div>
+    <div class="metric"><dt>Past wall face</dt><dd id="telTravel">&mdash;</dd></div>
+    <div class="metric"><dt>Crush depth</dt><dd id="telCrush">&mdash;</dd></div>
+    <div class="spark-wrap"><dt>Speed vs time</dt><canvas id="spark"></canvas></div>
+  </dl>
+</div>
+
+<div class="verdict panel" id="verdict" role="status"></div>
+
+<section class="dock panel" id="dock" aria-label="Experiment settings">
+  <div class="dock-col">
+    <div class="dock-title"><span>Experiment settings</span><span class="pending" id="pending" hidden>Applies on next Test / Reset</span></div>
+    <div class="sliders" id="coreSliders"></div>
+  </div>
+  <div class="dock-col">
+    <div class="dock-title"><span>Advanced physics</span><button class="link" id="btnDefaults" type="button">Restore defaults</button></div>
+    <div class="sliders" id="advSliders"></div>
+  </div>
+  <div class="dock-col params">
+    <div class="dock-title"><span>Active parameters</span><span id="paramState" class="mono" style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-3)"></span></div>
+    <dl class="param-list" id="paramList"></dl>
+    <p class="hint">Drag to pan &middot; <kbd>Space</kbd> test &middot; <kbd>P</kbd> pause &middot; <kbd>R</kbd> reset &middot; <kbd>S</kbd> slow-mo &middot; <kbd>H</kbd> settings</p>
+  </div>
+</section>
+
+<script>
+'use strict';
+
+/* =====================================================================
+   1. CONFIGURATION
+   ===================================================================== */
+
+// Mandatory baseline. Every first load starts from exactly these values.
+const DEFAULTS = Object.freeze({
+  carSpeed: 22,          // m/s
+  cols: 12,              // bricks across (along the track)
+  rows: 8,               // bricks stacked vertically
+  layers: 2,             // depth layers (parallel wythes)
+  brickMass: 2.5,        // kg per full brick
+  gravity: 9.81,         // m/s^2
+  brickFriction: 0.72,
+  brickRestitution: 0.18,
+  carMass: 1250,         // kg
+  groundFriction: 0.85,
+});
+
+// Geometry that is part of the baseline but not user-editable.
+const FIXED = Object.freeze({
+  brickW: 0.50, brickH: 0.24,   // m
+  carW: 4.2, carH: 1.45,        // m
+  pxPerM: 80,                   // simulation scale
+});
+
+const SCHEMA = [
+  { key: 'carSpeed',  label: 'Car speed',        unit: 'm/s', min: 5,   max: 45, step: 0.5, dp: 1, group: 'core' },
+  { key: 'cols',      label: 'Wall columns',     unit: 'bricks', min: 4, max: 24, step: 1, dp: 0, group: 'core' },
+  { key: 'rows',      label: 'Wall rows',        unit: 'bricks', min: 3, max: 16, step: 1, dp: 0, group: 'core' },
+  { key: 'layers',    label: 'Depth layers',     unit: 'layers', min: 1, max: 5, step: 1, dp: 0, group: 'core' },
+  { key: 'brickMass', label: 'Brick mass',       unit: 'kg', min: 0.5, max: 12, step: 0.1, dp: 1, group: 'core' },
+  { key: 'gravity',   label: 'Gravity',          unit: 'm/s\u00b2', min: 1, max: 25, step: 0.01, dp: 2, group: 'adv' },
+  { key: 'brickFriction',    label: 'Brick friction \u03bc', unit: '', min: 0.05, max: 1.2, step: 0.01, dp: 2, group: 'adv' },
+  { key: 'brickRestitution', label: 'Brick restitution',    unit: '', min: 0, max: 0.8, step: 0.01, dp: 2, group: 'adv' },
+  { key: 'carMass',   label: 'Car mass',         unit: 'kg', min: 500, max: 4000, step: 10, dp: 0, group: 'adv' },
+  { key: 'groundFriction',   label: 'Ground friction \u03bc', unit: '', min: 0.1, max: 1.2, step: 0.01, dp: 2, group: 'adv' },
+];
+
+// Solver and experiment constants. Fixed so identical settings give identical runs.
+const SIM = Object.freeze({
+  frameDt: 1 / 60,
+  substeps: 4,            // 240 Hz physics
+  velIters: 8,
+  posIters: 3,
+  slop: 0.004,            // allowed penetration (m)
+  beta: 0.3,              // split-impulse position correction factor
+  maxCorrection: 0.05,    // m per substep
+  specBase: 0.012,        // base speculative contact distance (m)
+  maxExt: 0.35,           // cap for velocity-expanded contact distance (m)
+  restitutionThreshold: 1.0,
+  linDamp: 0.01, angDamp: 0.05,
+  maxV: 120, maxW: 80,
+  sleepLin: 0.05, sleepAng: 0.1, sleepTime: 0.5,
+  wakeSpeed: 0.06,
+  runup: 5.0,             // gap between car bumper and wall face (m)
+  cruiseLead: 0.8,        // last metres driven at constant speed
+  rollingMu: 0.015,       // free-rolling tyres before impact
+  carBodyMu: 0.6, wheelMu: 0.9, carRestitution: 0.1,
+  crushMax: 0.38, crushE0: 120000,
+  settleTime: 1.0, maxTime: 30,
+  wallX: 0,
+});
+
+const G0 = 9.80665;
+
+/* =====================================================================
+   2. SMALL UTILITIES
+   ===================================================================== */
+
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// Math.sin/cos/exp/hypot and ** are implementation-approximated, so browsers
+// disagree in the last bits and a chaotic crash then diverges. Physics only uses
+// + - * / and sqrt (exactly rounded everywhere) through these helpers, which makes
+// a run bit-identical in every engine.
+const len2 = (x, y) => Math.sqrt(x * x + y * y);
+
+const SC = [0, 0];
+function sinCos(a, out = SC) {
+  const q = Math.round(a / (Math.PI / 2));
+  const r = a - q * 1.5707963267341256 - q * 6.077100506506192e-11;
+  const r2 = r * r;
+  const s = r + r * r2 * (-1 / 6 + r2 * (1 / 120 + r2 * (-1 / 5040 + r2 * (1 / 362880 + r2 * (-1 / 39916800 + r2 * (1 / 6227020800 - r2 / 1307674368000))))));
+  const c = 1 + r2 * (-0.5 + r2 * (1 / 24 + r2 * (-1 / 720 + r2 * (1 / 40320 + r2 * (-1 / 3628800 + r2 * (1 / 479001600 - r2 / 87178291200))))));
+  switch (q & 3) {
+    case 0: out[0] = s; out[1] = c; break;
+    case 1: out[0] = c; out[1] = -s; break;
+    case 2: out[0] = -s; out[1] = -c; break;
+    default: out[0] = -c; out[1] = s;
+  }
+  return out;
+}
+
+function expDet(x) {
+  if (x < -60) return 0;
+  const k = Math.round(x / Math.LN2);
+  const r = x - k * 0.6931471803691238 - k * 1.9082149292705877e-10;
+  let p = 1, term = 1;
+  for (let i = 1; i <= 14; i++) { term = (term * r) / i; p += term; }
+  const base = k < 0 ? 0.5 : 2;
+  for (let i = Math.abs(k); i > 0; i--) p *= base;
+  return p;
+}
+
+// Widest possible x-extent of a (rotated) brick: its diagonal.
+const BRICK_SPAN = len2(FIXED.brickW, FIXED.brickH);
+
+function mulberry32(seed) {
+  return function () {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hash32(i) {
+  let x = (i + 0x9e3779b9) | 0;
+  x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+  x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+/* =====================================================================
+   3. RIGID-BODY PHYSICS
+   Convex polygons, SAT + reference-face clipping, persistent manifolds
+   with warm starting, sequential impulses (Coulomb friction, restitution),
+   split-impulse position correction, speculative contacts against
+   tunnelling, and per-body sleeping.
+   ===================================================================== */
+
+// Area, centroid and unit-density inertia (about the centroid) of a CCW polygon.
+function polygonMassData(v) {
+  const ox = v[0][0], oy = v[0][1];
+  let area = 0, cx = 0, cy = 0, I = 0;
+  for (let i = 1; i < v.length - 1; i++) {
+    const e1x = v[i][0] - ox, e1y = v[i][1] - oy;
+    const e2x = v[i + 1][0] - ox, e2y = v[i + 1][1] - oy;
+    const D = e1x * e2y - e1y * e2x;
+    const tri = 0.5 * D;
+    area += tri;
+    cx += tri * (e1x + e2x) / 3;
+    cy += tri * (e1y + e2y) / 3;
+    const ix = e1x * e1x + e2x * e1x + e2x * e2x;
+    const iy = e1y * e1y + e2y * e1y + e2y * e2y;
+    I += (0.25 / 3) * D * (ix + iy);
+  }
+  cx /= area; cy /= area;
+  return { area, cx: cx + ox, cy: cy + oy, Iunit: I - area * (cx * cx + cy * cy) };
+}
+
+class Shape {
+  constructor(verts, props) {
+    const n = verts.length;
+    this.n = n;
+    this.id = -1;
+    this.body = null;
+    this.kind = props.kind;
+    this.friction = props.friction;
+    this.restitution = props.restitution;
+    this.wheelIndex = props.wheelIndex ?? -1;
+    this.lx = new Float64Array(n); this.ly = new Float64Array(n);
+    this.lnx = new Float64Array(n); this.lny = new Float64Array(n);
+    this.wx = new Float64Array(n); this.wy = new Float64Array(n);
+    this.wnx = new Float64Array(n); this.wny = new Float64Array(n);
+    this.minX = 0; this.minY = 0; this.maxX = 0; this.maxY = 0;
+    this.setLocal(verts);
+  }
+  setLocal(verts) {
+    const n = this.n;
+    for (let i = 0; i < n; i++) { this.lx[i] = verts[i][0]; this.ly[i] = verts[i][1]; }
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const ex = this.lx[j] - this.lx[i], ey = this.ly[j] - this.ly[i];
+      const len = len2(ex, ey);
+      this.lnx[i] = ey / len; this.lny[i] = -ex / len;
+    }
+  }
+  update(x, y, c, s) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let i = 0; i < this.n; i++) {
+      const lx = this.lx[i], ly = this.ly[i];
+      const wx = x + c * lx - s * ly, wy = y + s * lx + c * ly;
+      this.wx[i] = wx; this.wy[i] = wy;
+      this.wnx[i] = c * this.lnx[i] - s * this.lny[i];
+      this.wny[i] = s * this.lnx[i] + c * this.lny[i];
+      if (wx < minX) minX = wx; if (wx > maxX) maxX = wx;
+      if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
+    }
+    this.minX = minX; this.minY = minY; this.maxX = maxX; this.maxY = maxY;
+  }
+}
+
+class Body {
+  constructor(kind) {
+    this.kind = kind;
+    this.index = -1; this.layer = -1;
+    this.x = 0; this.y = 0; this.a = 0; this.c = 1; this.s = 0;
+    this.vx = 0; this.vy = 0; this.w = 0;
+    this.pvx = 0; this.pvy = 0; this.pw = 0;       // split-impulse pseudo velocities
+    this.fx = 0; this.fy = 0;
+    this.mass = 0; this.invMass = 0; this.I = 0; this.invI = 0;
+    this.im = 0; this.iI = 0;                      // effective (0 while asleep)
+    this.shapes = []; this.radius = 0;
+    this.isStatic = false;
+    this.sleeping = false; this.sleepTimer = 0; this.canSleep = true; this.motion2 = 0;
+    this.minX = 0; this.minY = 0; this.maxX = 0; this.maxY = 0; this.ext = 0; this.key = 0;
+    this.px = 0; this.py = 0; this.pa = 0;        // previous frame pose (render interpolation)
+    this.x0 = 0; this.y0 = 0; this.a0 = 0;        // initial pose
+  }
+  addShape(shape) {
+    shape.body = this;
+    this.shapes.push(shape);
+    for (let i = 0; i < shape.n; i++) this.radius = Math.max(this.radius, len2(shape.lx[i], shape.ly[i]));
+  }
+  setMass(m, I) {
+    this.mass = m; this.invMass = m > 0 ? 1 / m : 0;
+    this.I = I; this.invI = I > 0 ? 1 / I : 0;
+  }
+  sync() {
+    sinCos(this.a); this.s = SC[0]; this.c = SC[1];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let k = 0; k < this.shapes.length; k++) {
+      const sh = this.shapes[k];
+      sh.update(this.x, this.y, this.c, this.s);
+      if (sh.minX < minX) minX = sh.minX; if (sh.maxX > maxX) maxX = sh.maxX;
+      if (sh.minY < minY) minY = sh.minY; if (sh.maxY > maxY) maxY = sh.maxY;
+    }
+    this.minX = minX; this.minY = minY; this.maxX = maxX; this.maxY = maxY;
+  }
+  wake() {
+    if (!this.sleeping) return;
+    this.sleeping = false; this.sleepTimer = 0;
+    this.im = this.invMass; this.iI = this.invI;
+    this.pvx = this.pvy = this.pw = 0;
+    this.motion2 = 0;
+  }
+}
+
+/* ---------- narrow phase ---------- */
+
+// Scratch output of the collision routines (normal points from shape A to shape B).
+const CP = { n: 0, nx: 0, ny: 0, minSep: 0, x: new Float64Array(4), y: new Float64Array(4), sep: new Float64Array(4), id: new Int32Array(4) };
+const SEP = { v: 0, i: 0 };
+
+function cpPush(x, y, sep, id) {
+  if (CP.n >= 4) return;
+  const k = CP.n++;
+  CP.x[k] = x; CP.y[k] = y; CP.sep[k] = sep; CP.id[k] = id;
+  if (sep < CP.minSep) CP.minSep = sep;
+}
+
+function maxSeparation(A, B) {
+  let best = -Infinity, bestI = 0;
+  const bn = B.n, bx = B.wx, by = B.wy;
+  for (let i = 0; i < A.n; i++) {
+    const nx = A.wnx[i], ny = A.wny[i], vx = A.wx[i], vy = A.wy[i];
+    let si = Infinity;
+    for (let j = 0; j < bn; j++) {
+      const d = nx * (bx[j] - vx) + ny * (by[j] - vy);
+      if (d < si) si = d;
+    }
+    if (si > best) { best = si; bestI = i; }
+  }
+  SEP.v = best; SEP.i = bestI;
+}
+
+function collidePolys(A, B, margin) {
+  CP.n = 0; CP.minSep = Infinity;
+  maxSeparation(A, B);
+  const sepA = SEP.v, edgeA = SEP.i;
+  if (sepA > margin) return;
+  maxSeparation(B, A);
+  const sepB = SEP.v, edgeB = SEP.i;
+  if (sepB > margin) return;
+
+  let R, I, e, flip;
+  if (sepB > sepA + 0.1 * SIM.slop) { R = B; I = A; e = edgeB; flip = 1; }
+  else { R = A; I = B; e = edgeA; flip = 0; }
+
+  const e2 = (e + 1) % R.n;
+  const v1x = R.wx[e], v1y = R.wy[e], v2x = R.wx[e2], v2y = R.wy[e2];
+  const nx = R.wnx[e], ny = R.wny[e];
+
+  // Incident edge: the one most anti-parallel to the reference normal.
+  let k = 0, minD = Infinity;
+  for (let j = 0; j < I.n; j++) {
+    const d = nx * I.wnx[j] + ny * I.wny[j];
+    if (d < minD) { minD = d; k = j; }
+  }
+  const k2 = (k + 1) % I.n;
+  let ax = I.wx[k], ay = I.wy[k], aid = k;
+  let bx = I.wx[k2], by = I.wy[k2], bid = k2;
+
+  let tx = v2x - v1x, ty = v2y - v1y;
+  const tl = len2(tx, ty); tx /= tl; ty /= tl;
+
+  // Clip the incident segment against the two side planes of the reference edge.
+  // A clipped point keeps the id of the incident vertex it slid from, so warm
+  // starting survives the tiny rotations of perfectly aligned stacks.
+  const off1 = tx * v1x + ty * v1y;
+  let da = off1 - (tx * ax + ty * ay), db = off1 - (tx * bx + ty * by);
+  if (da > 0 && db > 0) return;
+  if (da > 0) { const u = da / (da - db); ax += u * (bx - ax); ay += u * (by - ay); }
+  else if (db > 0) { const u = db / (db - da); bx += u * (ax - bx); by += u * (ay - by); }
+
+  const off2 = tx * v2x + ty * v2y;
+  da = tx * ax + ty * ay - off2; db = tx * bx + ty * by - off2;
+  if (da > 0 && db > 0) return;
+  if (da > 0) { const u = da / (da - db); ax += u * (bx - ax); ay += u * (by - ay); }
+  else if (db > 0) { const u = db / (db - da); bx += u * (ax - bx); by += u * (ay - by); }
+
+  CP.nx = flip ? -nx : nx;
+  CP.ny = flip ? -ny : ny;
+  const base = (flip << 14) | (e << 8);
+  const sa = nx * (ax - v1x) + ny * (ay - v1y);
+  const sb = nx * (bx - v1x) + ny * (by - v1y);
+  if (sa <= margin) cpPush(ax - nx * sa * 0.5, ay - ny * sa * 0.5, sa, base | aid);
+  if (sb <= margin) cpPush(bx - nx * sb * 0.5, by - ny * sb * 0.5, sb, base | bid);
+}
+
+// Ground is the half-plane y <= 0 (static body A, normal +y).
+function collideGround(S, margin) {
+  CP.n = 0; CP.minSep = Infinity; CP.nx = 0; CP.ny = 1;
+  for (let j = 0; j < S.n; j++) {
+    const y = S.wy[j];
+    if (y <= margin) cpPush(S.wx[j], y * 0.5, y, j);
+  }
+}
+
+/* ---------- contact manifolds ---------- */
+
+class ContactPoint {
+  constructor() {
+    this.id = 0; this.x = 0; this.y = 0; this.sep = 0;
+    this.jn = 0; this.jt = 0; this.jp = 0;
+    this.rax = 0; this.ray = 0; this.rbx = 0; this.rby = 0;
+    this.mn = 0; this.mt = 0; this.vt = 0;
+  }
+}
+
+const OLD_ID = new Int32Array(4), OLD_JN = new Float64Array(4), OLD_JT = new Float64Array(4);
+
+// Kinds: 0 brick-brick, 1 ground-brick, 2 car-brick, 3 ground-car
+class Manifold {
+  constructor(sa, sb) {
+    this.sa = sa; this.sb = sb; this.a = sa.body; this.b = sb.body;
+    this.count = 0; this.stamp = 0; this.nx = 0; this.ny = 1;
+    this.mu0 = Math.sqrt(sa.friction * sb.friction);
+    this.mu = this.mu0;
+    this.e = Math.max(sa.restitution, sb.restitution);
+    this.wheelGround = sa.kind === 'ground' && sb.kind === 'wheel';
+    const carA = this.a.kind === 'car', carB = this.b.kind === 'car';
+    this.kind = sa.kind === 'ground' ? (carB ? 3 : 1) : (carA || carB ? 2 : 0);
+    this.vnMin = 0;
+    this.block = false;
+    this.k11 = 0; this.k12 = 0; this.k22 = 0; this.i11 = 0; this.i12 = 0; this.i22 = 0;
+    this.p = [new ContactPoint(), new ContactPoint(), new ContactPoint(), new ContactPoint()];
+  }
+  update(stamp) {
+    const oldN = this.count;
+    for (let k = 0; k < oldN; k++) { OLD_ID[k] = this.p[k].id; OLD_JN[k] = this.p[k].jn; OLD_JT[k] = this.p[k].jt; }
+    for (let i = 0; i < CP.n; i++) {
+      const p = this.p[i];
+      p.id = CP.id[i]; p.x = CP.x[i]; p.y = CP.y[i]; p.sep = CP.sep[i];
+      p.jn = 0; p.jt = 0;
+      for (let k = 0; k < oldN; k++) {
+        if (OLD_ID[k] === p.id) { p.jn = OLD_JN[k]; p.jt = OLD_JT[k]; break; }
+      }
+    }
+    this.count = CP.n; this.nx = CP.nx; this.ny = CP.ny; this.stamp = stamp;
+  }
+}
+
+/* ---------- solver kernels ---------- */
+
+function prestep(m, invH) {
+  const A = m.a, B = m.b, imA = A.im, iIA = A.iI, imB = B.im, iIB = B.iI;
+  const nx = m.nx, ny = m.ny, tx = ny, ty = -nx, n = m.count, P = m.p;
+  let vnMin = 0;
+  for (let i = 0; i < n; i++) {
+    const p = P[i];
+    const rax = p.x - A.x, ray = p.y - A.y, rbx = p.x - B.x, rby = p.y - B.y;
+    p.rax = rax; p.ray = ray; p.rbx = rbx; p.rby = rby;
+    const rnA = rax * ny - ray * nx, rnB = rbx * ny - rby * nx;
+    const kN = imA + imB + iIA * rnA * rnA + iIB * rnB * rnB;
+    p.mn = kN > 0 ? 1 / kN : 0;
+    const rtA = rax * ty - ray * tx, rtB = rbx * ty - rby * tx;
+    const kT = imA + imB + iIA * rtA * rtA + iIB * rtB * rtB;
+    p.mt = kT > 0 ? 1 / kT : 0;
+    const dvx = B.vx - B.w * rby - A.vx + A.w * ray;
+    const dvy = B.vy + B.w * rbx - A.vy - A.w * rax;
+    const vn = dvx * nx + dvy * ny;
+    if (vn < vnMin && p.sep < 0.02) vnMin = vn;
+    // Speculative: a separated point may close its gap this substep but no further.
+    let target = p.sep > 0 ? -p.sep * invH : 0;
+    if (vn < -SIM.restitutionThreshold && p.sep < SIM.slop) {
+      const bounce = -m.e * vn;
+      if (bounce > target) target = bounce;
+    }
+    p.vt = target;
+    p.jp = 0;
+    if (p.sep > 2 * SIM.slop) { p.jn = 0; p.jt = 0; }
+  }
+  m.vnMin = vnMin;
+  m.block = false;
+  if (n === 2) {
+    // 2x2 effective-mass matrix for the block solver (skipped when ill-conditioned).
+    const p1 = P[0], p2 = P[1];
+    const rn1A = p1.rax * ny - p1.ray * nx, rn1B = p1.rbx * ny - p1.rby * nx;
+    const rn2A = p2.rax * ny - p2.ray * nx, rn2B = p2.rbx * ny - p2.rby * nx;
+    const k11 = imA + imB + iIA * rn1A * rn1A + iIB * rn1B * rn1B;
+    const k22 = imA + imB + iIA * rn2A * rn2A + iIB * rn2B * rn2B;
+    const k12 = imA + imB + iIA * rn1A * rn2A + iIB * rn1B * rn2B;
+    const det = k11 * k22 - k12 * k12;
+    if (k11 * k11 < 1000 * det) {
+      const id = 1 / det;
+      m.block = true;
+      m.k11 = k11; m.k12 = k12; m.k22 = k22;
+      m.i11 = k22 * id; m.i12 = -k12 * id; m.i22 = k11 * id;
+    }
+  }
+}
+
+// Must run only after every manifold has been prestepped: restitution targets
+// have to see pre-warm-start velocities, otherwise tall stacks gain energy.
+function warmStart(m) {
+  const A = m.a, B = m.b, imA = A.im, iIA = A.iI, imB = B.im, iIB = B.iI;
+  const nx = m.nx, ny = m.ny, tx = ny, ty = -nx;
+  for (let i = 0; i < m.count; i++) {
+    const p = m.p[i];
+    const Px = p.jn * nx + p.jt * tx, Py = p.jn * ny + p.jt * ty;
+    A.vx -= imA * Px; A.vy -= imA * Py; A.w -= iIA * (p.rax * Py - p.ray * Px);
+    B.vx += imB * Px; B.vy += imB * Py; B.w += iIB * (p.rbx * Py - p.rby * Px);
+  }
+}
+
+function solveVelocity(m) {
+  const A = m.a, B = m.b, imA = A.im, iIA = A.iI, imB = B.im, iIB = B.iI;
+  const nx = m.nx, ny = m.ny, tx = ny, ty = -nx, mu = m.mu, n = m.count, P = m.p;
+  let vAx = A.vx, vAy = A.vy, wA = A.w, vBx = B.vx, vBy = B.vy, wB = B.w;
+  for (let i = 0; i < n; i++) {
+    const p = P[i];
+    const dvx = vBx - wB * p.rby - vAx + wA * p.ray;
+    const dvy = vBy + wB * p.rbx - vAy - wA * p.rax;
+    const vt = dvx * tx + dvy * ty;
+    const maxF = mu * p.jn;
+    const nj = clamp(p.jt - p.mt * vt, -maxF, maxF);
+    const lam = nj - p.jt; p.jt = nj;
+    const Px = lam * tx, Py = lam * ty;
+    vAx -= imA * Px; vAy -= imA * Py; wA -= iIA * (p.rax * Py - p.ray * Px);
+    vBx += imB * Px; vBy += imB * Py; wB += iIB * (p.rbx * Py - p.rby * Px);
+  }
+  if (m.block) {
+    // Two-point LCP solved exactly (Box2D block solver): keeps resting faces
+    // flat so stacked bricks do not rock and creep.
+    const p1 = P[0], p2 = P[1];
+    const vn1 = (vBx - wB * p1.rby - vAx + wA * p1.ray) * nx + (vBy + wB * p1.rbx - vAy - wA * p1.rax) * ny;
+    const vn2 = (vBx - wB * p2.rby - vAx + wA * p2.ray) * nx + (vBy + wB * p2.rbx - vAy - wA * p2.rax) * ny;
+    const a1 = p1.jn, a2 = p2.jn;
+    const b1 = vn1 - p1.vt - (m.k11 * a1 + m.k12 * a2);
+    const b2 = vn2 - p2.vt - (m.k12 * a1 + m.k22 * a2);
+    let x1 = -(m.i11 * b1 + m.i12 * b2), x2 = -(m.i12 * b1 + m.i22 * b2);
+    let ok = x1 >= 0 && x2 >= 0;
+    if (!ok) { x1 = -b1 / m.k11; x2 = 0; ok = x1 >= 0 && m.k12 * x1 + b2 >= 0; }
+    if (!ok) { x1 = 0; x2 = -b2 / m.k22; ok = x2 >= 0 && m.k12 * x2 + b1 >= 0; }
+    if (!ok) { x1 = 0; x2 = 0; ok = b1 >= 0 && b2 >= 0; }
+    if (ok) {
+      const d1 = x1 - a1, d2 = x2 - a2;
+      p1.jn = x1; p2.jn = x2;
+      const P1x = d1 * nx, P1y = d1 * ny, P2x = d2 * nx, P2y = d2 * ny;
+      vAx -= imA * (P1x + P2x); vAy -= imA * (P1y + P2y);
+      wA -= iIA * (p1.rax * P1y - p1.ray * P1x + p2.rax * P2y - p2.ray * P2x);
+      vBx += imB * (P1x + P2x); vBy += imB * (P1y + P2y);
+      wB += iIB * (p1.rbx * P1y - p1.rby * P1x + p2.rbx * P2y - p2.rby * P2x);
+    }
+  } else {
+    for (let i = 0; i < n; i++) {
+      const p = P[i];
+      const dvx = vBx - wB * p.rby - vAx + wA * p.ray;
+      const dvy = vBy + wB * p.rbx - vAy - wA * p.rax;
+      const vn = dvx * nx + dvy * ny;
+      const nj = Math.max(p.jn + p.mn * (p.vt - vn), 0);
+      const lam = nj - p.jn; p.jn = nj;
+      const Px = lam * nx, Py = lam * ny;
+      vAx -= imA * Px; vAy -= imA * Py; wA -= iIA * (p.rax * Py - p.ray * Px);
+      vBx += imB * Px; vBy += imB * Py; wB += iIB * (p.rbx * Py - p.rby * Px);
+    }
+  }
+  A.vx = vAx; A.vy = vAy; A.w = wA; B.vx = vBx; B.vy = vBy; B.w = wB;
+}
+
+// Split impulse: penetration is removed through pseudo velocities that never
+// feed back into real momentum, so overlap recovery cannot launch bricks.
+function solvePosition(m, invH) {
+  const A = m.a, B = m.b, imA = A.im, iIA = A.iI, imB = B.im, iIB = B.iI;
+  const nx = m.nx, ny = m.ny, n = m.count, P = m.p;
+  for (let i = 0; i < n; i++) {
+    const p = P[i];
+    let target;
+    if (p.sep > 0) target = -p.sep * invH;
+    else if (p.sep < -SIM.slop) target = SIM.beta * Math.min(-(p.sep + SIM.slop), SIM.maxCorrection) * invH;
+    else target = 0;
+    const dvx = B.pvx - B.pw * p.rby - A.pvx + A.pw * p.ray;
+    const dvy = B.pvy + B.pw * p.rbx - A.pvy - A.pw * p.rax;
+    const vn = dvx * nx + dvy * ny;
+    const nj = Math.max(p.jp + p.mn * (target - vn), 0);
+    const lam = nj - p.jp; p.jp = nj;
+    const Px = lam * nx, Py = lam * ny;
+    A.pvx -= imA * Px; A.pvy -= imA * Py; A.pw -= iIA * (p.rax * Py - p.ray * Px);
+    B.pvx += imB * Px; B.pvy += imB * Py; B.pw += iIB * (p.rbx * Py - p.rby * Px);
+  }
+}
+
+function sortByKey(L) {
+  for (let i = 0; i < L.length; i++) { const b = L[i]; b.key = b.minX - b.ext; }
+  for (let i = 1; i < L.length; i++) {
+    const b = L[i], k = b.key;
+    let j = i - 1;
+    while (j >= 0 && L[j].key > k) { L[j + 1] = L[j]; j--; }
+    L[j + 1] = b;
+  }
+}
+
+/* ---------- world ---------- */
+
+class World {
+  constructor(settings) {
+    this.gravity = settings.gravity;
+    this.groundFriction = settings.groundFriction;
+    this.bodies = [];
+    this.bricks = [];
+    this.layers = [];
+    for (let k = 0; k < settings.layers; k++) this.layers.push([]);
+    this.car = null;
+    this.wheelsLocked = false;
+    this.manifolds = new Map();
+    this.active = [];
+    this.stamp = 0;
+    this.nextShapeId = 1;
+    this.ground = new Body('ground');
+    this.ground.isStatic = true;
+    this.groundShape = { id: 0, body: this.ground, kind: 'ground', friction: settings.groundFriction, restitution: 0 };
+    this.events = [];
+    this.carTouch = false;
+    this.carNear = false;
+    this.wheelContact = [false, false];
+  }
+
+  add(body) {
+    body.index = this.bodies.length;
+    this.bodies.push(body);
+    for (const sh of body.shapes) sh.id = this.nextShapeId++;
+    body.sync();
+    body.x0 = body.x; body.y0 = body.y; body.a0 = body.a;
+    body.px = body.x; body.py = body.y; body.pa = body.a;
+    if (body.kind === 'brick') { this.bricks.push(body); this.layers[body.layer].push(body); }
+    if (body.kind === 'car') this.car = body;
+    return body;
+  }
+
+  touch(sa, sb, stamp) {
+    const key = sa.id * 8192 + sb.id;
+    let m = this.manifolds.get(key);
+    if (!m) { m = new Manifold(sa, sb); this.manifolds.set(key, m); }
+    m.update(stamp);
+    this.active.push(m);
+    return m;
+  }
+
+  collide() {
+    const stamp = ++this.stamp;
+    const base = SIM.specBase;
+    this.active.length = 0;
+    this.carTouch = false;
+    this.carNear = false;
+    this.wheelContact[0] = this.wheelContact[1] = false;
+
+    // Ground (static half-plane).
+    for (let i = 0; i < this.bodies.length; i++) {
+      const b = this.bodies[i];
+      if (b.sleeping) continue;
+      const margin = base + b.ext;
+      if (b.minY > margin) continue;
+      for (let s = 0; s < b.shapes.length; s++) {
+        const sh = b.shapes[s];
+        if (sh.minY > margin) continue;
+        collideGround(sh, margin);
+        if (CP.n) {
+          this.touch(this.groundShape, sh, stamp);
+          if (sh.wheelIndex >= 0 && CP.minSep < 0.01) this.wheelContact[sh.wheelIndex] = true;
+        }
+      }
+    }
+
+    // Bricks, per depth layer (layers are separate wythes and do not touch each other).
+    // Sweep-and-prune driven by awake bricks only: each awake brick scans forward
+    // for every neighbour and backward for sleeping ones, so a resting wall is free.
+    const window = BRICK_SPAN + 2 * SIM.maxExt;
+    for (let l = 0; l < this.layers.length; l++) {
+      const L = this.layers[l];
+      sortByKey(L);
+      const n = L.length;
+      for (let i = 0; i < n; i++) {
+        const a = L[i];
+        if (a.sleeping) continue;
+        const aMax = a.maxX + a.ext;
+        for (let j = i + 1; j < n; j++) {
+          const b = L[j];
+          if (b.key > aMax) break;
+          this.brickPair(a, b, base, stamp);
+        }
+        const lo = a.key - window;
+        for (let j = i - 1; j >= 0; j--) {
+          const b = L[j];
+          if (b.key < lo) break;
+          if (b.sleeping && b.maxX >= a.key) this.brickPair(a, b, base, stamp);
+        }
+      }
+    }
+
+    // Car against every brick in every layer (the car spans the full wall depth).
+    const car = this.car;
+    if (car) {
+      for (let i = 0; i < this.bricks.length; i++) {
+        const b = this.bricks[i];
+        if (car.sleeping && b.sleeping) continue;
+        const ext = car.ext + b.ext;
+        if (b.minX > car.maxX + ext || b.maxX < car.minX - ext || b.minY > car.maxY + ext || b.maxY < car.minY - ext) continue;
+        const bs = b.shapes[0];
+        for (let s = 0; s < car.shapes.length; s++) {
+          const cs = car.shapes[s];
+          if (b.minX > cs.maxX + ext || b.maxX < cs.minX - ext || b.minY > cs.maxY + ext || b.maxY < cs.minY - ext) continue;
+          collidePolys(cs, bs, base + ext);
+          if (CP.n) {
+            this.touch(cs, bs, stamp);
+            this.carNear = true;
+            if (CP.minSep < 0.01) this.carTouch = true;
+          }
+        }
+      }
+    }
+
+    // Drop manifolds that were not refreshed, unless both sides are at rest
+    // (kept so a woken brick restarts with its resting impulses).
+    const map = this.manifolds;
+    map.forEach((m, key) => {
+      if (m.stamp === stamp) return;
+      if ((m.a.sleeping || m.a.isStatic) && (m.b.sleeping || m.b.isStatic)) return;
+      map.delete(key);
+    });
+  }
+
+  brickPair(a, b, base, stamp) {
+    if (a.minY - a.ext > b.maxY + b.ext || b.minY - b.ext > a.maxY + a.ext) return;
+    let sa = a.shapes[0], sb = b.shapes[0];
+    if (sa.id > sb.id) { const t = sa; sa = sb; sb = t; }
+    collidePolys(sa, sb, base + a.ext + b.ext);
+    if (CP.n) this.touch(sa, sb, stamp);
+  }
+
+  wakeTouching() {
+    const w2 = SIM.wakeSpeed * SIM.wakeSpeed;
+    for (let i = 0; i < this.active.length; i++) {
+      const m = this.active[i], A = m.a, B = m.b;
+      if (A.sleeping && !B.sleeping && !B.isStatic && B.motion2 > w2) A.wake();
+      else if (B.sleeping && !A.sleeping && !A.isStatic && A.motion2 > w2) B.wake();
+    }
+  }
+
+  substep(h) {
+    const invH = 1 / h, g = this.gravity, bodies = this.bodies;
+    const ld = 1 / (1 + h * SIM.linDamp), ad = 1 / (1 + h * SIM.angDamp);
+
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i];
+      if (b.sleeping) { b.im = 0; b.iI = 0; b.ext = 0; continue; }
+      b.im = b.invMass; b.iI = b.invI;
+      b.vx = (b.vx + b.fx * b.invMass * h) * ld;
+      b.vy = (b.vy + (b.fy * b.invMass - g) * h) * ld;
+      b.w *= ad;
+      b.pvx = 0; b.pvy = 0; b.pw = 0;
+      const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy) + Math.abs(b.w) * b.radius;
+      b.ext = Math.min(SIM.maxExt, 0.004 + sp * h * 1.25);
+    }
+
+    this.collide();
+    this.wakeTouching();
+
+    const act = this.active, nA = act.length;
+    const lockedMu = this.groundFriction;
+    for (let i = 0; i < nA; i++) {
+      const m = act[i];
+      if (m.wheelGround) m.mu = this.wheelsLocked ? lockedMu : SIM.rollingMu;
+      prestep(m, invH);
+    }
+    for (let i = 0; i < nA; i++) warmStart(act[i]);
+    for (let it = 0; it < SIM.velIters; it++) for (let i = 0; i < nA; i++) solveVelocity(act[i]);
+    for (let it = 0; it < SIM.posIters; it++) for (let i = 0; i < nA; i++) solvePosition(act[i], invH);
+
+    for (let i = 0; i < nA; i++) {
+      const m = act[i];
+      if (m.vnMin < -2.5 && this.events.length < 96) {
+        const p = m.p[0];
+        this.events.push({ x: p.x, y: p.y, s: -m.vnMin, k: m.kind, nx: m.nx, ny: m.ny });
+      }
+    }
+
+    const vMax2 = SIM.maxV * SIM.maxV;
+    const sl2 = SIM.sleepLin * SIM.sleepLin, sa2 = SIM.sleepAng * SIM.sleepAng;
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i];
+      if (b.sleeping || b.isStatic) continue;
+      let v2 = b.vx * b.vx + b.vy * b.vy;
+      if (v2 > vMax2) { const k = SIM.maxV / Math.sqrt(v2); b.vx *= k; b.vy *= k; v2 = vMax2; }
+      b.w = clamp(b.w, -SIM.maxW, SIM.maxW);
+      b.x += (b.vx + b.pvx) * h;
+      b.y += (b.vy + b.pvy) * h;
+      b.a += (b.w + b.pw) * h;
+      b.sync();
+      const w2 = b.w * b.w;
+      b.motion2 = v2 + w2 * b.radius * b.radius;
+      if (b.canSleep && v2 < sl2 && w2 < sa2) {
+        b.sleepTimer += h;
+        if (b.sleepTimer >= SIM.sleepTime) {
+          b.sleeping = true; b.vx = 0; b.vy = 0; b.w = 0; b.im = 0; b.iI = 0; b.motion2 = 0;
+        }
+      } else {
+        b.sleepTimer = 0;
+      }
+    }
+  }
+
+  // Solve the resting wall once at build time so the first woken bricks start
+  // with equilibrium contact impulses instead of sagging. Positions do not move.
+  prestress(h, rounds) {
+    const invH = 1 / h;
+    for (const b of this.bodies) { b.sleeping = false; b.im = b.invMass; b.iI = b.invI; b.ext = 0; }
+    this.collide();
+    const act = this.active;
+    for (let r = 0; r < rounds; r++) {
+      for (const b of this.bodies) { if (b.isStatic) continue; b.vx = 0; b.w = 0; b.vy = -this.gravity * h; }
+      for (let i = 0; i < act.length; i++) {
+        const m = act[i];
+        if (m.wheelGround) m.mu = SIM.rollingMu;
+        prestep(m, invH);
+      }
+      for (let i = 0; i < act.length; i++) warmStart(act[i]);
+      for (let it = 0; it < SIM.velIters; it++) for (let i = 0; i < act.length; i++) solveVelocity(act[i]);
+    }
+    for (const b of this.bodies) {
+      if (b.isStatic) continue;
+      b.vx = 0; b.vy = 0; b.w = 0; b.motion2 = 0;
+      if (b.kind === 'brick') { b.sleeping = true; b.im = 0; b.iI = 0; }
+    }
+    this.events.length = 0;
+  }
+}
+
+/* =====================================================================
+   4. SCENE CONSTRUCTION
+   Design coordinates for the car: x = 0 at mid-length, y = 0 at the road,
+   front bumper at +2.10 m, roof at 1.45 m.
+   ===================================================================== */
+
+const CAR_DESIGN = Object.freeze({
+  lower: [[-1.70, 0.20], [1.75, 0.20], [2.10, 0.32], [2.10, 0.72], [1.75, 0.92], [-1.95, 0.95], [-2.10, 0.75], [-2.10, 0.32]],
+  cabin: [[-1.80, 0.93], [1.05, 0.91], [0.15, 1.45], [-1.05, 1.45]],
+  wheelR: 0.33,
+  wheelX: [-1.35, 1.40],
+  wheelSides: 12,
+  massFrac: { lower: 0.74, cabin: 0.14, wheel: 0.06 },
+  crushPivot: 1.5,   // crumple zone starts here and extends to the bumper
+  front: 2.10,
+});
+const WHEEL_AP = CAR_DESIGN.wheelR * sinCos(Math.PI / CAR_DESIGN.wheelSides)[1];
+
+function wheelVerts(cx) {
+  const { wheelR: r, wheelSides: n } = CAR_DESIGN;
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const t = -Math.PI / 2 - Math.PI / n + (k * 2 * Math.PI) / n;
+    sinCos(t);
+    out.push([cx + r * SC[1], WHEEL_AP + r * SC[0]]);
+  }
+  return out;
+}
+
+// Maps a design x coordinate into the crushed front end (identity behind the pivot).
+function crushX(x, c) {
+  const p = CAR_DESIGN.crushPivot, f = CAR_DESIGN.front;
+  return x <= p ? x : p + ((x - p) * (f - p - c)) / (f - p);
+}
+
+function buildCar(world, s) {
+  const D = CAR_DESIGN;
+  const body = { kind: 'carBody', friction: SIM.carBodyMu, restitution: SIM.carRestitution };
+  const parts = [
+    { verts: D.lower, frac: D.massFrac.lower, props: body },
+    { verts: D.cabin, frac: D.massFrac.cabin, props: body },
+    { verts: wheelVerts(D.wheelX[0]), frac: D.massFrac.wheel, props: { kind: 'wheel', friction: SIM.wheelMu, restitution: SIM.carRestitution, wheelIndex: 0 } },
+    { verts: wheelVerts(D.wheelX[1]), frac: D.massFrac.wheel, props: { kind: 'wheel', friction: SIM.wheelMu, restitution: SIM.carRestitution, wheelIndex: 1 } },
+  ];
+  const M = s.carMass;
+  let cx = 0, cy = 0;
+  const md = parts.map((p) => {
+    const d = polygonMassData(p.verts);
+    const m = p.frac * M;
+    cx += m * d.cx; cy += m * d.cy;
+    return { d, m };
+  });
+  cx /= M; cy /= M;
+  let I = 0;
+  for (const { d, m } of md) I += (m * d.Iunit) / d.area + m * ((d.cx - cx) * (d.cx - cx) + (d.cy - cy) * (d.cy - cy));
+
+  const car = new Body('car');
+  car.com = { x: cx, y: cy };
+  for (const p of parts) car.addShape(new Shape(p.verts.map(([x, y]) => [x - cx, y - cy]), p.props));
+  car.setMass(M, I);
+  car.x = SIM.wallX - SIM.runup - D.front + cx;
+  car.y = cy + 0.0005;
+  car.canSleep = false;
+  world.add(car);
+  return car;
+}
+
+function setCrush(car, c) {
+  const verts = CAR_DESIGN.lower.map(([x, y], i) => [(i >= 1 && i <= 4 ? crushX(x, c) : x) - car.com.x, y - car.com.y]);
+  car.shapes[0].setLocal(verts);
+  car.sync();
+}
+
+// Design point -> world point for the car body.
+function carPoint(car, dx, dy, out) {
+  const lx = dx - car.com.x, ly = dy - car.com.y;
+  out[0] = car.x + car.c * lx - car.s * ly;
+  out[1] = car.y + car.s * lx + car.c * ly;
+  return out;
+}
+
+// Freestanding dry-stacked wall in running bond. Rows alternate between full
+// bricks and a half-bat start so vertical joints are staggered by half a brick
+// and both ends stay flush. Each depth layer flips the bond parity.
+function buildWall(world, s) {
+  const bw = FIXED.brickW, bh = FIXED.brickH;
+  const props = { kind: 'brick', friction: s.brickFriction, restitution: s.brickRestitution };
+  let serial = 0;
+  const add = (layer, row, x, w, m) => {
+    const b = new Body('brick');
+    const hw = w / 2, hh = bh / 2;
+    b.layer = layer; b.row = row; b.half = w < bw;
+    b.hw = hw; b.hh = hh;
+    b.addShape(new Shape([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]], props));
+    b.setMass(m, (m * (w * w + bh * bh)) / 12);
+    b.x = SIM.wallX + x;
+    b.y = bh * (row + 0.5);
+    b.shade = hash32(serial++ * 31 + layer * 7) % 6;
+    world.add(b);
+  };
+  for (let k = 0; k < s.layers; k++) {
+    for (let r = 0; r < s.rows; r++) {
+      if (((r + k) & 1) === 0) {
+        for (let c = 0; c < s.cols; c++) add(k, r, bw * (c + 0.5), bw, s.brickMass);
+      } else {
+        add(k, r, bw / 4, bw / 2, s.brickMass / 2);
+        for (let c = 0; c < s.cols - 1; c++) add(k, r, bw * (c + 1), bw, s.brickMass);
+        add(k, r, s.cols * bw - bw / 4, bw / 2, s.brickMass / 2);
+      }
+    }
+  }
+}
+
+/* =====================================================================
+   5. EXPERIMENT CONTROLLER
+   Owns one world, drives the tow launch, detects impact, tracks telemetry.
+   The physical result depends only on the settings and the fixed step.
+   ===================================================================== */
+
+class Experiment {
+  constructor(settings) {
+    this.settings = Object.freeze({ ...settings });
+    const w = (this.world = new World(this.settings));
+    this.car = buildCar(w, this.settings);
+    buildWall(w, this.settings);
+    w.prestress(SIM.frameDt / SIM.substeps, 40);
+
+    this.pieces = w.bricks.length;
+    this.wallMass = w.bricks.reduce((sum, b) => sum + b.mass, 0);
+    this.wallEnd = SIM.wallX + this.settings.cols * FIXED.brickW;
+    this.state = 'ready';
+    this.t = 0;
+    this.frame = 0;
+    // Tow sled: constant acceleration reaching the set speed cruiseLead metres before the wall.
+    const v = this.settings.carSpeed;
+    this.launchA = Math.max((v * v) / (2 * (SIM.runup - SIM.cruiseLead)), 1.5);
+    this.impactT = null;
+    this.impactSpeed = null;
+    this.impactKE = 0;
+    this.freeSpeed = 0;
+    this.peakDecel = 0;
+    this.slide = 0;
+    this.crush = 0;
+    this.settleTimer = 0;
+    this.minVxAfter = 0;
+    this.maxFront = -Infinity;
+    this.moving = 0;
+    this.displaced = 0;
+    this.history = [];
+    this.skids = [[], []];
+    this.skidOpen = [null, null];
+    this.touchFrame = false;
+    this.impactFrame = false;
+    this._pt = [0, 0];
+  }
+
+  get running() { return this.state === 'launch' || this.state === 'impact'; }
+
+  start() { if (this.state === 'ready') this.state = 'launch'; }
+
+  carFrontX() {
+    return carPoint(this.car, CAR_DESIGN.front - this.crush, 0.52, this._pt)[0];
+  }
+
+  wheelCenter(i, out) {
+    return carPoint(this.car, CAR_DESIGN.wheelX[i], WHEEL_AP, out);
+  }
+
+  snapshot() {
+    const bodies = this.world.bodies;
+    for (let i = 0; i < bodies.length; i++) { const b = bodies[i]; b.px = b.x; b.py = b.y; b.pa = b.a; }
+  }
+
+  stepFrame() {
+    if (!this.running) return;
+    const w = this.world, car = this.car, s = this.settings;
+    const h = SIM.frameDt / SIM.substeps;
+    w.events.length = 0;
+    this.touchFrame = false;
+    this.impactFrame = false;
+    const vxStart = car.vx;
+
+    for (let i = 0; i < SIM.substeps; i++) {
+      if (this.state === 'launch') {
+        const vDes = Math.min(s.carSpeed, this.launchA * (this.t + h));
+        car.fx = clamp((car.mass * (vDes - car.vx)) / h, 0, car.mass * (this.launchA * 3 + 30));
+      } else {
+        car.fx = 0;
+      }
+      w.substep(h);
+      this.t += h;
+      if (!w.carNear && this.state === 'launch') this.freeSpeed = car.vx;
+      if (w.carTouch) this.touchFrame = true;
+      if (this.state === 'launch' && w.carTouch) {
+        const v0 = this.freeSpeed;
+        this.state = 'impact';
+        this.impactT = this.t;
+        this.impactSpeed = v0;
+        this.impactKE = 0.5 * car.mass * v0 * v0;
+        this.impactFrame = true;
+        car.fx = 0;
+        w.wheelsLocked = true;   // brakes lock on impact
+      }
+      if (w.wheelsLocked && (w.wheelContact[0] || w.wheelContact[1])) this.slide += Math.abs(car.vx) * h;
+    }
+    this.frame++;
+
+    if (this.impactT !== null) {
+      const decel = -(car.vx - vxStart) / SIM.frameDt / G0;
+      if (decel > this.peakDecel) this.peakDecel = decel;
+      if (this.touchFrame) {
+        // Plastic crumple: grows with the kinetic energy the car has lost to the wall.
+        const ke = 0.5 * car.mass * (car.vx * car.vx + car.vy * car.vy) + 0.5 * car.I * car.w * car.w;
+        const E = this.impactKE - ke - s.groundFriction * car.mass * s.gravity * this.slide;
+        const target = SIM.crushMax * (1 - expDet(-Math.max(0, E) / SIM.crushE0));
+        if (target > this.crush + 0.002) { this.crush = target; setCrush(car, target); }
+      }
+      this.minVxAfter = Math.min(this.minVxAfter, car.vx);
+      this.maxFront = Math.max(this.maxFront, this.carFrontX());
+      if (this.t - this.impactT > 0.4) car.canSleep = true;
+    }
+
+    this.updateSkids();
+
+    let moving = 0;
+    const bricks = w.bricks;
+    for (let i = 0; i < bricks.length; i++) { const b = bricks[i]; if (!b.sleeping && b.motion2 > 0.0025) moving++; }
+    this.moving = moving;
+    if (this.frame % 6 === 0) this.countDisplaced();
+
+    const speed = len2(car.vx, car.vy);
+    this.history.push(speed);
+
+    if (this.state === 'impact') {
+      if (moving === 0 && speed < 0.05) this.settleTimer += SIM.frameDt;
+      else this.settleTimer = 0;
+      if (this.settleTimer >= SIM.settleTime || this.t >= SIM.maxTime) this.finish();
+    } else if (this.state === 'launch' && this.t > 15) {
+      this.finish();
+    }
+  }
+
+  finish() {
+    this.state = 'settled';
+    this.car.fx = 0;
+    this.countDisplaced();
+  }
+
+  countDisplaced() {
+    let n = 0;
+    const bricks = this.world.bricks;
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i];
+      // Counted once a piece has moved half a brick length or tipped past 20 degrees.
+      const dx = b.x - b.x0, dy = b.y - b.y0;
+      if (dx * dx + dy * dy > 0.0625 || Math.abs(b.a - b.a0) > 0.35) n++;
+    }
+    this.displaced = n;
+  }
+
+  updateSkids() {
+    const w = this.world, car = this.car;
+    for (let i = 0; i < 2; i++) {
+      const sliding = w.wheelsLocked && w.wheelContact[i] && Math.abs(car.vx) > 0.15;
+      if (!sliding) { this.skidOpen[i] = null; continue; }
+      const x = this.wheelCenter(i, this._pt)[0];
+      if (!this.skidOpen[i]) { const seg = [x, x]; this.skids[i].push(seg); this.skidOpen[i] = seg; }
+      else this.skidOpen[i][1] = x;
+    }
+  }
+
+  stateHash() {
+    let h = 2166136261;
+    const mix = (v) => { h ^= Math.round(v * 1e6) | 0; h = Math.imul(h, 16777619); };
+    for (const b of this.world.bodies) { mix(b.x); mix(b.y); mix(b.a); mix(b.vx); mix(b.vy); }
+    return (h >>> 0).toString(16).padStart(8, '0');
+  }
+
+  verdict() {
+    if (this.impactT === null) return '';
+    const f = this.displaced / this.pieces;
+    const past = this.maxFront - SIM.wallX;
+    let head;
+    if (this.maxFront > this.wallEnd + 0.3) head = 'Car broke through the whole wall';
+    else if (f > 0.5) head = 'Wall collapsed';
+    else if (f > 0.04) head = 'Partial collapse';
+    else head = 'Wall held';
+    const parts = [
+      `<b>${head}.</b> ${this.displaced} of ${this.pieces} pieces displaced (${Math.round(f * 100)}%)`,
+      `car front reached ${past.toFixed(2)} m past the wall face`,
+      `peak decel. ${this.peakDecel.toFixed(1)} g`,
+    ];
+    if (this.minVxAfter < -0.2) parts.push(`recoil ${(-this.minVxAfter).toFixed(1)} m/s`);
+    return parts.join(' &middot; ');
+  }
+
+  summary() {
+    const car = this.car;
+    return {
+      state: this.state,
+      t: +this.t.toFixed(4),
+      impactT: this.impactT === null ? null : +this.impactT.toFixed(4),
+      impactSpeed: this.impactSpeed === null ? null : +this.impactSpeed.toFixed(3),
+      carX: +car.x.toFixed(4),
+      carVx: +car.vx.toFixed(4),
+      carAngleDeg: +((car.a * 180) / Math.PI).toFixed(2),
+      maxFrontPastWall: this.maxFront === -Infinity ? null : +(this.maxFront - SIM.wallX).toFixed(3),
+      peakDecelG: +this.peakDecel.toFixed(2),
+      crush: +this.crush.toFixed(3),
+      pieces: this.pieces,
+      displaced: this.displaced,
+      moving: this.moving,
+      minBrickY: +Math.min(...this.world.bricks.map((b) => b.minY)).toFixed(4),
+      hash: this.stateHash(),
+    };
+  }
+}
+
+/* =====================================================================
+   6. VISUAL EFFECTS (dust, chips, tyre smoke)
+   Uses its own PRNG and never touches physics state.
+   ===================================================================== */
+
+class Effects {
+  constructor() { this.reset(); }
+
+  reset() {
+    this.rng = mulberry32(0xc0ffee);
+    this.dust = [];
+    this.chips = [];
+  }
+
+  r(a, b) { return a + (b - a) * this.rng(); }
+
+  puff(x, y, n, strength, color) {
+    for (let i = 0; i < n && this.dust.length < 380; i++) {
+      const life = this.r(0.9, 1.9);
+      this.dust.push({
+        x: x + this.r(-0.12, 0.12), y: Math.max(0.03, y + this.r(-0.05, 0.08)),
+        vx: this.r(-1, 1) * (0.4 + strength * 0.05), vy: this.r(0.15, 0.7) + strength * 0.02,
+        r: this.r(0.07, 0.16), grow: this.r(0.25, 0.55), life, max: life, color,
+      });
+    }
+  }
+
+  chip(x, y, n, strength, nx, ny) {
+    for (let i = 0; i < n && this.chips.length < 320; i++) {
+      const sp = this.r(0.25, 0.7) * Math.min(strength, 25);
+      const ang = Math.atan2(ny, nx) + this.r(-1.3, 1.3);
+      const life = this.r(1.2, 2.6);
+      this.chips.push({
+        x, y, vx: Math.cos(ang) * sp, vy: Math.abs(Math.sin(ang)) * sp * 0.8 + this.r(0.5, 2),
+        a: this.r(0, 6.28), w: this.r(-18, 18), s: this.r(0.018, 0.045), life, max: life,
+        color: this.rng() < 0.7 ? '#a24a33' : '#c9b8a3',
+      });
+    }
+  }
+
+  ingest(events, renderer) {
+    for (const ev of events) {
+      const s = ev.s;
+      if (ev.k === 2) {
+        if (s > 3) {
+          this.chip(ev.x, ev.y, Math.min(10, (s * 0.4) | 0), s, -ev.nx, -ev.ny);
+          this.puff(ev.x, ev.y, Math.min(5, (s * 0.2) | 0), s, '205,190,170');
+          renderer.addShake(Math.min(9, s * 0.35));
+        }
+      } else if (ev.k === 1) {
+        if (s > 2.5) this.puff(ev.x, 0.05, s > 6 ? 3 : 1, s, '196,178,150');
+        if (s > 8) this.chip(ev.x, 0.05, 2, s * 0.4, 0, 1);
+      } else if (ev.k === 0) {
+        if (s > 6) this.chip(ev.x, ev.y, s > 12 ? 2 : 1, s * 0.5, ev.nx, ev.ny);
+      } else if (ev.k === 3 && s > 3) {
+        this.puff(ev.x, 0.05, 3, s, '170,160,150');
+        renderer.addShake(Math.min(4, s * 0.3));
+      }
+    }
+  }
+
+  tyreSmoke(x, speed) {
+    if (this.rng() > Math.min(1, speed / 10)) return;
+    this.puff(x, 0.08, 1, 1, '215,215,215');
+  }
+
+  update(dt) {
+    for (let i = this.dust.length - 1; i >= 0; i--) {
+      const p = this.dust[i];
+      p.life -= dt;
+      if (p.life <= 0) { this.dust[i] = this.dust[this.dust.length - 1]; this.dust.pop(); continue; }
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vx *= 1 - 1.6 * dt; p.vy = p.vy * (1 - 1.2 * dt) + 0.05 * dt;
+      p.r += p.grow * dt;
+    }
+    for (let i = this.chips.length - 1; i >= 0; i--) {
+      const c = this.chips[i];
+      c.life -= dt;
+      if (c.life <= 0) { this.chips[i] = this.chips[this.chips.length - 1]; this.chips.pop(); continue; }
+      c.vy -= 9.81 * dt;
+      c.x += c.vx * dt; c.y += c.vy * dt; c.a += c.w * dt;
+      if (c.y < c.s) { c.y = c.s; c.vy = -c.vy * 0.3; c.vx *= 0.6; c.w *= 0.5; }
+    }
+  }
+
+  draw(ctx, R) {
+    const S = R.S;
+    for (const c of this.chips) {
+      ctx.globalAlpha = Math.min(1, c.life / 0.5);
+      ctx.fillStyle = c.color;
+      const x = R.sx(c.x), y = R.sy(c.y), s = c.s * S;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(-c.a); ctx.fillRect(-s, -s * 0.6, s * 2, s * 1.2); ctx.restore();
+    }
+    for (const p of this.dust) {
+      const k = p.life / p.max;
+      ctx.globalAlpha = 0.32 * k * Math.min(1, (p.max - p.life) * 6);
+      ctx.fillStyle = `rgb(${p.color})`;
+      ctx.beginPath(); ctx.arc(R.sx(p.x), R.sy(p.y), p.r * S, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* =====================================================================
+   7. RENDERER
+   World units are metres with y up; screen = (x - camX) * 80 px, ground
+   line fixed on screen. Physics never reads anything from here.
+   ===================================================================== */
+
+const BRICK_BASE = [[166, 72, 50], [178, 84, 60], [154, 63, 46], [188, 96, 68], [170, 79, 56], [149, 66, 50]];
+const HAZE = [132, 146, 160];
+
+class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false });
+    this.dpr = 1; this.W = 0; this.H = 0;
+    this.S = FIXED.pxPerM;
+    this.groundY = 0;
+    this.camX = -10; this.camHome = -10;
+    this.follow = true;
+    this.shakeAmp = 0; this.shakeX = 0; this.shakeY = 0; this.shakeT = 0;
+    this.brickFills = [];
+    for (let k = 0; k < 5; k++) {
+      const t = Math.min(0.55, 0.14 * k), d = 1 - 0.07 * k;
+      this.brickFills.push(BRICK_BASE.map((c) => {
+        const m = c.map((v, i) => Math.round((v * (1 - t) + HAZE[i] * t) * d));
+        return `rgb(${m[0]},${m[1]},${m[2]})`;
+      }));
+    }
+    this.visual = null;
+  }
+
+  resize(bottomReserve) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = window.innerWidth, H = window.innerHeight;
+    this.dpr = dpr; this.W = W; this.H = H;
+    this.canvas.width = Math.round(W * dpr);
+    this.canvas.height = Math.round(H * dpr);
+    this.groundY = Math.round(Math.max(Math.min(H - bottomReserve, H - 90), Math.min(H * 0.62, 380)));
+    this.skyGrad = null;
+  }
+
+  viewW() { return this.W / this.S; }
+  sx(x) { return (x - this.camX) * this.S + this.shakeX; }
+  sy(y) { return this.groundY - y * this.S + this.shakeY; }
+
+  // Frames the waiting car and the whole wall when the window is wide enough,
+  // otherwise keeps the car and the wall face in view.
+  home(exp) {
+    const left = SIM.wallX - SIM.runup - FIXED.carW - 0.7;
+    const right = exp.wallEnd + 0.9;
+    const vw = this.viewW();
+    this.camHome = right - left <= vw ? left - (vw - (right - left)) / 2 : left;
+  }
+
+  frame(exp) {
+    this.home(exp);
+    this.camX = this.camHome;
+    this.shakeAmp = 0;
+    this.visual = { pitch: 0, pitchV: 0, bob: 0, bobV: 0, lurch: 0, lurchV: 0, wheelA: 0, lastVx: 0, lastVy: 0 };
+  }
+
+  addShake(a) { this.shakeAmp = Math.min(14, this.shakeAmp + a); }
+
+  update(dt, simDt, exp) {
+    if (this.follow && exp.state !== 'ready') {
+      const target = Math.max(this.camHome, exp.carFrontX() - this.viewW() * 0.62);
+      this.camX += (target - this.camX) * (1 - Math.exp(-dt * 3.5));
+    }
+    this.shakeT += dt;
+    this.shakeAmp *= Math.exp(-dt * 7);
+    this.shakeX = Math.sin(this.shakeT * 83) * this.shakeAmp;
+    this.shakeY = Math.cos(this.shakeT * 67) * this.shakeAmp * 0.6;
+
+    // Cosmetic suspension, dummy lurch and wheel spin driven by the car's actual acceleration.
+    const v = this.visual, car = exp.car;
+    if (simDt > 0) {
+      const ax = clamp((car.vx - v.lastVx) / simDt, -400, 400);
+      const ay = clamp((car.vy - v.lastVy) / simDt, -400, 400);
+      v.lastVx = car.vx; v.lastVy = car.vy;
+      const sd = simDt;
+      v.pitchV += ((clamp(ax * 0.0016, -0.085, 0.06) - v.pitch) * 140 - v.pitchV * 11) * sd;
+      v.pitch += v.pitchV * sd;
+      v.bobV += ((clamp(-ay * 0.0006, -0.05, 0.05) - v.bob) * 160 - v.bobV * 12) * sd;
+      v.bob += v.bobV * sd;
+      v.lurchV += ((clamp(-ax * 0.0009, -0.05, 0.26) - v.lurch) * 90 - v.lurchV * 9) * sd;
+      v.lurch += v.lurchV * sd;
+      if (!exp.world.wheelsLocked) v.wheelA -= ((car.vx * car.c + car.vy * car.s) * sd) / CAR_DESIGN.wheelR;
+    }
+  }
+
+  draw(exp, fx, alpha) {
+    const ctx = this.ctx;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.drawSky(ctx);
+    this.drawFar(ctx);
+    this.drawBoard(ctx, exp);
+    this.drawGround(ctx, exp);
+    this.drawSkids(ctx, exp);
+    const layers = exp.world.layers;
+    for (let k = layers.length - 1; k >= 1; k--) this.drawLayer(ctx, layers[k], k, alpha);
+    this.drawCar(ctx, exp, alpha);
+    if (layers.length) this.drawLayer(ctx, layers[0], 0, alpha);
+    fx.draw(ctx, this);
+    this.drawRuler(ctx);
+    if (exp.state === 'ready') this.drawTags(ctx, exp);
+  }
+
+  drawSky(ctx) {
+    if (!this.skyGrad) {
+      const g = ctx.createLinearGradient(0, 0, 0, this.groundY);
+      g.addColorStop(0, '#6fa6d6'); g.addColorStop(0.5, '#a9cbe6'); g.addColorStop(1, '#efe3cf');
+      this.skyGrad = g;
+    }
+    ctx.fillStyle = this.skyGrad;
+    ctx.fillRect(0, 0, this.W, this.groundY);
+    const sun = ctx.createRadialGradient(this.W * 0.82, this.groundY * 0.28, 0, this.W * 0.82, this.groundY * 0.28, 260);
+    sun.addColorStop(0, 'rgba(255,248,225,0.85)'); sun.addColorStop(0.2, 'rgba(255,240,205,0.35)'); sun.addColorStop(1, 'rgba(255,240,205,0)');
+    ctx.fillStyle = sun;
+    ctx.fillRect(0, 0, this.W, this.groundY);
+  }
+
+  drawFar(ctx) {
+    const W = this.W, gy = this.groundY, S = this.S;
+    const ridge = (par, base, amp, f1, f2, color) => {
+      const off = this.camX * S * par;
+      ctx.beginPath(); ctx.moveTo(0, gy);
+      for (let x = 0; x <= W + 20; x += 20) {
+        const u = (x + off) / S;
+        ctx.lineTo(x, gy - base - amp * (Math.sin(u * f1) * 0.6 + Math.sin(u * f2 + 1.7) * 0.4));
+      }
+      ctx.lineTo(W, gy); ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+    };
+    ridge(0.08, 70, 34, 0.11, 0.29, '#b3c8d4');
+    // Test facility hangars
+    const par = 0.2, off = this.camX * S * par;
+    for (let i = Math.floor(off / 700) - 1; i <= Math.floor((off + W) / 700) + 1; i++) {
+      const hs = hash32(i + 1000);
+      const x = i * 700 - off + (hs % 200);
+      const w = 180 + (hs >>> 8) % 140, h = 46 + (hs >>> 16) % 30;
+      ctx.fillStyle = '#a4b3bd';
+      ctx.fillRect(x, gy - h - 22, w, h + 22);
+      ctx.beginPath(); ctx.moveTo(x - 6, gy - h - 22); ctx.lineTo(x + w / 2, gy - h - 44); ctx.lineTo(x + w + 6, gy - h - 22); ctx.fill();
+      ctx.fillStyle = 'rgba(70,90,105,0.25)';
+      for (let k = 0; k < 5; k++) ctx.fillRect(x + 14 + k * (w - 28) / 5, gy - h - 8, (w - 28) / 5 - 8, 10);
+    }
+    ridge(0.3, 16, 9, 0.8, 2.1, '#8faa92');
+  }
+
+  drawBoard(ctx, exp) {
+    // Measurement backdrop behind the test zone: 0.5 m grid, 4 m tall.
+    const S = this.S;
+    const x0 = Math.max(this.sx(-14), -20), x1 = Math.min(this.sx(Math.max(exp.wallEnd + 16, 28)), this.W + 20);
+    if (x1 <= x0) return;
+    const top = this.sy(4), bottom = this.sy(0);
+    ctx.fillStyle = 'rgba(250,248,242,0.42)';
+    ctx.fillRect(x0, top, x1 - x0, bottom - top);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let y = 0.5; y <= 4.001; y += 0.5) { const py = Math.round(this.sy(y)) + 0.5; ctx.moveTo(x0, py); ctx.lineTo(x1, py); }
+    const first = Math.ceil((this.camX - 1) * 2) / 2;
+    for (let x = first; x <= this.camX + this.viewW() + 1; x += 0.5) {
+      const px = Math.round(this.sx(x)) + 0.5;
+      if (px < x0 || px > x1) continue;
+      ctx.moveTo(px, top); ctx.lineTo(px, bottom);
+    }
+    ctx.strokeStyle = 'rgba(60,85,110,0.13)';
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(40,50,60,0.55)';
+    ctx.fillRect(x0, top - 3, x1 - x0, 3);
+  }
+
+  drawGround(ctx, exp) {
+    const W = this.W, H = this.H, gy = this.groundY + this.shakeY, S = this.S;
+    const band = 20;
+    const road = ctx.createLinearGradient(0, gy - band, 0, gy);
+    road.addColorStop(0, '#9a9b9c'); road.addColorStop(1, '#78797b');
+    ctx.fillStyle = road; ctx.fillRect(0, gy - band, W, band);
+    ctx.fillStyle = '#3a3c40'; ctx.fillRect(0, gy, W, 22);
+    ctx.fillStyle = '#6e5d4b'; ctx.fillRect(0, gy + 22, W, 8);
+    const soil = ctx.createLinearGradient(0, gy + 30, 0, H);
+    soil.addColorStop(0, '#5a4737'); soil.addColorStop(1, '#271f19');
+    ctx.fillStyle = soil; ctx.fillRect(0, gy + 30, W, H - gy - 30);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(0, gy, W, 1);
+
+    // Start line (checkered) at the car's bumper start position.
+    const sx0 = this.sx(SIM.wallX - SIM.runup);
+    if (sx0 > -20 && sx0 < W + 20) {
+      const cs = band / 4;
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) {
+        ctx.fillStyle = (i + j) % 2 ? '#111' : '#eee';
+        ctx.fillRect(sx0 - cs * 2 + j * cs, gy - band + i * cs, cs, cs);
+      }
+    }
+
+    // Distance ticks relative to the wall face.
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const m0 = Math.floor(this.camX) - 1, m1 = Math.ceil(this.camX + this.viewW()) + 1;
+    for (let m = m0; m <= m1; m++) {
+      const px = Math.round(this.sx(SIM.wallX + m)) + 0.5;
+      const major = m % 5 === 0;
+      ctx.strokeStyle = m === 0 ? '#ffb81c' : major ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = m === 0 ? 2 : 1;
+      ctx.beginPath(); ctx.moveTo(px, gy); ctx.lineTo(px, gy + (major ? 9 : 5)); ctx.stroke();
+      if (major || m === -1 || m === 1 || (m > 0 && m < 3)) {
+        ctx.fillStyle = m === 0 ? '#ffb81c' : 'rgba(255,255,255,0.62)';
+        ctx.fillText(m === 0 ? '0 m' : `${m}`, px, gy + 15);
+      }
+    }
+  }
+
+  drawSkids(ctx, exp) {
+    const gy = this.groundY + this.shakeY;
+    ctx.fillStyle = 'rgba(25,25,28,0.55)';
+    for (let i = 0; i < 2; i++) {
+      for (const [a, b] of exp.skids[i]) {
+        const x0 = this.sx(Math.min(a, b)), x1 = this.sx(Math.max(a, b));
+        if (x1 < -5 || x0 > this.W + 5) continue;
+        ctx.fillRect(x0, gy - 7 - i * 2, Math.max(1, x1 - x0), 4);
+      }
+    }
+  }
+
+  drawLayer(ctx, bricks, k, alpha) {
+    const S = this.S, fills = this.brickFills[Math.min(k, 4)];
+    const ox = k * 3 + this.shakeX - this.camX * S, oy = -k * 4 + this.groundY + this.shakeY;
+    const inset = 0.7 / S;
+    const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+    const lit = new Path2D(), dark = new Path2D();
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i];
+      const x = b.px + (b.x - b.px) * alpha, y = b.py + (b.y - b.py) * alpha, a = b.pa + (b.a - b.pa) * alpha;
+      const c = Math.cos(a), s = Math.sin(a);
+      const hw = (b.hw - inset) * S, hh = (b.hh - inset) * S;
+      const cx = x * S + ox, cy = oy - y * S;
+      const ux = c * hw, uy = -s * hw, vx = -s * hh, vy = -c * hh;
+      const p = paths[b.shade];
+      p.moveTo(cx - ux - vx, cy - uy - vy);
+      p.lineTo(cx + ux - vx, cy + uy - vy);
+      p.lineTo(cx + ux + vx, cy + uy + vy);
+      p.lineTo(cx - ux + vx, cy - uy + vy);
+      p.closePath();
+      lit.moveTo(cx - ux + vx, cy - uy + vy); lit.lineTo(cx + ux + vx, cy + uy + vy);
+      dark.moveTo(cx - ux - vx, cy - uy - vy); dark.lineTo(cx + ux - vx, cy + uy - vy);
+    }
+    for (let q = 0; q < 6; q++) { ctx.fillStyle = fills[q]; ctx.fill(paths[q]); }
+    ctx.lineWidth = 1.3;
+    ctx.strokeStyle = `rgba(255,214,180,${0.32 - k * 0.05})`; ctx.stroke(lit);
+    ctx.strokeStyle = 'rgba(40,14,8,0.38)'; ctx.stroke(dark);
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = 'rgba(52,26,18,0.55)';
+    for (let q = 0; q < 6; q++) ctx.stroke(paths[q]);
+  }
+
+  drawCar(ctx, exp, alpha) {
+    const car = exp.car, S = this.S, dpr = this.dpr, v = this.visual, crush = exp.crush;
+    const x = car.px + (car.x - car.px) * alpha, y = car.py + (car.y - car.py) * alpha, a = car.pa + (car.a - car.pa) * alpha;
+    const speed = Math.hypot(car.vx, car.vy);
+
+    // Contact shadow.
+    const bottom = Math.max(0, y - car.com.y);
+    ctx.fillStyle = `rgba(0,0,0,${0.32 * clamp(1 - bottom / 1.5, 0, 1)})`;
+    ctx.beginPath();
+    ctx.ellipse(this.sx(x - car.com.x * Math.cos(a)), this.groundY + this.shakeY - 2, 2.25 * S, 0.1 * S, 0, 0, 6.2832);
+    ctx.fill();
+
+    // Speed streaks.
+    if (speed > 8 && exp.state === 'launch') {
+      ctx.strokeStyle = `rgba(255,255,255,${Math.min(0.5, (speed - 8) / 40)})`;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const yy = this.sy(y - car.com.y + 0.35 + i * 0.28);
+        const x0 = this.sx(x - car.com.x - 2.2), len = speed * (3 + i);
+        ctx.beginPath(); ctx.moveTo(x0 - 6, yy); ctx.lineTo(x0 - 6 - len, yy); ctx.stroke();
+      }
+    }
+
+    ctx.save();
+    ctx.setTransform(dpr * S, 0, 0, -dpr * S, dpr * this.sx(x), dpr * this.sy(y));
+    ctx.rotate(a);
+    ctx.translate(-car.com.x, -car.com.y);
+    const px = 1 / S;
+
+    ctx.save();
+    ctx.translate(0, 0.45 + v.bob); ctx.rotate(v.pitch); ctx.translate(0, -0.45);
+    this.drawCarBody(ctx, crush, px, v);
+    ctx.restore();
+
+    for (let i = 0; i < 2; i++) this.drawWheel(ctx, CAR_DESIGN.wheelX[i], WHEEL_AP, v.wheelA, px);
+    ctx.restore();
+  }
+
+  drawCarBody(ctx, c, px, v) {
+    const X = (x) => crushX(x, c);
+    const hb = c * 0.32;
+    const outline = () => {
+      ctx.beginPath();
+      ctx.moveTo(-2.08, 0.30);
+      ctx.lineTo(-2.13, 0.52);
+      ctx.quadraticCurveTo(-2.15, 0.79, -2.02, 0.87);
+      ctx.lineTo(-1.80, 0.95);
+      ctx.quadraticCurveTo(-1.45, 1.22, -1.05, 1.42);
+      ctx.quadraticCurveTo(-0.45, 1.47, 0.12, 1.44);
+      ctx.quadraticCurveTo(0.55, 1.22, 1.02, 0.94);
+      ctx.quadraticCurveTo(X(1.45), 0.93 + hb, X(1.88), 0.87 + hb * 0.3);
+      ctx.quadraticCurveTo(X(2.08), 0.83, X(2.11), 0.70);
+      ctx.lineTo(X(2.13), 0.42);
+      ctx.quadraticCurveTo(X(2.12), 0.28, Math.max(1.84, X(1.95)), 0.26);
+      ctx.lineTo(1.82, 0.25);
+      ctx.arc(1.40, WHEEL_AP, 0.41, -0.18, Math.PI + 0.18, false);
+      ctx.lineTo(-0.94, 0.245);
+      ctx.arc(-1.35, WHEEL_AP, 0.41, -0.18, Math.PI + 0.18, false);
+      ctx.lineTo(-1.95, 0.26);
+      ctx.quadraticCurveTo(-2.07, 0.27, -2.08, 0.30);
+      ctx.closePath();
+    };
+
+    const paint = ctx.createLinearGradient(0, 0.25, 0, 1.45);
+    paint.addColorStop(0, '#163f86'); paint.addColorStop(0.35, '#2462c4'); paint.addColorStop(0.6, '#3f86e6'); paint.addColorStop(0.62, '#2a66c8'); paint.addColorStop(1, '#2d6bd0');
+    outline();
+    ctx.fillStyle = paint; ctx.fill();
+    ctx.lineWidth = 1.4 * px; ctx.strokeStyle = 'rgba(8,18,40,0.85)'; ctx.stroke();
+
+    ctx.save();
+    outline(); ctx.clip();
+    // Test-vehicle stripe and shoulder highlight.
+    ctx.fillStyle = '#ffb81c';
+    ctx.fillRect(-2.2, 0.50, 4.5, 0.07);
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2 * px;
+    ctx.beginPath(); ctx.moveTo(-1.95, 0.91); ctx.lineTo(X(1.8), 0.87 + hb * 0.3); ctx.stroke();
+    // Bumpers.
+    ctx.fillStyle = '#25282d';
+    ctx.fillRect(X(1.9), 0.2, 0.4, 0.26);
+    ctx.fillRect(-2.25, 0.2, 0.33, 0.26);
+    // Crumple creases.
+    if (c > 0.02) {
+      ctx.strokeStyle = 'rgba(5,10,25,0.55)'; ctx.lineWidth = 1.5 * px;
+      const n = Math.min(6, Math.ceil(c * 16));
+      for (let i = 0; i < n; i++) {
+        const xx = X(1.55 + i * 0.09);
+        ctx.beginPath(); ctx.moveTo(xx, 0.3 + (i % 2) * 0.1); ctx.lineTo(xx + 0.06, 0.62); ctx.lineTo(xx - 0.02, 0.9 + hb * 0.5); ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // Glass, with the crash dummy inside.
+    const glass = () => {
+      ctx.beginPath();
+      ctx.moveTo(-1.70, 0.98);
+      ctx.quadraticCurveTo(-1.40, 1.20, -1.02, 1.37);
+      ctx.quadraticCurveTo(-0.45, 1.41, 0.08, 1.38);
+      ctx.quadraticCurveTo(0.50, 1.18, 0.92, 0.97);
+      ctx.closePath();
+    };
+    glass();
+    const gg = ctx.createLinearGradient(0, 0.97, 0, 1.4);
+    gg.addColorStop(0, '#1a2632'); gg.addColorStop(1, '#4a6376');
+    ctx.fillStyle = gg; ctx.fill();
+    ctx.save();
+    glass(); ctx.clip();
+    const lx = -0.2 + v.lurch;
+    ctx.fillStyle = '#e8b43a';
+    ctx.beginPath(); ctx.arc(lx, 1.19, 0.09, 0, 6.2832); ctx.fill();
+    ctx.fillRect(lx - 0.16, 0.95, 0.26, 0.15);
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(lx, 1.19, 0.035, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.beginPath(); ctx.moveTo(-0.9, 0.97); ctx.lineTo(-0.6, 0.97); ctx.lineTo(-0.2, 1.42); ctx.lineTo(-0.5, 1.42); ctx.fill();
+    if (c > 0.1) {
+      ctx.strokeStyle = 'rgba(235,245,255,0.8)'; ctx.lineWidth = 1 * px;
+      const cx0 = 0.55, cy0 = 1.14;
+      for (let i = 0; i < 7; i++) {
+        const t = i * 0.9;
+        ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0 + Math.cos(t) * 0.3, cy0 + Math.sin(t) * 0.3); ctx.stroke();
+      }
+    }
+    ctx.restore();
+    ctx.fillStyle = '#1d4fa3';
+    ctx.fillRect(-0.47, 0.95, 0.08, 0.45);
+    ctx.lineWidth = 1.2 * px; ctx.strokeStyle = 'rgba(8,18,40,0.8)'; glass(); ctx.stroke();
+
+    // Doors, handles, mirror.
+    ctx.strokeStyle = 'rgba(5,15,35,0.55)'; ctx.lineWidth = 1.2 * px;
+    ctx.beginPath();
+    ctx.moveTo(-0.43, 0.30); ctx.lineTo(-0.43, 0.95);
+    ctx.moveTo(0.88, 0.34); ctx.quadraticCurveTo(0.95, 0.65, 0.9, 0.95);
+    ctx.moveTo(-1.52, 0.36); ctx.quadraticCurveTo(-1.58, 0.7, -1.62, 0.96);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(10,20,40,0.7)';
+    ctx.fillRect(0.28, 0.78, 0.16, 0.035);
+    ctx.fillRect(-1.02, 0.78, 0.16, 0.035);
+    ctx.fillStyle = '#1b4592';
+    ctx.beginPath(); ctx.moveTo(0.86, 0.97); ctx.lineTo(1.02, 0.99); ctx.lineTo(1.0, 1.07); ctx.lineTo(0.88, 1.06); ctx.fill();
+
+    // Crash-test calibration markers.
+    this.marker(ctx, 0.25, 0.72, 0.1);
+    this.marker(ctx, -1.05, 0.72, 0.1);
+    this.marker(ctx, -1.38, 1.13, 0.065);
+
+    // Lights.
+    if (c < 0.06) {
+      ctx.fillStyle = '#fff4c8';
+      ctx.beginPath(); ctx.ellipse(X(2.04), 0.72, 0.07, 0.05, 0, 0, 6.2832); ctx.fill();
+    } else {
+      ctx.fillStyle = '#4b4f55';
+      ctx.beginPath(); ctx.ellipse(X(2.04), 0.72, 0.06, 0.045, 0, 0, 6.2832); ctx.fill();
+    }
+    ctx.fillStyle = '#d42a3d';
+    ctx.fillRect(-2.13, 0.64, 0.08, 0.16);
+  }
+
+  marker(ctx, x, y, r) {
+    for (let q = 0; q < 4; q++) {
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, r, (q * Math.PI) / 2, ((q + 1) * Math.PI) / 2); ctx.closePath();
+      ctx.fillStyle = q % 2 ? '#111' : '#ffd21f'; ctx.fill();
+    }
+  }
+
+  drawWheel(ctx, x, y, ang, px) {
+    ctx.fillStyle = '#16171a';
+    ctx.beginPath(); ctx.arc(x, y, CAR_DESIGN.wheelR, 0, 6.2832); ctx.fill();
+    ctx.strokeStyle = '#2d2f34'; ctx.lineWidth = 0.03;
+    ctx.beginPath(); ctx.arc(x, y, 0.29, 0, 6.2832); ctx.stroke();
+    const rim = ctx.createRadialGradient(x - 0.05, y + 0.05, 0.02, x, y, 0.21);
+    rim.addColorStop(0, '#f1f3f6'); rim.addColorStop(1, '#8b939c');
+    ctx.fillStyle = rim;
+    ctx.beginPath(); ctx.arc(x, y, 0.21, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = '#3a3e45';
+    for (let k = 0; k < 5; k++) {
+      const t = ang + (k * 2 * Math.PI) / 5;
+      ctx.beginPath();
+      ctx.arc(x, y, 0.17, t - 0.28, t + 0.28);
+      ctx.arc(x, y, 0.07, t + 0.4, t - 0.4, true);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#5b6068';
+    ctx.beginPath(); ctx.arc(x, y, 0.045, 0, 6.2832); ctx.fill();
+    ctx.lineWidth = 1 * px; ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath(); ctx.arc(x, y, 0.21, 0, 6.2832); ctx.stroke();
+  }
+
+  drawRuler(ctx) {
+    // Height ruler on the left edge (screen-fixed, world-scaled).
+    const x = 10;
+    ctx.strokeStyle = 'rgba(20,30,40,0.55)'; ctx.fillStyle = 'rgba(20,30,40,0.7)';
+    ctx.lineWidth = 1;
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.beginPath(); ctx.moveTo(x + 0.5, this.sy(0)); ctx.lineTo(x + 0.5, this.sy(4)); ctx.stroke();
+    for (let h = 0; h <= 8; h++) {
+      const py = Math.round(this.sy(h * 0.5)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x + (h % 2 ? 5 : 9), py); ctx.stroke();
+      if (h % 2 === 0 && h > 0) ctx.fillText(`${h / 2} m`, x + 12, py);
+    }
+    ctx.fillText('80 px/m', x + 12, this.sy(4) - 12);
+  }
+
+  drawTags(ctx, exp) {
+    const s = exp.settings;
+    const carTop = this.sy(1.45) - 16;
+    this.tag(ctx, this.sx(SIM.wallX - SIM.runup - FIXED.carW / 2), carTop, `Car \u00b7 ${s.carMass.toLocaleString('en-US')} kg \u00b7 ${s.carSpeed.toFixed(1)} m/s`);
+    const wallTop = this.sy(s.rows * FIXED.brickH) - 18 - (s.layers - 1) * 4;
+    this.tag(ctx, this.sx((SIM.wallX + exp.wallEnd) / 2), wallTop, `Wall \u00b7 ${s.cols}\u00d7${s.rows}\u00d7${s.layers} \u00b7 ${exp.pieces} pieces \u00b7 ${exp.wallMass.toFixed(0)} kg`);
+  }
+
+  tag(ctx, x, y, text) {
+    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    const w = ctx.measureText(text).width + 20, h = 24;
+    x = clamp(x, w / 2 + 8, this.W - w / 2 - 8);
+    ctx.fillStyle = 'rgba(14,17,22,0.78)';
+    ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 12); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 5, y + h / 2); ctx.lineTo(x + 5, y + h / 2); ctx.lineTo(x, y + h / 2 + 6); ctx.fill();
+    ctx.fillStyle = '#f2f4f7'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y + 0.5);
+  }
+}
+
+/* =====================================================================
+   8. APPLICATION: settings panel, controls, telemetry, main loop
+   ===================================================================== */
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('scene');
+const renderer = new Renderer(canvas);
+const fx = new Effects();
+const staged = { ...DEFAULTS };
+const controls = {};
+let exp = new Experiment(staged);
+let timeScale = 1;
+let paused = false;
+let acc = 0;
+let rebuildTimer = 0;
+let hudTimer = 0;
+const tmp = [0, 0];
+
+function normalize(def, v) {
+  if (!Number.isFinite(v)) v = staged[def.key];
+  v = clamp(v, def.min, def.max);
+  v = Math.round(v / def.step) * def.step;
+  return +v.toFixed(def.dp);
+}
+
+function buildSliders() {
+  for (const def of SCHEMA) {
+    const host = $(def.group === 'core' ? 'coreSliders' : 'advSliders');
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    const id = `f-${def.key}`;
+    wrap.innerHTML =
+      `<div class="field-top"><label for="${id}">${def.label}</label>` +
+      `<span class="num"><input type="number" inputmode="decimal" min="${def.min}" max="${def.max}" step="${def.step}" aria-label="${def.label} value">` +
+      (def.unit ? `<span>${def.unit}</span>` : '') + `</span></div>` +
+      `<input type="range" id="${id}" min="${def.min}" max="${def.max}" step="${def.step}">`;
+    host.appendChild(wrap);
+    const range = wrap.querySelector('input[type="range"]');
+    const num = wrap.querySelector('input[type="number"]');
+    controls[def.key] = { def, wrap, range, num };
+    range.addEventListener('input', () => setStaged(def.key, parseFloat(range.value)));
+    num.addEventListener('change', () => setStaged(def.key, parseFloat(num.value)));
+    num.addEventListener('keydown', (e) => { if (e.key === 'Enter') num.blur(); });
+  }
+}
+
+function syncControl(key) {
+  const { def, range, num } = controls[key];
+  const v = staged[key];
+  range.value = v;
+  num.value = v.toFixed(def.dp);
+  range.style.setProperty('--fill', `${((v - def.min) / (def.max - def.min)) * 100}%`);
+}
+
+function setStaged(key, value) {
+  staged[key] = normalize(controls[key].def, value);
+  syncControl(key);
+  if (exp.state === 'ready') {
+    clearTimeout(rebuildTimer);
+    rebuildTimer = setTimeout(() => loadScene(false), 90);
+  }
+  refreshParams();
+}
+
+function isPending(key) { return staged[key] !== exp.settings[key]; }
+
+function refreshParams() {
+  const a = exp.settings;
+  let anyPending = false;
+  for (const key of Object.keys(controls)) {
+    const p = isPending(key);
+    anyPending ||= p;
+    controls[key].wrap.classList.toggle('changed', p);
+  }
+  $('pending').hidden = !anyPending;
+  const d = (keys) => (keys.some(isPending) ? ' class="diff"' : '');
+  const rows = [
+    ['Car speed', `${a.carSpeed.toFixed(1)} m/s`, d(['carSpeed'])],
+    ['Car mass', `${a.carMass.toLocaleString('en-US')} kg`, d(['carMass'])],
+    ['Wall', `${a.cols} \u00d7 ${a.rows} \u00d7 ${a.layers}`, d(['cols', 'rows', 'layers'])],
+    ['Brick mass', `${a.brickMass.toFixed(1)} kg`, d(['brickMass'])],
+    ['Pieces', `${exp.pieces} \u00b7 ${exp.wallMass.toFixed(0)} kg`, d(['cols', 'rows', 'layers', 'brickMass'])],
+    ['Gravity', `${a.gravity.toFixed(2)} m/s\u00b2`, d(['gravity'])],
+    ['Brick \u03bc / e', `${a.brickFriction.toFixed(2)} / ${a.brickRestitution.toFixed(2)}`, d(['brickFriction', 'brickRestitution'])],
+    ['Ground \u03bc', a.groundFriction.toFixed(2), d(['groundFriction'])],
+    ['Car size', `${FIXED.carW.toFixed(2)} \u00d7 ${FIXED.carH.toFixed(2)} m`, ' class="fixed"'],
+    ['Brick size', `${FIXED.brickW.toFixed(2)} \u00d7 ${FIXED.brickH.toFixed(2)} m`, ' class="fixed"'],
+    ['Scale', `${FIXED.pxPerM} px/m`, ' class="fixed"'],
+    ['Solver', `${Math.round(SIM.substeps / SIM.frameDt)} Hz \u00b7 ${SIM.velIters}+${SIM.posIters} it`, ' class="fixed"'],
+  ];
+  $('paramList').innerHTML = rows.map(([k, v, c]) => `<dt>${k}</dt><dd${c}>${v}</dd>`).join('');
+  const baseline = Object.keys(DEFAULTS).every((k) => a[k] === DEFAULTS[k]);
+  $('paramState').textContent = baseline ? 'mandatory baseline' : 'custom';
+}
+
+function loadScene(run) {
+  clearTimeout(rebuildTimer);
+  exp = new Experiment(staged);
+  renderer.frame(exp);
+  fx.reset();
+  acc = 0;
+  setPaused(false);
+  hideVerdict();
+  if (run) exp.start();
+  refreshParams();
+  updateHud();
+}
+
+function hideVerdict() { $('verdict').classList.remove('show'); }
+
+function showVerdict() {
+  const el = $('verdict');
+  el.innerHTML = exp.verdict();
+  el.style.top = `${document.querySelector('.telemetry').getBoundingClientRect().bottom + 10}px`;
+  el.classList.add('show');
+}
+
+function setPressed(id, on) { $(id).setAttribute('aria-pressed', on ? 'true' : 'false'); }
+
+function setFollow(on) {
+  renderer.follow = on;
+  setPressed('btnFollow', on);
+}
+
+function setPaused(on) {
+  paused = on;
+  const st = $('telStatus');
+  st.classList.toggle('paused', on);
+  if (on) st.textContent = 'Paused';
+  else if (st.textContent === 'Paused') st.textContent = STATUS_LABEL[exp.state];
+}
+
+function toggleSlow() {
+  timeScale = timeScale === 1 ? 0.25 : 1;
+  setPressed('btnSlow', timeScale !== 1);
+}
+
+function toggleSettings() {
+  const hidden = document.body.classList.toggle('dock-hidden');
+  setPressed('btnSettings', !hidden);
+  layout();
+}
+
+function layout() {
+  const dockHidden = document.body.classList.contains('dock-hidden');
+  const reserve = dockHidden ? 70 : $('dock').getBoundingClientRect().height + 12 + 44;
+  renderer.resize(reserve);
+  renderer.home(exp);
+  if (exp.state === 'ready' && renderer.follow) renderer.camX = renderer.camHome;
+  sizeSpark();
+}
+
+/* ---------- telemetry ---------- */
+
+const STATUS_LABEL = { ready: 'Ready', launch: 'Launch', impact: 'Impact', settled: 'Settled' };
+const spark = $('spark');
+const sparkCtx = spark.getContext('2d');
+
+function sizeSpark() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  spark.width = Math.max(1, Math.round(spark.clientWidth * dpr));
+  spark.height = Math.max(1, Math.round(spark.clientHeight * dpr));
+}
+
+function drawSpark() {
+  const w = spark.width, h = spark.height, c = sparkCtx;
+  c.clearRect(0, 0, w, h);
+  if (!w || !h) return;
+  const hist = exp.history;
+  const tMax = Math.max(4, hist.length * SIM.frameDt);
+  const vMax = Math.max(exp.settings.carSpeed, ...(hist.length ? [Math.max(...hist)] : [0])) * 1.12;
+  const X = (t) => (t / tMax) * w, Y = (v) => h - 2 - (v / vMax) * (h - 4);
+  c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,255,255,0.22)'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(0, Y(exp.settings.carSpeed)); c.lineTo(w, Y(exp.settings.carSpeed)); c.stroke();
+  c.setLineDash([]);
+  if (exp.impactT !== null) {
+    c.strokeStyle = 'rgba(255,91,58,0.8)';
+    c.beginPath(); c.moveTo(X(exp.impactT), 0); c.lineTo(X(exp.impactT), h); c.stroke();
+  }
+  if (hist.length > 1) {
+    c.strokeStyle = '#ffb81c'; c.lineWidth = 1.6 * (w / spark.clientWidth || 1);
+    c.beginPath();
+    for (let i = 0; i < hist.length; i++) { const x = X((i + 1) * SIM.frameDt), y = Y(hist[i]); i ? c.lineTo(x, y) : c.moveTo(x, y); }
+    c.stroke();
+  }
+}
+
+function updateHud() {
+  const car = exp.car;
+  const speed = Math.hypot(car.vx, car.vy);
+  const st = $('telStatus');
+  st.dataset.state = exp.state;
+  st.textContent = paused && exp.running ? 'Paused' : STATUS_LABEL[exp.state];
+  $('telSpeed').textContent = speed.toFixed(1);
+  $('telKmh').textContent = `${Math.round(speed * 3.6)} km/h`;
+  $('telTime').innerHTML = `${exp.t.toFixed(2)}<small>s</small>`;
+  $('telMoving').innerHTML = `${exp.moving}<small>/ ${exp.pieces}</small>`;
+  const hit = exp.impactT !== null;
+  $('telImpact').innerHTML = hit ? `${exp.impactSpeed.toFixed(1)}<small>m/s</small>` : '&mdash;';
+  $('telPeak').innerHTML = hit ? `${exp.peakDecel.toFixed(1)}<small>g</small>` : '&mdash;';
+  $('telDisp').innerHTML = hit ? `${Math.round((100 * exp.displaced) / exp.pieces)}<small>% \u00b7 ${exp.displaced}</small>` : '&mdash;';
+  $('telTravel').innerHTML = hit ? `${(exp.carFrontX() - SIM.wallX).toFixed(2)}<small>m</small>` : '&mdash;';
+  $('telCrush').innerHTML = hit ? `${Math.round(exp.crush * 100)}<small>cm</small>` : '&mdash;';
+  drawSpark();
+}
+
+/* ---------- input ---------- */
+
+$('btnTest').addEventListener('click', () => loadScene(true));
+$('btnReset').addEventListener('click', () => loadScene(false));
+$('btnSlow').addEventListener('click', toggleSlow);
+$('btnFollow').addEventListener('click', () => {
+  setFollow(!renderer.follow);
+  if (renderer.follow && exp.state === 'ready') renderer.camX = renderer.camHome;
+});
+$('btnSettings').addEventListener('click', toggleSettings);
+$('btnDefaults').addEventListener('click', () => {
+  Object.assign(staged, DEFAULTS);
+  for (const key of Object.keys(controls)) syncControl(key);
+  if (exp.state === 'ready') loadScene(false); else refreshParams();
+});
+
+window.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t instanceof HTMLInputElement && t.type === 'number') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if ((k === ' ' || k === 'enter') && !(t instanceof HTMLButtonElement)) { e.preventDefault(); loadScene(true); }
+  else if (k === 'p') { if (exp.running) setPaused(!paused); }
+  else if (k === 'r') loadScene(false);
+  else if (k === 's') toggleSlow();
+  else if (k === 'f') $('btnFollow').click();
+  else if (k === 'h') toggleSettings();
+});
+
+let drag = null;
+canvas.addEventListener('pointerdown', (e) => {
+  drag = { x: e.clientX, cam: renderer.camX, moved: false };
+  canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add('dragging');
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x;
+  if (!drag.moved && Math.abs(dx) > 3) { drag.moved = true; setFollow(false); }
+  if (drag.moved) renderer.camX = drag.cam - dx / renderer.S;
+});
+const endDrag = () => { drag = null; canvas.classList.remove('dragging'); };
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('dblclick', () => { setFollow(true); if (exp.state === 'ready') renderer.camX = renderer.camHome; });
+
+window.addEventListener('resize', layout);
+new ResizeObserver(layout).observe($('dock'));
+
+/* ---------- main loop ---------- */
+
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  let steps = 0;
+  if (exp.running && !paused) {
+    acc += dt * timeScale;
+    // Huge walls can cost more than a display frame per step: cap the work per
+    // animation frame and let the run fall into slow motion instead of freezing.
+    const budgetEnd = now + 22;
+    while (acc >= SIM.frameDt && steps < 4 && exp.running && (steps === 0 || performance.now() < budgetEnd)) {
+      exp.snapshot();
+      exp.stepFrame();
+      acc -= SIM.frameDt;
+      steps++;
+      fx.ingest(exp.world.events, renderer);
+      if (exp.world.wheelsLocked) {
+        const sp = Math.abs(exp.car.vx);
+        for (let i = 0; i < 2; i++) if (exp.world.wheelContact[i] && sp > 1.5) fx.tyreSmoke(exp.wheelCenter(i, tmp)[0], sp);
+      }
+    }
+    acc = Math.min(acc, SIM.frameDt);
+    if (!exp.running) { acc = 0; updateHud(); showVerdict(); }
+  }
+  const alpha = exp.running ? clamp(acc / SIM.frameDt, 0, 1) : 1;
+  fx.update(paused ? 0 : dt * timeScale);
+  renderer.update(dt, steps * SIM.frameDt, exp);
+  renderer.draw(exp, fx, alpha);
+  hudTimer -= dt;
+  if (hudTimer <= 0 && exp.running) { updateHud(); hudTimer = 0.08; }
+  requestAnimationFrame(tick);
+}
+
+/* ---------- scripting / verification hook ---------- */
+
+window.crashLab = {
+  defaults: DEFAULTS,
+  get staged() { return { ...staged }; },
+  get active() { return { ...exp.settings }; },
+  summary: () => exp.summary(),
+  test: () => loadScene(true),
+  reset: () => loadScene(false),
+  pause: (on = !paused) => setPaused(on && exp.running),
+  // Runs a separate headless experiment to completion; does not touch the view.
+  simulate(overrides = {}, seconds = SIM.maxTime) {
+    const e = new Experiment({ ...DEFAULTS, ...overrides });
+    e.start();
+    const frames = Math.round(seconds / SIM.frameDt);
+    for (let i = 0; i < frames && e.running; i++) e.stepFrame();
+    return e.summary();
+  },
+};
+
+buildSliders();
+for (const key of Object.keys(controls)) syncControl(key);
+layout();
+renderer.frame(exp);
+refreshParams();
+updateHud();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

@@ -1,0 +1,1559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grok 4.7</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07090d; overflow: hidden; }
+  canvas { display: block; }
+  #title {
+    position: fixed; z-index: 3; top: 12px; left: 14px; pointer-events: none;
+    font: 600 15px/1.2 system-ui, sans-serif; color: #f4f7fb; letter-spacing: 0.01em;
+    text-shadow: 0 2px 10px rgba(0,0,0,.6);
+  }
+  #bar {
+    position: fixed; z-index: 4; left: 50%; bottom: 12px; transform: translateX(-50%);
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center;
+    max-width: calc(100vw - 16px); padding: 8px;
+    background: rgba(10,12,16,.84); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px; backdrop-filter: blur(10px);
+    font: 12px/1 system-ui, sans-serif; color: #e8edf5; user-select: none;
+  }
+  button {
+    appearance: none; border: 0; border-radius: 8px; background: #1b212b; color: #e8edf5;
+    padding: 7px 10px; font: inherit; cursor: pointer;
+  }
+  button.on { background: #e7eef8; color: #121418; }
+  button:focus-visible, input:focus-visible { outline: 2px solid #e0b15a; outline-offset: 1px; }
+  #panel {
+    position: fixed; z-index: 4; top: 46px; right: 12px; width: min(300px, calc(100vw - 24px));
+    max-height: calc(100vh - 108px); overflow: auto;
+    background: rgba(10,12,16,.92); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px; padding: 10px 10px 12px;
+    font: 12px/1.25 system-ui, sans-serif; color: #d5dbe6;
+  }
+  #panel.hidden { display: none; }
+  #fields { display: grid; grid-template-columns: 1fr 96px; gap: 6px 8px; align-items: center; }
+  #fields label { color: #b7c0ce; }
+  input[type="number"] {
+    width: 100%; box-sizing: border-box; background: #0e1218; color: #f3f6fb;
+    border: 1px solid #2c3544; border-radius: 7px; padding: 5px 6px; font: inherit;
+  }
+  #apply {
+    width: 100%; margin-top: 10px; background: #d08a2e; color: #1a1208; font-weight: 650;
+  }
+</style>
+</head>
+<body>
+<div id="title">Grok 4.7</div>
+<div id="bar">
+  <button type="button" id="pauseBtn">Pause</button>
+  <button type="button" data-speed="0.25">0.25×</button>
+  <button type="button" data-speed="0.5">0.5×</button>
+  <button type="button" data-speed="1" class="on">1×</button>
+  <button type="button" data-speed="2">2×</button>
+  <button type="button" data-view="impact" class="on">Impact</button>
+  <button type="button" data-view="follow">Follow</button>
+  <button type="button" data-view="top">Top</button>
+  <button type="button" data-view="orbit">Orbit</button>
+  <button type="button" id="replayBtn">Replay</button>
+  <button type="button" id="settingsBtn">Settings</button>
+</div>
+<div id="panel" class="hidden">
+  <div id="fields"></div>
+  <button type="button" id="apply">Apply</button>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const DEFAULTS = {
+  impactSpeed: 22,
+  carMass: 1250,
+  carLength: 4.2,
+  carWidth: 1.8,
+  carHeight: 1.45,
+  wallColumns: 12,
+  wallRows: 8,
+  wallDepth: 2,
+  brickMass: 2.5,
+  brickWidth: 0.5,
+  brickHeight: 0.24,
+  brickDepth: 0.2,
+  gravity: 9.81,
+  brickFriction: 0.72,
+  brickRestitution: 0.18,
+  groundFriction: 0.85,
+  trackLength: 40,
+};
+
+const FIELDS = [
+  ['impactSpeed', 'Impact speed', 'm/s', 5, 70, 0.5, false],
+  ['carMass', 'Car mass', 'kg', 400, 4000, 10, false],
+  ['carLength', 'Car length', 'm', 2.8, 6.5, 0.05, false],
+  ['carWidth', 'Car width', 'm', 1.35, 2.4, 0.05, false],
+  ['carHeight', 'Car height', 'm', 1.05, 2.1, 0.05, false],
+  ['wallColumns', 'Wall columns', 'bricks', 4, 16, 1, true],
+  ['wallRows', 'Wall rows', 'bricks', 3, 12, 1, true],
+  ['wallDepth', 'Wall depth', 'bricks', 1, 3, 1, true],
+  ['brickMass', 'Brick mass', 'kg', 0.4, 18, 0.1, false],
+  ['brickWidth', 'Brick width', 'm', 0.12, 0.9, 0.01, false],
+  ['brickHeight', 'Brick height', 'm', 0.08, 0.5, 0.01, false],
+  ['brickDepth', 'Brick depth', 'm', 0.08, 0.55, 0.01, false],
+  ['gravity', 'Gravity', 'm/s²', 1, 25, 0.01, false],
+  ['brickFriction', 'Brick friction', '', 0.05, 1.4, 0.01, false],
+  ['brickRestitution', 'Brick restitution', '', 0, 0.8, 0.01, false],
+  ['groundFriction', 'Ground friction', '', 0.05, 1.4, 0.01, false],
+  ['trackLength', 'Track length', 'm', 18, 80, 0.5, false],
+];
+
+const FIXED = 1 / 150;
+const MAX_STEPS = 6;
+const MORTAR = 0.012;
+
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function smoothstep(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+function hash01(n) {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function relSpeed(a, b) {
+  const dx = a.velocity.x - b.velocity.x;
+  const dy = a.velocity.y - b.velocity.y;
+  const dz = a.velocity.z - b.velocity.z;
+  return Math.hypot(dx, dy, dz);
+}
+function localPoint(body, x, y, z) {
+  const v = new CANNON.Vec3();
+  body.pointToLocalFrame(new CANNON.Vec3(x, y, z), v);
+  return v;
+}
+function localVec(body, x, y, z) {
+  const v = new CANNON.Vec3();
+  body.vectorToLocalFrame(new CANNON.Vec3(x, y, z), v);
+  return v;
+}
+
+const fieldsEl = document.getElementById('fields');
+for (const [key, label, unit, min, max, step] of FIELDS) {
+  const lab = document.createElement('label');
+  lab.htmlFor = 'f-' + key;
+  lab.textContent = unit ? `${label} (${unit})` : label;
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.id = 'f-' + key;
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(DEFAULTS[key]);
+  input.autocomplete = 'off';
+  fieldsEl.append(lab, input);
+}
+
+function readForm() {
+  const cfg = {};
+  for (const [key, , , min, max, , integer] of FIELDS) {
+    const el = document.getElementById('f-' + key);
+    let v = parseFloat(el.value);
+    if (!Number.isFinite(v)) v = DEFAULTS[key];
+    v = clamp(v, min, max);
+    if (integer) v = Math.round(v);
+    el.value = String(v);
+    cfg[key] = v;
+  }
+  return cfg;
+}
+function fillForm(cfg) {
+  for (const [key] of FIELDS) document.getElementById('f-' + key).value = String(cfg[key]);
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+if ('transmissionResolutionScale' in renderer) renderer.transmissionResolutionScale = 0.5;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.environmentIntensity = 0.86;
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.12, 500);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 2;
+controls.maxDistance = 90;
+controls.enabled = false;
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+const room = new RoomEnvironment();
+const envMap = pmrem.fromScene(room, 0.04).texture;
+room.traverse((o) => {
+  if (o.geometry) o.geometry.dispose();
+  if (o.material) {
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    list.forEach((m) => m.dispose());
+  }
+});
+pmrem.dispose();
+scene.environment = envMap;
+
+let simSpeed = 1;
+let paused = false;
+let viewName = 'impact';
+let followSnap = true;
+let followPos = new THREE.Vector3();
+let orbitPose = null;
+let sunRef = null;
+let run = null;
+
+function clearScene() {
+  if (sunRef && sunRef.shadow && sunRef.shadow.map) {
+    sunRef.shadow.map.dispose();
+    sunRef.shadow.map = null;
+  }
+  const mats = new Set();
+  const geos = new Set();
+  for (let i = scene.children.length - 1; i >= 0; i--) {
+    const obj = scene.children[i];
+    obj.traverse((o) => {
+      if (o.geometry) geos.add(o.geometry);
+      if (o.material) {
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        list.forEach((m) => mats.add(m));
+      }
+    });
+    scene.remove(obj);
+  }
+  geos.forEach((g) => g.dispose());
+  mats.forEach((m) => {
+    if (m.map && m.map !== envMap) m.map.dispose();
+    m.dispose();
+  });
+  sunRef = null;
+}
+
+function layoutCar(L, W, H) {
+  const gap = clamp(L * 0.0065, 0.018, 0.036);
+  const bumperT = clamp(L * 0.04, 0.12, 0.22);
+  let rearLen = L * 0.19;
+  let cabinLen = L * 0.36;
+  const minFront = Math.max(0.9, L * 0.3);
+  let frontBudget = L - bumperT * 2 - gap * 5 - rearLen - cabinLen;
+  if (frontBudget < minFront) {
+    const need = minFront - frontBudget;
+    const pool = rearLen + cabinLen;
+    rearLen -= need * (rearLen / pool);
+    cabinLen -= need * (cabinLen / pool);
+    frontBudget = minFront;
+  }
+  const span = (a, len) => ({ a, b: a + len, c: a + len * 0.5, len });
+  let x = -L / 2;
+  const rb = span(x, bumperT); x = rb.b + gap;
+  const rear = span(x, rearLen); x = rear.b + gap;
+  const cabin = span(x, cabinLen); x = cabin.b + gap;
+  const fbA = L / 2 - bumperT;
+  const segLen = (fbA - gap - x - 2 * gap) / 3;
+  const fi = span(x, segLen); x = fi.b + gap;
+  const fm = span(x, segLen); x = fm.b + gap;
+  const fn = span(x, segLen);
+  const fb = span(fbA, bumperT);
+  const wheelR = clamp(H * 0.235, 0.22, H * 0.36);
+  const wheelW = clamp(W * 0.155, 0.16, W * 0.22);
+  const wheelZ = W * 0.5 - wheelW * 0.5 - 0.045;
+  const wheelInner = wheelZ - wheelW * 0.5;
+  const chassisHalfZ = clamp(wheelInner - 0.06, 0.26, W * 0.34);
+  const clearance = clamp(wheelR * 0.3, 0.08, wheelR * 0.5);
+  const roof = H;
+  const belt = clearance + (roof - clearance) * 0.55;
+  const hoodY = clearance + (roof - clearance) * 0.47;
+  const segBottom = clearance + 0.03;
+  const segTop = Math.max(segBottom + 0.2, hoodY - 0.055);
+  const segH = segTop - segBottom;
+  const segY = (segTop + segBottom) * 0.5;
+  const cabinBottom = clearance + 0.04;
+  const cabinH = roof - cabinBottom;
+  const cabinY = (roof + cabinBottom) * 0.5;
+  const rearBottom = clearance + 0.04;
+  const rearTop = Math.max(rearBottom + 0.25, belt - 0.02);
+  const rearH = rearTop - rearBottom;
+  const rearY = (rearTop + rearBottom) * 0.5;
+  return {
+    gap, bumperT, rb, rear, cabin, fi, fm, fn, fb,
+    wheelR, wheelW, wheelZ, chassisHalfZ, clearance, roof, belt, hoodY,
+    segH, segY, segBottom, segTop, cabinH, cabinY, cabinBottom,
+    rearH, rearY, rearBottom, rearTop, L, W, H,
+  };
+}
+
+function build(cfg) {
+  clearScene();
+  const L = cfg.carLength;
+  const W = cfg.carWidth;
+  const H = cfg.carHeight;
+  const trackLen = cfg.trackLength;
+  const lay = layoutCar(L, W, H);
+  const cols = cfg.wallColumns;
+  const rows = cfg.wallRows;
+  const depth = cfg.wallDepth;
+  const bw = cfg.brickWidth;
+  const bh = cfg.brickHeight;
+  const bd = cfg.brickDepth;
+  const pitchZ = bw + MORTAR;
+  const pitchY = bh + MORTAR;
+  const pitchX = bd + MORTAR;
+  const wallThick = depth * bd + (depth - 1) * MORTAR;
+  const wallSpan = (cols - 1) * pitchZ + bw + pitchZ * 0.5;
+  const asphaltHalf = Math.max(4.15, wallSpan * 0.5 + 0.85, W * 0.5 + 1.7);
+  const wallFront = trackLen - 5.4 - wallThick;
+  let startCenter = L * 0.5 + 1.15;
+  if (wallFront - (startCenter + L * 0.5) < 6) startCenter = wallFront - L * 0.5 - 6;
+  const ox = startCenter;
+  const X = (local) => local + ox;
+
+  const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -cfg.gravity, 0), allowSleep: true });
+  world.broadphase = new CANNON.SAPBroadphase(world);
+  world.broadphase.axisIndex = 0;
+  world.solver.iterations = 14;
+  world.defaultContactMaterial.friction = cfg.groundFriction;
+  world.defaultContactMaterial.restitution = 0.02;
+  world.defaultContactMaterial.contactEquationStiffness = 1e6;
+  world.defaultContactMaterial.contactEquationRelaxation = 3;
+
+  const groundMat = new CANNON.Material();
+  const brickMat = new CANNON.Material();
+  const carMat = new CANNON.Material();
+  const wheelMat = new CANNON.Material();
+  const glassPhys = new CANNON.Material();
+  const pair = (a, b, friction, restitution, stiff = 1e6) => {
+    world.addContactMaterial(new CANNON.ContactMaterial(a, b, {
+      friction, restitution, contactEquationStiffness: stiff, contactEquationRelaxation: 3,
+    }));
+  };
+  pair(brickMat, groundMat, cfg.groundFriction, cfg.brickRestitution * 0.35, 4e6);
+  pair(brickMat, brickMat, cfg.brickFriction, cfg.brickRestitution, 8e6);
+  pair(brickMat, carMat, cfg.brickFriction, Math.min(0.12, cfg.brickRestitution), 4e6);
+  pair(brickMat, wheelMat, cfg.brickFriction, 0.05, 4e6);
+  pair(brickMat, glassPhys, cfg.brickFriction * 0.6, cfg.brickRestitution, 2e6);
+  pair(carMat, groundMat, cfg.groundFriction, 0.02, 4e6);
+  pair(wheelMat, groundMat, clamp(cfg.groundFriction + 0.15, 0.2, 1.25), 0.04, 6e6);
+  pair(glassPhys, groundMat, cfg.groundFriction * 0.45, 0.04, 2e6);
+  pair(carMat, carMat, 0.45, 0.04, 2e6);
+  pair(carMat, wheelMat, 0.5, 0.04, 2e6);
+  pair(glassPhys, carMat, 0.28, 0.02, 1e6);
+  pair(wheelMat, wheelMat, 0.55, 0.05, 2e6);
+  pair(glassPhys, glassPhys, 0.2, 0.03, 1e6);
+
+  const groundBody = new CANNON.Body({ mass: 0, type: CANNON.Body.STATIC, material: groundMat });
+  groundBody.addShape(new CANNON.Plane());
+  groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  world.addBody(groundBody);
+
+  const paintMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1d4f9e, metalness: 0.64, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.07, envMapIntensity: 1.25,
+  });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x14171c, roughness: 0.52, metalness: 0.38 });
+  const glassMat = new THREE.MeshPhysicalMaterial({
+    color: 0xc5e6f6, metalness: 0, roughness: 0.04, transmission: 0.74, thickness: 0.06, ior: 1.5,
+    transparent: true, opacity: 1, envMapIntensity: 1.35, clearcoat: 1, clearcoatRoughness: 0.04,
+    attenuationColor: new THREE.Color(0x9ec9e8), attenuationDistance: 0.4,
+  });
+  const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1c1f, roughness: 0.86, metalness: 0.05 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xd5dbe3, roughness: 0.28, metalness: 0.92 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff6dc, emissive: 0xfff1c2, emissiveIntensity: 2.5, roughness: 0.28, metalness: 0.08 });
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0x4a0000, emissive: 0xff2218, emissiveIntensity: 2.2, roughness: 0.36, metalness: 0.08 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0xaeb6c0, roughness: 0.32, metalness: 0.86 });
+  const seatMat = new THREE.MeshStandardMaterial({ color: 0x1c1e24, roughness: 0.8, metalness: 0.1 });
+  const grassMat = new THREE.MeshStandardMaterial({ color: 0x3e6a38, roughness: 1, metalness: 0 });
+  const gravelMat = new THREE.MeshStandardMaterial({ color: 0x8d8476, roughness: 1, metalness: 0 });
+  const markMat = new THREE.MeshStandardMaterial({ color: 0xececec, roughness: 0.55, metalness: 0 });
+  const curbMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.02 });
+  const hillMat = new THREE.MeshStandardMaterial({ color: 0x243226, roughness: 1, metalness: 0 });
+
+  const asphCanvas = document.createElement('canvas');
+  asphCanvas.width = 512; asphCanvas.height = 512;
+  const ag = asphCanvas.getContext('2d');
+  ag.fillStyle = '#2b2f35';
+  ag.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 14000; i++) {
+    const x = hash01(i * 3.1) * 512;
+    const y = hash01(i * 3.1 + 4) * 512;
+    const v = 28 + hash01(i * 3.1 + 9) * 46;
+    ag.fillStyle = `rgba(${v},${v},${v + 3},0.38)`;
+    ag.fillRect(x, y, 2, 2);
+  }
+  ag.strokeStyle = 'rgba(0,0,0,0.28)';
+  ag.lineWidth = 1;
+  for (let i = 0; i < 16; i++) {
+    ag.beginPath();
+    let x = hash01(800 + i) * 512;
+    let y = hash01(900 + i) * 512;
+    ag.moveTo(x, y);
+    for (let k = 0; k < 5; k++) {
+      x += (hash01(1200 + i * 8 + k) - 0.5) * 90;
+      y += (hash01(1400 + i * 8 + k) - 0.5) * 90;
+      ag.lineTo(x, y);
+    }
+    ag.stroke();
+  }
+  const asphTex = new THREE.CanvasTexture(asphCanvas);
+  asphTex.wrapS = asphTex.wrapT = THREE.RepeatWrapping;
+  asphTex.colorSpace = THREE.SRGBColorSpace;
+  asphTex.anisotropy = 8;
+  const xMin = Math.min(0, startCenter - L * 0.5 - 1.6);
+  const aLen = trackLen - xMin;
+  asphTex.repeat.set(aLen / 5.5, (asphaltHalf * 2) / 5.5);
+  const asphMat = new THREE.MeshStandardMaterial({ map: asphTex, color: 0xb9bcc2, roughness: 0.93, metalness: 0.04 });
+
+  const brickCanvas = document.createElement('canvas');
+  brickCanvas.width = 128; brickCanvas.height = 64;
+  const bg = brickCanvas.getContext('2d');
+  bg.fillStyle = '#7a3b28';
+  bg.fillRect(0, 0, 128, 64);
+  for (let i = 0; i < 1600; i++) {
+    const x = hash01(i + 40) * 128;
+    const y = hash01(i + 70) * 64;
+    const v = hash01(i + 99);
+    bg.fillStyle = `rgba(${90 + v * 80},${48 + v * 36},${32},0.5)`;
+    bg.fillRect(x, y, 2, 2);
+  }
+  bg.strokeStyle = '#3e241c';
+  bg.lineWidth = 5;
+  bg.strokeRect(2, 2, 124, 60);
+  const brickTex = new THREE.CanvasTexture(brickCanvas);
+  brickTex.colorSpace = THREE.SRGBColorSpace;
+  brickTex.wrapS = brickTex.wrapT = THREE.RepeatWrapping;
+  const brickVisMat = new THREE.MeshStandardMaterial({ map: brickTex, color: 0xffffff, roughness: 0.94, metalness: 0.02 });
+
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), grassMat);
+  grass.rotation.x = -Math.PI / 2;
+  grass.position.y = -0.055;
+  grass.receiveShadow = true;
+  scene.add(grass);
+
+  const asphalt = new THREE.Mesh(new THREE.BoxGeometry(aLen, 0.2, asphaltHalf * 2), asphMat);
+  asphalt.position.set((xMin + trackLen) * 0.5, -0.1, 0);
+  asphalt.receiveShadow = true;
+  scene.add(asphalt);
+
+  for (const side of [-1, 1]) {
+    const g = new THREE.Mesh(new THREE.BoxGeometry(aLen, 0.06, 1.15), gravelMat);
+    g.position.set((xMin + trackLen) * 0.5, -0.02, side * (asphaltHalf + 0.85));
+    g.receiveShadow = true;
+    scene.add(g);
+  }
+
+  const markGeos = [];
+  const startLine = new THREE.BoxGeometry(0.22, 0.015, asphaltHalf * 1.7);
+  startLine.translate(1.35, 0.01, 0);
+  markGeos.push(startLine);
+  for (const side of [-1, 1]) {
+    const edge = new THREE.BoxGeometry(Math.max(2, trackLen - 1.2), 0.012, 0.1);
+    edge.translate(trackLen * 0.5, 0.009, side * (asphaltHalf - 0.38));
+    markGeos.push(edge);
+  }
+  for (let x = 2.4; x < trackLen - 1; x += 3.15) {
+    const dash = new THREE.BoxGeometry(1.55, 0.012, 0.11);
+    dash.translate(x, 0.01, 0);
+    markGeos.push(dash);
+  }
+  const markMesh = new THREE.Mesh(mergeGeometries(markGeos, false), markMat);
+  markGeos.forEach((g) => g.dispose());
+  markMesh.receiveShadow = true;
+  scene.add(markMesh);
+
+  const curbGeos = [];
+  const curbCount = Math.ceil(trackLen / 0.9);
+  for (let i = 0; i < curbCount; i++) {
+    const x = i * 0.9 + 0.45;
+    if (x > trackLen) break;
+    for (const side of [-1, 1]) {
+      const g = new THREE.BoxGeometry(0.86, 0.09, 0.28);
+      g.translate(x, 0.045, side * (asphaltHalf + 0.14));
+      const col = new THREE.Color(i % 2 ? 0xd24b38 : 0xf3f3f3);
+      const n = g.attributes.position.count;
+      const arr = new Float32Array(n * 3);
+      for (let k = 0; k < n; k++) { arr[k * 3] = col.r; arr[k * 3 + 1] = col.g; arr[k * 3 + 2] = col.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      curbGeos.push(g);
+    }
+  }
+  const curbMesh = new THREE.Mesh(mergeGeometries(curbGeos, false), curbMat);
+  curbGeos.forEach((g) => g.dispose());
+  curbMesh.receiveShadow = true;
+  scene.add(curbMesh);
+
+  const railGeos = [];
+  const railMat = metalMat;
+  const pz = -(asphaltHalf + 1.55);
+  for (let i = 0; i < 4; i++) {
+    const x = trackLen * (0.18 + i * 0.18);
+    const beam = new THREE.BoxGeometry(trackLen * 0.12, 0.07, 0.07);
+    beam.translate(x, 0.46, pz);
+    railGeos.push(beam);
+    const post = new THREE.BoxGeometry(0.07, 0.46, 0.07);
+    post.translate(x - trackLen * 0.05, 0.23, pz);
+    railGeos.push(post);
+    const post2 = new THREE.BoxGeometry(0.07, 0.46, 0.07);
+    post2.translate(x + trackLen * 0.05, 0.23, pz);
+    railGeos.push(post2);
+  }
+  const railMesh = new THREE.Mesh(mergeGeometries(railGeos, false), railMat);
+  railGeos.forEach((g) => g.dispose());
+  railMesh.receiveShadow = true;
+  scene.add(railMesh);
+
+  for (let i = 1; i <= 4; i++) {
+    const x = trackLen * (0.16 * i);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 4.3, 6), metalMat);
+    pole.position.set(x, 2.15, pz - 0.35);
+    pole.receiveShadow = true;
+    scene.add(pole);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.1, 0.28), lampMat);
+    head.position.set(x, 4.25, pz - 0.35);
+    scene.add(head);
+  }
+
+  const hillGeos = [];
+  for (let i = 0; i < 8; i++) {
+    const ang = hash01(i + 21) * Math.PI * 2;
+    const rad = 78 + hash01(i + 33) * 36;
+    const h = 7 + hash01(i + 44) * 16;
+    const geo = new THREE.ConeGeometry(9 + hash01(i + 55) * 12, h, 5);
+    geo.translate(Math.cos(ang) * rad + trackLen * 0.3, h * 0.45 - 0.2, Math.sin(ang) * rad);
+    hillGeos.push(geo);
+  }
+  const hills = new THREE.Mesh(mergeGeometries(hillGeos, false), hillMat);
+  hillGeos.forEach((g) => g.dispose());
+  hills.receiveShadow = true;
+  scene.add(hills);
+
+  const sunDir = new THREE.Vector3(trackLen * 0.35 - 14, 26, 16);
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {
+      topColor: { value: new THREE.Color(0x8ec4ef) },
+      horColor: { value: new THREE.Color(0xf0f4f8) },
+      botColor: { value: new THREE.Color(0xc5d2b4) },
+      sunDir: { value: sunDir.clone().normalize() },
+    },
+    vertexShader: `
+      varying vec3 vDir;
+      void main() {
+        vDir = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vDir;
+      uniform vec3 topColor;
+      uniform vec3 horColor;
+      uniform vec3 botColor;
+      uniform vec3 sunDir;
+      void main() {
+        vec3 d = normalize(vDir);
+        float h = d.y;
+        vec3 c = mix(horColor, topColor, smoothstep(0.0, 0.55, h));
+        c = mix(botColor, c, smoothstep(-0.2, 0.08, h));
+        float sun = pow(max(dot(d, normalize(sunDir)), 0.0), 280.0);
+        c += vec3(1.0, 0.93, 0.78) * sun * 1.15;
+        gl_FragColor = vec4(c, 1.0);
+      }
+    `,
+  });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(240, 28, 16), skyMat);
+  sky.renderOrder = -10;
+  sky.frustumCulled = false;
+  scene.add(sky);
+
+  const hemi = new THREE.HemisphereLight(0xd5e4f6, 0x3a342c, 0.46);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff3de, 3.7);
+  sun.position.copy(sunDir);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.00018;
+  sun.shadow.normalBias = 0.035;
+  const shadowR = Math.max(trackLen * 0.62, asphaltHalf + 14, 22);
+  sun.shadow.camera.left = -shadowR;
+  sun.shadow.camera.right = shadowR;
+  sun.shadow.camera.top = shadowR * 0.7;
+  sun.shadow.camera.bottom = -shadowR * 0.7;
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = shadowR * 3.2;
+  sun.target.position.set(trackLen * 0.52, 1, 0);
+  sun.shadow.camera.updateProjectionMatrix();
+  scene.add(sun);
+  scene.add(sun.target);
+  sunRef = sun;
+
+  const parts = [];
+  const shadowItems = [];
+  const joints = [];
+  const wheelRecs = [];
+  let armed = false;
+  let impacted = false;
+  let shake = 0;
+  let simTime = 0;
+  let acc = 0;
+  let camProgress = 0;
+  let bursts = 0;
+  const rng = mulberry32(0xc0ffee);
+
+  const vTarget = cfg.impactSpeed;
+  const distance = Math.max(0.75, wallFront - (startCenter + L * 0.5));
+  let v0 = vTarget * 0.38;
+  let accel = (vTarget * vTarget - v0 * v0) / (2 * distance);
+  if (accel > 80 || accel < 2.5) {
+    accel = clamp(accel, 2.5, 80);
+    v0 = Math.sqrt(Math.max(0, vTarget * vTarget - 2 * accel * distance));
+  }
+
+  const massScale = cfg.carMass / 1250;
+  const MF = {
+    cabin: 0.424, rear: 0.13, fi: 0.07, fm: 0.055, fn: 0.045,
+    hoodR: 0.012, hoodF: 0.01, trunk: 0.014, bfl: 0.008, bfr: 0.008, br: 0.012,
+    door: 0.022, wheel: 0.026, glass: 0.02,
+  };
+  const massOf = (k) => cfg.carMass * MF[k];
+  const FRC = {
+    glass: 240 * massScale,
+    glassSeam: 100 * massScale,
+    bumper: 1700 * massScale,
+    hoodSeam: 950 * massScale,
+    hoodLatch: 1200 * massScale,
+    hoodHinge: 4600 * massScale,
+    doorLatch: 1600 * massScale,
+    doorHinge: 5600 * massScale,
+    trunkLatch: 1400 * massScale,
+    trunkHinge: 4300 * massScale,
+    wheel: 9800 * massScale,
+    noseLink: 2400 * massScale,
+    noseHinge: 7000 * massScale,
+    midLink: 4000 * massScale,
+    midHinge: 12000 * massScale,
+    innerLink: 5800 * massScale,
+    innerHinge: 17000 * massScale,
+    rear: 15000 * massScale,
+  };
+
+  function onCollide(ev) {
+    const other = ev.body;
+    if (!other || other.kind !== 'brick' || !ev.contact) return;
+    const vn = Math.abs(ev.contact.getImpactVelocityAlongNormal());
+    if (vn < 0.85 || simTime < 0.2) return;
+    if (!armed) {
+      armed = true;
+      impacted = true;
+      shake = 1;
+      for (const w of wheelRecs) dropSkid(w.body.position.x, w.body.position.z, 1.15);
+    }
+    if (vn > 2) spawnBurst(ev.contact, vn);
+  }
+
+  function vm(w, h, d, mat, x, y, z) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  }
+
+  function addBox(opt) {
+    const body = new CANNON.Body({
+      mass: opt.mass,
+      material: opt.physMat,
+      linearDamping: opt.linDamp ?? 0.012,
+      angularDamping: opt.angDamp ?? 0.045,
+      allowSleep: true,
+      sleepSpeedLimit: 0.14,
+      sleepTimeLimit: 0.7,
+    });
+    if (opt.shapes) {
+      for (const s of opt.shapes) {
+        body.addShape(new CANNON.Box(new CANNON.Vec3(s.hx, s.hy, s.hz)), new CANNON.Vec3(s.x, s.y, s.z));
+      }
+    } else {
+      body.addShape(new CANNON.Box(new CANNON.Vec3(opt.size.x / 2, opt.size.y / 2, opt.size.z / 2)));
+    }
+    body.position.set(opt.pos.x, opt.pos.y, opt.pos.z);
+    if (opt.quat) body.quaternion.set(opt.quat.x, opt.quat.y, opt.quat.z, opt.quat.w);
+    body.velocity.set(v0, 0, 0);
+    body.kind = 'car';
+    world.addBody(body);
+    body.addEventListener('collide', onCollide);
+    const group = new THREE.Group();
+    if (!opt.noMesh) {
+      const vis = opt.visual || { size: opt.size, offset: { x: 0, y: 0, z: 0 } };
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(vis.size.x, vis.size.y, vis.size.z), opt.paint);
+      mesh.position.set(vis.offset.x, vis.offset.y, vis.offset.z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+    if (opt.dress) opt.dress(group, opt.size);
+    scene.add(group);
+    const rec = { body, group, wheel: false, drop: opt.size.y / 2 };
+    parts.push(rec);
+    shadowItems.push({ body, drop: opt.drop ?? opt.size.y / 2, radius: Math.max(opt.size.x, opt.size.z) * 0.4 });
+    return rec;
+  }
+
+  function pushJoint(c, maxForce, relThresh, armedOnly) {
+    world.addConstraint(c);
+    joints.push({ c, maxForce, relThresh, armedOnly, dead: false });
+  }
+  function hinge(a, b, wx, wy, wz, ax, ay, az, maxForce, relThresh, collide) {
+    const c = new CANNON.HingeConstraint(a, b, {
+      pivotA: localPoint(a, wx, wy, wz),
+      pivotB: localPoint(b, wx, wy, wz),
+      axisA: localVec(a, ax, ay, az),
+      axisB: localVec(b, ax, ay, az),
+      maxForce,
+      collideConnected: !!collide,
+    });
+    c.collideConnected = !!collide;
+    pushJoint(c, maxForce, relThresh, true);
+  }
+  function point(a, b, wx, wy, wz, maxForce, relThresh, collide) {
+    const c = new CANNON.PointToPointConstraint(a, localPoint(a, wx, wy, wz), b, localPoint(b, wx, wy, wz), maxForce);
+    c.collideConnected = !!collide;
+    pushJoint(c, maxForce, relThresh, true);
+  }
+  function lock(a, b, maxForce, relThresh) {
+    const c = new CANNON.LockConstraint(a, b, { maxForce });
+    c.collideConnected = false;
+    pushJoint(c, maxForce, relThresh, true);
+  }
+
+  const chassisZ = lay.chassisHalfZ * 2;
+  const rearBody = addBox({
+    mass: massOf('rear'), physMat: carMat, paint: paintMat,
+    size: { x: lay.rear.len, y: lay.rearH, z: chassisZ },
+    pos: { x: X(lay.rear.c), y: lay.rearY, z: 0 },
+    dress(group, size) {
+      for (const s of [-1, 1]) group.add(vm(0.045, size.y * 0.2, size.z * 0.22, tailMat, -size.x / 2, size.y * 0.16, s * size.z * 0.32));
+    },
+  });
+  const cabinVisH = Math.max(0.2, lay.belt - lay.cabinBottom);
+  const lowerHy = cabinVisH * 0.5;
+  const roofHy = 0.055;
+  const cabinBody = addBox({
+    mass: massOf('cabin'), physMat: carMat, paint: paintMat, noMesh: true,
+    size: { x: lay.cabin.len, y: lay.cabinH, z: chassisZ },
+    pos: { x: X(lay.cabin.c), y: lay.cabinY, z: 0 },
+    drop: lay.cabinY - lay.clearance,
+    shapes: [
+      {
+        hx: lay.cabin.len * 0.5, hy: lowerHy, hz: lay.chassisHalfZ,
+        x: 0, y: (lay.cabinBottom + lay.belt) * 0.5 - lay.cabinY, z: 0,
+      },
+      {
+        hx: Math.max(0.25, (lay.cabin.len - 0.86) * 0.5), hy: roofHy, hz: lay.chassisHalfZ * 0.72,
+        x: -0.1, y: (lay.roof - roofHy) - lay.cabinY, z: 0,
+      },
+    ],
+    dress(group, size) {
+      const tubZ = Math.min(W * 0.86, lay.wheelZ * 2 - lay.wheelW - 0.08);
+      const lower = vm(size.x, cabinVisH, tubZ, paintMat, 0, (lay.cabinBottom + lay.belt) * 0.5 - lay.cabinY, 0);
+      group.add(lower);
+      const roofT = 0.07;
+      group.add(vm(size.x * 0.9, roofT, Math.min(W * 0.8, tubZ + 0.16), paintMat, -0.02, (lay.roof - roofT * 0.5) - lay.cabinY, 0));
+      const railY = lay.belt - lay.cabinY;
+      group.add(vm(size.x * 0.98, 0.05, tubZ + 0.08, trimMat, 0, railY, 0));
+      for (const s of [-1, 1]) {
+        group.add(vm(0.07, lay.roof - lay.belt, 0.06, trimMat, size.x * 0.46, (lay.roof + lay.belt) * 0.5 - lay.cabinY, s * (tubZ * 0.42)));
+        group.add(vm(0.06, lay.roof - lay.belt, 0.06, trimMat, -size.x * 0.08, (lay.roof + lay.belt) * 0.5 - lay.cabinY, s * (tubZ * 0.42)));
+        group.add(vm(0.06, lay.roof - lay.belt - 0.04, 0.06, trimMat, -size.x * 0.42, (lay.roof + lay.belt) * 0.5 - lay.cabinY, s * (tubZ * 0.4)));
+      }
+      group.add(vm(size.x * 0.28, 0.1, tubZ * 0.72, trimMat, size.x * 0.3, lay.belt - lay.cabinY - 0.16, 0));
+      for (const s of [-1, 1]) {
+        const seat = vm(size.x * 0.22, 0.28, 0.28, seatMat, -size.x * 0.05, lay.cabinBottom + 0.22 - lay.cabinY, s * 0.24);
+        group.add(seat);
+        group.add(vm(0.08, 0.32, 0.26, seatMat, -size.x * 0.16, lay.cabinBottom + 0.42 - lay.cabinY, s * 0.24));
+      }
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.016, 8, 16), trimMat);
+      wheel.position.set(size.x * 0.3, lay.belt - lay.cabinY - 0.08, 0.28);
+      wheel.rotation.y = 0.55;
+      wheel.castShadow = true;
+      wheel.receiveShadow = true;
+      group.add(wheel);
+    },
+  });
+  const fiBody = addBox({
+    mass: massOf('fi'), physMat: carMat, paint: paintMat,
+    size: { x: lay.fi.len, y: lay.segH, z: chassisZ },
+    pos: { x: X(lay.fi.c), y: lay.segY, z: 0 },
+  });
+  const fmBody = addBox({
+    mass: massOf('fm'), physMat: carMat, paint: paintMat,
+    size: { x: lay.fm.len, y: lay.segH, z: chassisZ },
+    pos: { x: X(lay.fm.c), y: lay.segY, z: 0 },
+    dress(group, size) {
+      for (const s of [-1, 1]) {
+        group.add(vm(size.x * 0.9, 0.08, 0.16, paintMat, 0, size.y * 0.15, s * (lay.wheelZ - 0.02)));
+      }
+    },
+  });
+  const fnBody = addBox({
+    mass: massOf('fn'), physMat: carMat, paint: paintMat,
+    size: { x: lay.fn.len, y: lay.segH, z: chassisZ },
+    pos: { x: X(lay.fn.c), y: lay.segY, z: 0 },
+    dress(group, size) {
+      group.add(vm(0.04, size.y * 0.38, size.z * 0.42, trimMat, size.x / 2, -size.y * 0.02, 0));
+      for (const s of [-1, 1]) {
+        group.add(vm(0.05, size.y * 0.2, size.z * 0.2, lampMat, size.x / 2, size.y * 0.2, s * size.z * 0.3));
+      }
+    },
+  });
+
+  const hoodT = 0.05;
+  const hoodZ = Math.min(W * 0.9, chassisZ + 0.28);
+  const hoodSplit = lay.fm.a + lay.fm.len * 0.25;
+  const hoodRear = addBox({
+    mass: massOf('hoodR'), physMat: carMat, paint: paintMat,
+    size: { x: Math.max(0.18, hoodSplit - (lay.fi.a + 0.03)), y: hoodT, z: hoodZ },
+    pos: { x: X((lay.fi.a + 0.03 + hoodSplit) * 0.5), y: lay.hoodY, z: 0 },
+  });
+  const hoodFront = addBox({
+    mass: massOf('hoodF'), physMat: carMat, paint: paintMat,
+    size: { x: Math.max(0.18, (lay.fn.b - 0.02) - hoodSplit), y: hoodT, z: hoodZ },
+    pos: { x: X((hoodSplit + lay.fn.b - 0.02) * 0.5), y: lay.hoodY, z: 0 },
+  });
+  const trunkLen = Math.max(0.25, lay.rear.len - 0.12);
+  const trunk = addBox({
+    mass: massOf('trunk'), physMat: carMat, paint: paintMat,
+    size: { x: trunkLen, y: 0.05, z: hoodZ * 0.96 },
+    pos: { x: X(lay.rear.a + 0.08 + trunkLen * 0.5), y: lay.rearTop + 0.035, z: 0 },
+    dress(group, size) {
+      group.add(vm(size.x * 0.18, 0.035, size.z * 0.98, trimMat, -size.x * 0.36, size.y * 0.7, 0));
+    },
+  });
+
+  const bH = clamp(H * 0.18, 0.15, 0.3);
+  const bY = lay.clearance + bH * 0.5;
+  const halfBumpW = (W * 0.9 - 0.05) * 0.5;
+  const bumperDress = (group, size) => {
+    group.add(vm(size.x * 1.02, size.y * 0.32, size.z * 1.05, trimMat, 0, -size.y * 0.3, 0));
+  };
+  const bumpFL = addBox({
+    mass: massOf('bfl'), physMat: carMat, paint: paintMat,
+    size: { x: lay.fb.len, y: bH, z: halfBumpW },
+    pos: { x: X(lay.fb.c), y: bY, z: halfBumpW * 0.5 + 0.03 },
+    dress: bumperDress,
+  });
+  const bumpFR = addBox({
+    mass: massOf('bfr'), physMat: carMat, paint: paintMat,
+    size: { x: lay.fb.len, y: bH, z: halfBumpW },
+    pos: { x: X(lay.fb.c), y: bY, z: -(halfBumpW * 0.5 + 0.03) },
+    dress: bumperDress,
+  });
+  const bumpR = addBox({
+    mass: massOf('br'), physMat: carMat, paint: paintMat,
+    size: { x: lay.rb.len, y: bH, z: W * 0.9 },
+    pos: { x: X(lay.rb.c), y: bY, z: 0 },
+    dress: bumperDress,
+  });
+
+  const doorMargin = 0.05;
+  const doorGap = 0.03;
+  const innerA = lay.cabin.a + doorMargin;
+  const innerB = lay.cabin.b - doorMargin;
+  const doorLen = (innerB - innerA - doorGap) * 0.5;
+  const rearDoor = { a: innerA, b: innerA + doorLen };
+  const frontDoor = { a: innerB - doorLen, b: innerB };
+  const doorBottom = lay.clearance + 0.11;
+  const doorTop = lay.belt - 0.02;
+  const doorH = Math.max(0.22, doorTop - doorBottom);
+  const doorY = (doorTop + doorBottom) * 0.5;
+  const doorThick = 0.06;
+  const doorZ = W * 0.5 - 0.012 - doorThick * 0.5;
+  const doorBodies = [];
+  for (const spec of [
+    { span: frontDoor, z: doorZ, front: true },
+    { span: frontDoor, z: -doorZ, front: true },
+    { span: rearDoor, z: doorZ, front: false },
+    { span: rearDoor, z: -doorZ, front: false },
+  ]) {
+    const rec = addBox({
+      mass: massOf('door'), physMat: carMat, paint: paintMat,
+      size: { x: spec.span.b - spec.span.a, y: doorH, z: doorThick },
+      pos: { x: X((spec.span.a + spec.span.b) * 0.5), y: doorY, z: spec.z },
+      dress(group, size) {
+        if (!spec.front) return;
+        const mir = vm(0.1, 0.08, 0.16, trimMat, size.x * 0.35, size.y * 0.42, Math.sign(spec.z) * 0.08);
+        group.add(mir);
+      },
+    });
+    const hx = X(spec.span.b);
+    const lx = X(spec.span.a);
+    hinge(cabinBody.body, rec.body, hx, doorY, spec.z, 0, 1, 0, FRC.doorHinge, 3.2, true);
+    point(cabinBody.body, rec.body, lx, doorY, spec.z, FRC.doorLatch, 1.25, true);
+    doorBodies.push({ rec, spec });
+  }
+
+  const glassCount = 6 + 4 + 8;
+  const glassMass = massOf('glass') / glassCount;
+  function addPane(host, cx, cy, cz, width, height, angle, colsG, rowsG, axis) {
+    const q = new CANNON.Quaternion();
+    q.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), angle);
+    const sw = width / colsG;
+    const sh = height / rowsG;
+    const side = axis === 'side';
+    const grid = [];
+    for (let r = 0; r < rowsG; r++) {
+      const rowA = [];
+      for (let c = 0; c < colsG; c++) {
+        const off = new CANNON.Vec3(
+          side ? (c + 0.5 - colsG / 2) * sw : 0,
+          (r + 0.5 - rowsG / 2) * sh,
+          side ? 0 : (c + 0.5 - colsG / 2) * sw,
+        );
+        q.vmult(off, off);
+        const rec = addBox({
+          mass: glassMass, physMat: glassPhys, paint: glassMat,
+          size: side
+            ? { x: sw * 0.9, y: sh * 0.9, z: 0.018 }
+            : { x: 0.018, y: sh * 0.9, z: sw * 0.9 },
+          pos: { x: cx + off.x, y: cy + off.y, z: cz + off.z },
+          quat: q, linDamp: 0.02, angDamp: 0.08,
+        });
+        lock(host, rec.body, FRC.glass, 0.75);
+        if (c > 0) {
+          const prev = rowA[c - 1];
+          const mx = (prev.body.position.x + rec.body.position.x) * 0.5;
+          const my = (prev.body.position.y + rec.body.position.y) * 0.5;
+          const mz = (prev.body.position.z + rec.body.position.z) * 0.5;
+          point(prev.body, rec.body, mx, my, mz, FRC.glassSeam, 0.45, false);
+        }
+        if (r > 0) {
+          const below = grid[r - 1][c];
+          const mx = (below.body.position.x + rec.body.position.x) * 0.5;
+          const my = (below.body.position.y + rec.body.position.y) * 0.5;
+          const mz = (below.body.position.z + rec.body.position.z) * 0.5;
+          point(below.body, rec.body, mx, my, mz, FRC.glassSeam, 0.45, false);
+        }
+        rowA.push(rec);
+      }
+      grid.push(rowA);
+    }
+  }
+
+  const winH = clamp((lay.roof - lay.belt) * 0.78, 0.34, 0.62);
+  const winY = (lay.belt + lay.roof) * 0.5 + 0.02;
+  addPane(
+    cabinBody.body,
+    X(lay.cabin.b - 0.2),
+    winY,
+    0,
+    Math.min(W * 0.7, chassisZ + 0.2),
+    winH,
+    0.42,
+    3,
+    2,
+    'front',
+  );
+  addPane(
+    cabinBody.body,
+    X(lay.cabin.a + 0.14),
+    (lay.belt + lay.roof) * 0.5,
+    0,
+    Math.min(W * 0.62, chassisZ),
+    clamp((lay.roof - lay.belt) * 0.62, 0.28, 0.5),
+    -0.38,
+    2,
+    2,
+    'front',
+  );
+  const gBottom = doorTop + 0.035;
+  const gTop = Math.min(lay.roof - 0.12, gBottom + 0.4);
+  const gH = Math.max(0.16, gTop - gBottom);
+  const gY = (gBottom + gTop) * 0.5;
+  for (const d of doorBodies) {
+    const gx = X((d.spec.span.a + d.spec.span.b) * 0.5);
+    addPane(d.rec.body, gx, gY, d.spec.z, (d.spec.span.b - d.spec.span.a) * 0.82, gH, 0, 2, 1, 'side');
+  }
+
+  function addWheel(x, z, host) {
+    const y = lay.wheelR + 0.008;
+    const body = new CANNON.Body({
+      mass: massOf('wheel'),
+      material: wheelMat,
+      linearDamping: 0.02,
+      angularDamping: 0.05,
+      allowSleep: true,
+      sleepSpeedLimit: 0.15,
+      sleepTimeLimit: 0.75,
+    });
+    const cyl = new CANNON.Cylinder(lay.wheelR, lay.wheelR, lay.wheelW, 10);
+    const sq = new CANNON.Quaternion();
+    sq.setFromEuler(Math.PI / 2, 0, 0);
+    body.addShape(cyl, new CANNON.Vec3(), sq);
+    body.position.set(x, y, z);
+    body.velocity.set(v0, 0, 0);
+    body.angularVelocity.set(0, 0, -v0 / lay.wheelR);
+    body.kind = 'wheel';
+    world.addBody(body);
+    body.addEventListener('collide', onCollide);
+    const group = new THREE.Group();
+    const tire = new THREE.Mesh(new THREE.CylinderGeometry(lay.wheelR, lay.wheelR, lay.wheelW, 18), tireMat);
+    tire.rotation.x = Math.PI / 2;
+    tire.castShadow = true;
+    tire.receiveShadow = true;
+    group.add(tire);
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(lay.wheelR * 0.62, lay.wheelR * 0.62, lay.wheelW * 0.72, 16), rimMat);
+    rim.rotation.x = Math.PI / 2;
+    rim.castShadow = true;
+    rim.receiveShadow = true;
+    group.add(rim);
+    for (let i = 0; i < 5; i++) {
+      const piv = new THREE.Group();
+      piv.rotation.z = (i / 5) * Math.PI * 2;
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(lay.wheelR * 0.52, 0.028, 0.045), rimMat);
+      spoke.position.x = lay.wheelR * 0.3;
+      spoke.castShadow = true;
+      spoke.receiveShadow = true;
+      piv.add(spoke);
+      group.add(piv);
+    }
+    scene.add(group);
+    const rec = { body, group, wheel: true, drop: lay.wheelR, lastSkidX: x };
+    parts.push(rec);
+    wheelRecs.push(rec);
+    shadowItems.push({ body, drop: lay.wheelR, radius: lay.wheelR * 0.9 });
+    hinge(host, body, x, y, z, 0, 0, 1, FRC.wheel, 2.4, false);
+    return rec;
+  }
+  addWheel(X(lay.fm.c), lay.wheelZ, fmBody.body);
+  addWheel(X(lay.fm.c), -lay.wheelZ, fmBody.body);
+  addWheel(X(lay.rear.c), lay.wheelZ, rearBody.body);
+  addWheel(X(lay.rear.c), -lay.wheelZ, rearBody.body);
+
+  lock(cabinBody.body, rearBody.body, FRC.rear, 5.2);
+  hinge(cabinBody.body, fiBody.body, X(lay.fi.a), lay.segBottom, 0, 0, 0, 1, FRC.innerHinge, 4.2, true);
+  point(cabinBody.body, fiBody.body, X(lay.fi.a), lay.segTop, 0, FRC.innerLink, 1.45, true);
+  hinge(fiBody.body, fmBody.body, X(lay.fm.a), lay.segBottom, 0, 0, 0, 1, FRC.midHinge, 3.0, true);
+  point(fiBody.body, fmBody.body, X(lay.fm.a), lay.segTop, 0, FRC.midLink, 1.1, true);
+  hinge(fmBody.body, fnBody.body, X(lay.fn.a), lay.segBottom, 0, 0, 0, 1, FRC.noseHinge, 2.2, true);
+  point(fmBody.body, fnBody.body, X(lay.fn.a), lay.segTop, 0, FRC.noseLink, 0.8, true);
+
+  const hoodRearX0 = hoodRear.body.position.x - (hoodSplit - (lay.fi.a + 0.03)) * 0.5;
+  hinge(cabinBody.body, hoodRear.body, hoodRearX0, lay.hoodY, 0, 0, 0, 1, FRC.hoodHinge, 2.7, false);
+  point(hoodRear.body, hoodFront.body, X(hoodSplit), lay.hoodY, 0, FRC.hoodSeam, 0.95, false);
+  point(fnBody.body, hoodFront.body, X(lay.fn.b - 0.02), lay.hoodY - 0.01, 0, FRC.hoodLatch, 1.0, false);
+  const trunkX0 = trunk.body.position.x - trunkLen * 0.5;
+  const trunkX1 = trunk.body.position.x + trunkLen * 0.5;
+  hinge(rearBody.body, trunk.body, trunkX1, lay.rearTop + 0.035, 0, 0, 0, 1, FRC.trunkHinge, 3.3, false);
+  point(rearBody.body, trunk.body, trunkX0, lay.rearTop + 0.02, 0, FRC.trunkLatch, 1.35, false);
+  lock(fnBody.body, bumpFL.body, FRC.bumper, 1.1);
+  lock(fnBody.body, bumpFR.body, FRC.bumper, 1.1);
+  lock(rearBody.body, bumpR.body, FRC.bumper * 1.25, 1.7);
+
+  const brickGeo = new THREE.BoxGeometry(
+    Math.max(0.05, bw - 0.01),
+    Math.max(0.04, bh - 0.008),
+    Math.max(0.04, bd - 0.008),
+  );
+  const brickCount = cols * rows * depth;
+  const brickMesh = new THREE.InstancedMesh(brickGeo, brickVisMat, brickCount);
+  brickMesh.castShadow = true;
+  brickMesh.receiveShadow = true;
+  brickMesh.frustumCulled = false;
+  brickMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(brickMesh);
+  const brickRecs = [];
+  const mortarForce = Math.max(700, cfg.brickMass * 1600);
+  let bi = 0;
+  const color = new THREE.Color();
+  for (let layer = 0; layer < depth; layer++) {
+    for (let row = 0; row < rows; row++) {
+      const stagger = ((row + layer) % 2) * pitchZ * 0.5;
+      for (let col = 0; col < cols; col++) {
+        const z = -(cols - 1) * pitchZ * 0.5 + col * pitchZ + stagger;
+        const x = wallFront + bd * 0.5 + layer * pitchX;
+        const y = bh * 0.5 + row * pitchY;
+        const body = new CANNON.Body({
+          mass: cfg.brickMass,
+          material: brickMat,
+          linearDamping: 0.045,
+          angularDamping: 0.14,
+          allowSleep: true,
+          sleepSpeedLimit: 0.18,
+          sleepTimeLimit: 0.4,
+          shape: new CANNON.Box(new CANNON.Vec3(bd / 2, bh / 2, bw / 2)),
+          position: new CANNON.Vec3(x, y, z),
+        });
+        body.kind = 'brick';
+        world.addBody(body);
+        color.setHSL(0.02 + hash01(bi + 3) * 0.035, 0.38 + hash01(bi + 11) * 0.28, 0.3 + hash01(bi + 19) * 0.2);
+        brickMesh.setColorAt(bi, color);
+        const rec = { body, layer, row, col, x, y, z, supports: [] };
+        brickRecs.push(rec);
+        shadowItems.push({ body, drop: bh / 2, radius: Math.max(bw, bd) * 0.42 });
+        bi++;
+      }
+    }
+  }
+  if (brickMesh.instanceColor) brickMesh.instanceColor.needsUpdate = true;
+  const brickIndex = new Map();
+  for (const b of brickRecs) brickIndex.set(`${b.layer}:${b.row}:${b.col}`, b);
+  const linked = new Set();
+  function linkMortar(a, b) {
+    const key = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
+    if (linked.has(key)) return;
+    linked.add(key);
+    const c = new CANNON.DistanceConstraint(a, b, undefined, mortarForce);
+    c.collideConnected = true;
+    world.addConstraint(c);
+    joints.push({ c, maxForce: mortarForce, relThresh: 1.02, armedOnly: false, dead: false });
+  }
+  for (const b of brickRecs) {
+    if (b.row > 0) {
+      for (let c = 0; c < cols; c++) {
+        const o = brickIndex.get(`${b.layer}:${b.row - 1}:${c}`);
+        if (!o) continue;
+        if (Math.abs(o.z - b.z) < bw * 0.9) {
+          b.supports.push(o.body);
+          linkMortar(b.body, o.body);
+        }
+      }
+    }
+    const right = brickIndex.get(`${b.layer}:${b.row}:${b.col + 1}`);
+    if (right && Math.abs(right.z - b.z) < pitchZ * 1.25) linkMortar(b.body, right.body);
+    const back = brickIndex.get(`${b.layer + 1}:${b.row}:${b.col}`);
+    if (back) {
+      const dx = back.x - b.x;
+      const dz = back.z - b.z;
+      if (dx * dx + dz * dz < bw * bw) linkMortar(b.body, back.body);
+    }
+  }
+  for (const b of brickRecs) b.body.sleep();
+
+  const dummy = new THREE.Object3D();
+  const shadowMesh = new THREE.InstancedMesh(
+    new THREE.CircleGeometry(1, 14),
+    new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    }),
+    shadowItems.length,
+  );
+  shadowMesh.geometry.rotateX(-Math.PI / 2);
+  shadowMesh.frustumCulled = false;
+  shadowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(shadowMesh);
+
+  const skidMax = 72;
+  const skidMesh = new THREE.InstancedMesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshStandardMaterial({ color: 0x121212, roughness: 1, metalness: 0, transparent: true, opacity: 0.42 }),
+    skidMax,
+  );
+  skidMesh.geometry.rotateX(-Math.PI / 2);
+  skidMesh.frustumCulled = false;
+  skidMesh.count = 0;
+  skidMesh.receiveShadow = true;
+  scene.add(skidMesh);
+  let skidCount = 0;
+  function dropSkid(x, z, len) {
+    if (skidCount >= skidMax) return;
+    dummy.position.set(x, 0.016, z);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(len || 0.7, 1, 0.18);
+    dummy.updateMatrix();
+    skidMesh.setMatrixAt(skidCount, dummy.matrix);
+    skidCount++;
+    skidMesh.count = skidCount;
+    skidMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  function makePoints(count, color, size) {
+    const positions = new Float32Array(count * 3);
+    const state = [];
+    for (let i = 0; i < count; i++) {
+      positions[i * 3 + 1] = -80;
+      state.push({ life: 0, vx: 0, vy: 0, vz: 0 });
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color, size, transparent: true, opacity: 0.72, depthWrite: false, sizeAttenuation: true,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    scene.add(pts);
+    return { positions, state, count, attr: geo.attributes.position };
+  }
+  const dust = makePoints(56, 0xd5c6b4, 0.24);
+  const sparks = makePoints(28, 0xffc56a, 0.07);
+  let dustCursor = 0;
+  let sparkCursor = 0;
+  function spawnInto(sys, cursor, p, life, vx, vy, vz) {
+    const i = cursor % sys.count;
+    const st = sys.state[i];
+    st.life = life;
+    st.vx = vx; st.vy = vy; st.vz = vz;
+    sys.positions[i * 3] = p.x;
+    sys.positions[i * 3 + 1] = p.y;
+    sys.positions[i * 3 + 2] = p.z;
+    return i + 1;
+  }
+  function spawnBurst(contact, vn) {
+    if (bursts > 7) return;
+    bursts++;
+    const p = {
+      x: contact.bi.position.x + contact.ri.x,
+      y: Math.max(0.08, contact.bi.position.y + contact.ri.y),
+      z: contact.bi.position.z + contact.ri.z,
+    };
+    const n = vn > 6 ? 14 : 8;
+    for (let i = 0; i < n; i++) {
+      const ang = rng() * Math.PI * 2;
+      const sp = 0.5 + rng() * (1.2 + vn * 0.15);
+      dustCursor = spawnInto(
+        dust, dustCursor, {
+          x: p.x + (rng() - 0.5) * 0.35,
+          y: p.y + rng() * 0.2,
+          z: p.z + (rng() - 0.5) * 0.35,
+        },
+        0.4 + rng() * 0.55,
+        Math.cos(ang) * sp,
+        0.7 + rng() * 2.6,
+        Math.sin(ang) * sp,
+      );
+    }
+    if (vn > 4.5) {
+      for (let i = 0; i < 7; i++) {
+        sparkCursor = spawnInto(
+          sparks, sparkCursor, p,
+          0.12 + rng() * 0.22,
+          (rng() - 0.5) * 7,
+          1 + rng() * 4,
+          (rng() - 0.5) * 7,
+        );
+      }
+    }
+    dust.attr.needsUpdate = true;
+    sparks.attr.needsUpdate = true;
+  }
+  function stepParticles(dt) {
+    for (const sys of [dust, sparks]) {
+      let dirty = false;
+      for (let i = 0; i < sys.count; i++) {
+        const st = sys.state[i];
+        if (st.life <= 0) continue;
+        dirty = true;
+        st.life -= dt;
+        const id = i * 3;
+        if (st.life <= 0) { sys.positions[id + 1] = -80; continue; }
+        st.vy -= 7.2 * dt;
+        sys.positions[id] += st.vx * dt;
+        sys.positions[id + 1] += st.vy * dt;
+        sys.positions[id + 2] += st.vz * dt;
+        if (sys.positions[id + 1] < 0.04) {
+          sys.positions[id + 1] = 0.04;
+          st.vy *= -0.18;
+          st.vx *= 0.65;
+          st.vz *= 0.65;
+        }
+      }
+      if (dirty) sys.attr.needsUpdate = true;
+    }
+  }
+
+  const cabinStartX = cabinBody.body.position.x;
+  function substep(dt) {
+    if (!impacted) {
+      const traveled = clamp(cabinBody.body.position.x - cabinStartX, 0, distance);
+      const want = Math.min(vTarget, Math.sqrt(Math.max(0, v0 * v0 + 2 * accel * traveled)));
+      for (const p of parts) {
+        const b = p.body;
+        const err = want - b.velocity.x;
+        const ax = clamp(err / dt, -90, 90);
+        b.force.set(b.mass * ax, 0, 0);
+        b.velocity.z = 0;
+        if (p.wheel) b.angularVelocity.set(0, 0, -want / lay.wheelR);
+        else b.angularVelocity.set(0, 0, 0);
+      }
+      for (const w of wheelRecs) {
+        if (Math.abs(w.body.position.x - w.lastSkidX) > 0.55 && Math.abs(w.body.velocity.x) > 6) {
+          dropSkid(w.body.position.x, w.body.position.z, 0.62);
+          w.lastSkidX = w.body.position.x;
+        }
+      }
+    }
+    world.step(dt);
+    if (simTime > 0.3) {
+      const doomed = [];
+      for (let i = 0; i < joints.length; i++) {
+        const j = joints[i];
+        if (j.dead) continue;
+        if (j.armedOnly && !armed) continue;
+        const rel = relSpeed(j.c.bodyA, j.c.bodyB);
+        let peak = 0;
+        const eqs = j.c.equations;
+        for (let k = 0; k < eqs.length; k++) {
+          if (!eqs[k].enabled) continue;
+          const a = Math.abs(eqs[k].multiplier);
+          if (a > peak) peak = a;
+        }
+        if (rel > j.relThresh || peak > j.maxForce * 0.62) doomed.push(j);
+      }
+      for (let i = 0; i < doomed.length; i++) {
+        const j = doomed[i];
+        j.dead = true;
+        world.removeConstraint(j.c);
+        j.c.bodyA.wakeUp();
+        j.c.bodyB.wakeUp();
+      }
+    }
+    if (armed) {
+      for (let i = 0; i < brickRecs.length; i++) {
+        const b = brickRecs[i];
+        if (b.body.sleepState !== CANNON.Body.SLEEPING) continue;
+        if (!b.supports.length) continue;
+        let held = false;
+        for (let s = 0; s < b.supports.length; s++) {
+          const u = b.supports[s];
+          if (u.sleepState === CANNON.Body.SLEEPING) { held = true; break; }
+          const dy = b.body.position.y - u.position.y;
+          const dx = b.body.position.x - u.position.x;
+          const dz = b.body.position.z - u.position.z;
+          if (dy > 0 && dy < pitchY * 1.45 && dx * dx + dz * dz < pitchZ * pitchZ) { held = true; break; }
+        }
+        if (!held) b.body.wakeUp();
+      }
+    }
+    const maxS = 52;
+    const maxA = 32;
+    for (let i = 0; i < world.bodies.length; i++) {
+      const b = world.bodies[i];
+      if (b.type !== CANNON.Body.DYNAMIC || b.sleepState === CANNON.Body.SLEEPING) continue;
+      const s2 = b.velocity.lengthSquared();
+      if (s2 > maxS * maxS) b.velocity.scale(maxS / Math.sqrt(s2), b.velocity);
+      const a2 = b.angularVelocity.lengthSquared();
+      if (a2 > maxA * maxA) b.angularVelocity.scale(maxA / Math.sqrt(a2), b.angularVelocity);
+    }
+    stepParticles(dt);
+    if (shake > 0) shake = Math.max(0, shake - dt * 1.65);
+    simTime += dt;
+  }
+
+  function syncAll() {
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      p.group.position.set(p.body.position.x, p.body.position.y, p.body.position.z);
+      p.group.quaternion.set(p.body.quaternion.x, p.body.quaternion.y, p.body.quaternion.z, p.body.quaternion.w);
+    }
+    for (let i = 0; i < brickRecs.length; i++) {
+      const b = brickRecs[i].body;
+      dummy.position.set(b.position.x, b.position.y, b.position.z);
+      dummy.quaternion.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      brickMesh.setMatrixAt(i, dummy.matrix);
+    }
+    brickMesh.instanceMatrix.needsUpdate = true;
+    for (let i = 0; i < shadowItems.length; i++) {
+      const s = shadowItems[i];
+      const gy = s.body.position.y - s.drop;
+      const t = gy < 1.7 ? Math.max(0, 1 - gy / 1.55) : 0;
+      const sc = s.radius * (0.62 + 0.38 * t) * t;
+      dummy.position.set(s.body.position.x, 0.02, s.body.position.z);
+      dummy.quaternion.identity();
+      dummy.scale.set(sc, sc, sc);
+      dummy.updateMatrix();
+      shadowMesh.setMatrixAt(i, dummy.matrix);
+    }
+    shadowMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  function shakeOffset(time, amp) {
+    if (amp <= 0) return { x: 0, y: 0, z: 0 };
+    const s = amp * amp;
+    const f = Math.floor(time * 48);
+    return {
+      x: (hash01(f + 1.2) - 0.5) * 0.24 * s,
+      y: (hash01(f + 2.4) - 0.5) * 0.14 * s,
+      z: (hash01(f + 3.6) - 0.5) * 0.24 * s,
+    };
+  }
+  function setFov(v) {
+    if (Math.abs(camera.fov - v) > 0.05) {
+      camera.fov = v;
+      camera.updateProjectionMatrix();
+    }
+  }
+
+  run = {
+    wallFront,
+    trackLen,
+    advance(frameDt) {
+      acc += frameDt;
+      const cap = FIXED * MAX_STEPS;
+      if (acc > cap) acc = cap;
+      let steps = 0;
+      while (acc >= FIXED && steps < MAX_STEPS) {
+        substep(FIXED);
+        acc -= FIXED;
+        steps++;
+      }
+    },
+    present(frameDt) {
+      syncAll();
+      const traveled = cabinBody.body.position.x - cabinStartX;
+      const progress = clamp(traveled / distance, 0, 1);
+      camProgress = Math.max(camProgress, smoothstep(clamp((progress - 0.08) / 0.88, 0, 1)));
+      if (viewName === 'orbit') {
+        controls.enabled = true;
+        controls.update();
+        sky.position.copy(camera.position);
+        return;
+      }
+      controls.enabled = false;
+      if (viewName === 'top') {
+        const aspect = Math.max(0.6, camera.aspect);
+        const fov = 46 * Math.PI / 180;
+        const needX = trackLen * 0.58;
+        const needZ = asphaltHalf + 8;
+        const dist = Math.max(needX / (Math.tan(fov / 2) * aspect), needZ / Math.tan(fov / 2), 18);
+        camera.up.set(0, 0, -1);
+        camera.position.set(trackLen * 0.5, dist, 0);
+        camera.lookAt(trackLen * 0.5, 0, 0);
+        setFov(46);
+        sky.position.copy(camera.position);
+        return;
+      }
+      camera.up.set(0, 1, 0);
+      const sh = shakeOffset(simTime, viewName === 'follow' ? shake * 0.7 : shake);
+      if (viewName === 'follow') {
+        const c = cabinBody.body.position;
+        const desired = new THREE.Vector3(c.x - 7.1, c.y + 2.35, c.z + 4.5);
+        if (followSnap) { followPos.copy(desired); followSnap = false; }
+        else followPos.lerp(desired, 1 - Math.exp(-4.2 * Math.max(frameDt, 0.0001)));
+        camera.position.copy(followPos);
+        camera.position.x += sh.x;
+        camera.position.y += sh.y;
+        camera.position.z += sh.z;
+        camera.lookAt(c.x + 5.4, 0.95, c.z * 0.25);
+        setFov(55);
+        sky.position.copy(camera.position);
+        return;
+      }
+      const widePos = new THREE.Vector3(trackLen * 0.4, 12.6, 21.5);
+      const wideLook = new THREE.Vector3(trackLen * 0.5, 0.7, 0);
+      const tightPos = new THREE.Vector3(wallFront - 6.1, 3.45, 9.1);
+      const tightLook = new THREE.Vector3(wallFront - 0.15, 1.05, 0.1);
+      camera.position.lerpVectors(widePos, tightPos, camProgress);
+      camera.position.x += sh.x;
+      camera.position.y += sh.y;
+      camera.position.z += sh.z;
+      const look = wideLook.clone().lerp(tightLook, camProgress);
+      camera.lookAt(look);
+      setFov(56 - 16 * camProgress);
+      sky.position.copy(camera.position);
+    },
+  };
+  followSnap = true;
+  orbitPose = null;
+  if (viewName === 'orbit') {
+    camera.up.set(0, 1, 0);
+    camera.position.set(wallFront - 7.2, 5.4, 12.2);
+    controls.target.set(wallFront - 0.4, 1.05, 0);
+    controls.update();
+  }
+}
+
+function refreshPause() {
+  document.getElementById('pauseBtn').textContent = paused ? 'Play' : 'Pause';
+}
+function setSpeed(v) {
+  simSpeed = v;
+  document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', Number(b.dataset.speed) === v));
+}
+function setView(name) {
+  if (viewName === 'orbit' && name !== 'orbit') {
+    orbitPose = { pos: camera.position.clone(), target: controls.target.clone() };
+  }
+  viewName = name;
+  document.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === name));
+  if (name === 'follow') followSnap = true;
+  if (name === 'orbit') {
+    camera.up.set(0, 1, 0);
+    controls.enabled = true;
+    if (orbitPose) {
+      camera.position.copy(orbitPose.pos);
+      controls.target.copy(orbitPose.target);
+    } else if (run) {
+      camera.position.set(run.wallFront - 7.2, 5.4, 12.2);
+      controls.target.set(run.wallFront - 0.4, 1.05, 0);
+    }
+    controls.update();
+  } else {
+    controls.enabled = false;
+  }
+}
+document.getElementById('pauseBtn').addEventListener('click', () => { paused = !paused; refreshPause(); });
+document.getElementById('replayBtn').addEventListener('click', () => { paused = false; refreshPause(); build(readForm()); });
+document.getElementById('apply').addEventListener('click', () => { paused = false; refreshPause(); build(readForm()); });
+document.getElementById('settingsBtn').addEventListener('click', () => document.getElementById('panel').classList.toggle('hidden'));
+document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
+document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || e.repeat) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+  paused = !paused;
+  refreshPause();
+});
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+fillForm(DEFAULTS);
+build(DEFAULTS);
+refreshPause();
+let last = performance.now();
+function frame(now) {
+  const frameDt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+  last = now;
+  if (run && !paused) run.advance(frameDt * simSpeed);
+  if (run) run.present(paused ? 0 : frameDt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

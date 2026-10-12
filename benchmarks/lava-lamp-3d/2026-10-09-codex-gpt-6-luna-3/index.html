@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="theme-color" content="#11110f" />
+  <title>VELORA</title>
+  <style>
+    :root { color-scheme: dark; --ink: #f1eee6; --muted: #a9a59b; --line: rgba(239,230,213,.16); --panel: rgba(22,21,19,.76); --accent: #e5ad69; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #10100f; color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    canvas { display: block; width: 100%; height: 100%; }
+    .brand { position: fixed; z-index: 2; top: 27px; right: 34px; font-size: 11px; font-weight: 600; letter-spacing: .34em; color: rgba(247,241,228,.77); text-shadow: 0 1px 16px #000; }
+    .panel { position: fixed; z-index: 3; left: 26px; bottom: 25px; width: 246px; padding: 16px 17px 14px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); box-shadow: 0 14px 44px rgba(0,0,0,.27); backdrop-filter: blur(20px) saturate(125%); -webkit-backdrop-filter: blur(20px) saturate(125%); }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .power-row { padding-bottom: 13px; border-bottom: 1px solid var(--line); }
+    .label { color: var(--muted); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+    .power-state { display: flex; align-items: center; gap: 8px; color: #e8e1d4; font-size: 12px; }
+    .toggle { width: 35px; height: 20px; border: 1px solid rgba(255,255,255,.19); border-radius: 20px; padding: 2px; background: #494642; cursor: pointer; transition: .25s ease; }
+    .toggle::before { content: ""; display: block; width: 14px; height: 14px; border-radius: 50%; background: #eee7d9; transition: .25s ease; box-shadow: 0 1px 4px #0008; }
+    .toggle[aria-checked="true"] { background: #a96a37; border-color: #c78e58; box-shadow: 0 0 15px #d1814233; }
+    .toggle[aria-checked="true"]::before { transform: translateX(15px); background: #fff2d9; }
+    .section { margin-top: 14px; }
+    .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+    .preset { height: 30px; padding: 0; border: 1px solid rgba(255,255,255,.15); border-radius: 7px; color: #eee9df; background: rgba(255,255,255,.035); cursor: pointer; font-size: 9px; letter-spacing: .01em; transition: .2s ease; }
+    .preset:hover { background: rgba(255,255,255,.1); }
+    .preset[aria-pressed="true"] { border-color: rgba(238,191,135,.8); box-shadow: inset 0 0 0 1px rgba(238,191,135,.19), 0 0 11px rgba(220,158,90,.12); color: #fff2df; }
+    .swatch { display: block; width: 10px; height: 10px; margin: 0 auto 2px; border-radius: 50%; box-shadow: 0 0 7px currentColor; }
+    .slider-row { margin-top: 14px; }
+    .slider-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+    output { min-width: 32px; text-align: right; color: #d8d0c3; font-size: 10px; font-variant-numeric: tabular-nums; }
+    input[type="range"] { display: block; width: 100%; height: 3px; margin: 0; appearance: none; border-radius: 5px; background: linear-gradient(90deg, #c8894f 0%, #c8894f 50%, rgba(255,255,255,.2) 50%); outline: none; cursor: pointer; }
+    input[type="range"]::-webkit-slider-thumb { appearance: none; width: 11px; height: 11px; border: 1px solid #fff0dd; border-radius: 50%; background: #d9a66b; box-shadow: 0 0 9px #e2a65f88; }
+    input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border: 1px solid #fff0dd; border-radius: 50%; background: #d9a66b; box-shadow: 0 0 9px #e2a65f88; }
+    .hint { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--line); color: rgba(228,222,211,.48); font-size: 9px; letter-spacing: .05em; }
+    .orbit { padding: 5px 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 6px; color: rgba(238,231,217,.72); background: transparent; font-size: 9px; cursor: pointer; }
+    .orbit[aria-pressed="true"] { border-color: #c99059; color: #f2c897; }
+    @media (max-width: 640px) { .brand { top: 17px; right: 18px; } .panel { left: 12px; bottom: 12px; width: min(230px, calc(100vw - 24px)); padding: 13px 14px 12px; } }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <div class="brand">VELORA</div>
+  <section class="panel" aria-label="Lamp controls">
+    <div class="row power-row">
+      <span class="label">Power</span>
+      <div class="power-state"><span id="powerText">On</span><button class="toggle" id="power" type="button" role="switch" aria-checked="true" aria-label="Power"></button></div>
+    </div>
+    <div class="section">
+      <div class="label">Color</div>
+      <div class="presets" role="group" aria-label="Color preset">
+        <button class="preset" data-preset="classic" aria-pressed="true"><i class="swatch" style="color:#f05522;background:#f05522"></i>Classic</button>
+        <button class="preset" data-preset="lagoon" aria-pressed="false"><i class="swatch" style="color:#49d4ca;background:#49d4ca"></i>Lagoon</button>
+        <button class="preset" data-preset="orchid" aria-pressed="false"><i class="swatch" style="color:#d080ff;background:#d080ff"></i>Orchid</button>
+        <button class="preset" data-preset="citrine" aria-pressed="false"><i class="swatch" style="color:#ffe48a;background:#ffe48a"></i>Citrine</button>
+      </div>
+    </div>
+    <div class="slider-row">
+      <div class="slider-head"><label class="label" for="heat">Heat</label><output id="heatOut">72%</output></div>
+      <input id="heat" type="range" min="25" max="100" value="72" aria-label="Heat and flow speed" />
+    </div>
+    <div class="slider-row">
+      <div class="slider-head"><label class="label" for="amount">Wax amount</label><output id="amountOut">62%</output></div>
+      <input id="amount" type="range" min="35" max="100" value="62" aria-label="Wax amount" />
+    </div>
+    <div class="hint"><span>Drag to orbit · scroll to zoom</span><button class="orbit" id="orbit" type="button" aria-pressed="false">Auto orbit</button></div>
+  </section>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#11110f');
+    const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, .1, 45);
+    camera.position.set(6.4, 4.2, 8.7);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.35));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.transmissionResolutionScale = .65;
+    document.body.appendChild(renderer.domElement);
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const env = pmrem.fromScene(new RoomEnvironment(), .04).texture;
+    scene.environment = env;
+    pmrem.dispose();
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 2.03, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = .055;
+    controls.minDistance = 3.55;
+    controls.maxDistance = 10.8;
+    controls.minPolarAngle = .12;
+    controls.maxPolarAngle = Math.PI - .12;
+    controls.update();
+
+    scene.add(new THREE.HemisphereLight(0x8692a0, 0x211714, .22));
+    const roomFill = new THREE.PointLight(0x8291a7, .75, 11, 2);
+    roomFill.position.set(-3.7, 4.4, 2.3);
+    scene.add(roomFill);
+    const softShadow = new THREE.DirectionalLight(0xffc48d, .42);
+    softShadow.position.set(2.5, 4.1, 3.2); softShadow.target.position.set(0, .2, 0); softShadow.castShadow = true;
+    softShadow.shadow.mapSize.set(1024, 1024); softShadow.shadow.camera.left = -3.5; softShadow.shadow.camera.right = 3.5;
+    softShadow.shadow.camera.top = 5; softShadow.shadow.camera.bottom = -1; softShadow.shadow.bias = -.0004; softShadow.shadow.radius = 5;
+    softShadow.shadow.autoUpdate = false; softShadow.shadow.needsUpdate = true;
+    scene.add(softShadow, softShadow.target);
+    const rimLight = new THREE.PointLight(0x9db6d1, 1.1, 8, 2);
+    rimLight.position.set(1.2, 4.7, -2.1);
+    scene.add(rimLight);
+
+    function makeWoodTexture() {
+      const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+      const ctx = c.getContext('2d');
+      const grad = ctx.createLinearGradient(0, 0, 0, 512);
+      grad.addColorStop(0, '#4a3022'); grad.addColorStop(.45, '#332219'); grad.addColorStop(1, '#241a15');
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 110; i++) {
+        const y = Math.random() * 512, amp = 1 + Math.random() * 7;
+        ctx.beginPath(); ctx.moveTo(0, y);
+        for (let x = 0; x <= 512; x += 18) ctx.lineTo(x, y + Math.sin(x * (.012 + Math.random() * .009) + i) * amp + Math.sin(x * .055 + i * 3) * 1.4);
+        ctx.strokeStyle = `rgba(${i % 3 ? '185,128,83' : '15,9,6'},${.025 + Math.random() * .07})`;
+        ctx.lineWidth = .5 + Math.random() * 2.2; ctx.stroke();
+      }
+      const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(80, 80); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+    }
+    const wood = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ map: makeWoodTexture(), roughness: .35, metalness: .08 }));
+    wood.rotation.x = -Math.PI / 2; wood.position.y = -.025; wood.receiveShadow = true; scene.add(wood);
+    const tableEdge = new THREE.Mesh(new THREE.BoxGeometry(200, .28, .42), new THREE.MeshStandardMaterial({ color: '#211712', roughness: .48 }));
+    tableEdge.position.set(0, -.16, .48); tableEdge.receiveShadow = true; scene.add(tableEdge);
+
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(28, 13), new THREE.MeshStandardMaterial({ color: '#171817', roughness: .94, metalness: .02 }));
+    wall.position.set(0, 5.1, -3.9); scene.add(wall);
+    const wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(8, 6), new THREE.MeshBasicMaterial({ color: '#24190f', transparent: true, opacity: .22, depthWrite: false }));
+    wallGlow.position.set(0, 2.35, -3.86); scene.add(wallGlow);
+
+    // A few quiet objects establish tabletop scale without competing with the lamp.
+    const bookMat = [new THREE.MeshStandardMaterial({ color: '#26302f', roughness: .7 }), new THREE.MeshStandardMaterial({ color: '#553529', roughness: .67 })];
+    function book(x, y, z, sx, sy, sz, mat, rot = 0) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat); b.position.set(x, y, z); b.rotation.y = rot; b.castShadow = true; b.receiveShadow = true; scene.add(b);
+      const line = new THREE.Mesh(new THREE.BoxGeometry(sx * .72, .009, .012), new THREE.MeshStandardMaterial({ color: '#b2905c', metalness: .55, roughness: .34 }));
+      line.position.set(x, y + sy * .22, z + sz * .501); line.rotation.y = rot; scene.add(line);
+    }
+    book(1.32, .12, -.1, .83, .23, .62, bookMat[0], -.12);
+    book(1.36, .35, -.08, .76, .21, .56, bookMat[1], .08);
+    const cupMat = new THREE.MeshPhysicalMaterial({ color: '#333733', roughness: .19, clearcoat: .55, clearcoatRoughness: .15 });
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(.17, .14, .38, 40, 1, true), cupMat); cup.position.set(-1.25, .2, -.12); cup.castShadow = true; scene.add(cup);
+    const cupFoot = new THREE.Mesh(new THREE.TorusGeometry(.145, .018, 8, 40), cupMat); cupFoot.rotation.x = Math.PI / 2; cupFoot.position.set(-1.25, .035, -.12); scene.add(cupFoot);
+
+    const lamp = new THREE.Group(); scene.add(lamp);
+    const silver = new THREE.MeshPhysicalMaterial({ color: '#d7d3cc', metalness: .91, roughness: .2, envMapIntensity: 1.35, clearcoat: .55, clearcoatRoughness: .16 });
+    const darkMetal = new THREE.MeshPhysicalMaterial({ color: '#514b43', metalness: .82, roughness: .27, envMapIntensity: 1.25 });
+    function lathe(points, material, segments = 96) {
+      const g = new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r, y)), segments);
+      const m = new THREE.Mesh(g, material); m.castShadow = true; m.receiveShadow = true; lamp.add(m); return m;
+    }
+    lathe([[0,.04],[.60,.04],[.67,.075],[.69,.12],[.67,.16],[.56,.18],[.49,.33],[.43,.55],[.385,.78],[.37,.88],[.39,.93],[.42,.95],[.43,.99],[.40,1.03],[0,1.03]], silver);
+    lathe([[.62,.045],[.68,.075],[.685,.12],[.62,.155],[.59,.13]], darkMetal);
+    lathe([[.41,.83],[.43,.87],[.43,.93],[.40,.96]], darkMetal);
+    lathe([[.35,.91],[.38,.95],[.39,1.02],[.37,1.08],[.35,1.1],[.32,1.06]], silver);
+
+    const glassProfile = [[0,.78],[.385,.78],[.412,.795],[.437,.83],[.448,.9],[.478,1.1],[.516,1.42],[.542,1.82],[.55,2.22],[.538,2.62],[.51,2.96],[.47,3.23],[.42,3.43],[.39,3.52],[.373,3.535],[.358,3.51],[.371,3.47],[.4,3.39],[.447,3.21],[.48,2.94],[.506,2.61],[.518,2.22],[.51,1.82],[.488,1.43],[.455,1.12],[.425,.91],[.409,.84],[.39,.82],[0,.82]];
+    const glass = lathe(glassProfile, new THREE.MeshPhysicalMaterial({ color: '#f8f5eb', metalness: 0, roughness: .035, transmission: .96, thickness: .16, ior: 1.47, clearcoat: 1, clearcoatRoughness: .035, envMapIntensity: 1.35, attenuationColor: '#f3eddf', attenuationDistance: 5, side: THREE.DoubleSide }));
+    glass.castShadow = false; glass.material.depthWrite = false; glass.renderOrder = 4;
+
+    const liquidProfile = [[0,.824],[.385,.824],[.405,.85],[.425,.94],[.455,1.14],[.486,1.43],[.51,1.82],[.518,2.22],[.506,2.61],[.48,2.94],[.447,3.2],[.41,3.37],[.39,3.39],[0,3.39]];
+    const liquidMat = new THREE.MeshPhysicalMaterial({ color: '#e8b84f', metalness: 0, roughness: .11, transmission: .21, thickness: 1.3, ior: 1.33, transparent: true, opacity: .3, depthWrite: false, envMapIntensity: .5, attenuationColor: '#eac566', attenuationDistance: 2.7, side: THREE.DoubleSide });
+    const liquid = lathe(liquidProfile, liquidMat); liquid.castShadow = false; liquid.renderOrder = 2;
+
+    const topTrim = new THREE.Mesh(new THREE.TorusGeometry(.395, .025, 12, 96), silver); topTrim.rotation.x = Math.PI / 2; topTrim.position.y = 3.48; lamp.add(topTrim);
+    lathe([[.37,3.43],[.405,3.45],[.423,3.5],[.42,3.55],[.38,3.57],[.34,3.64],[.28,3.72],[.20,3.78],[.08,3.81],[0,3.81]], silver);
+    lathe([[.365,3.55],[.39,3.58],[.37,3.62],[.34,3.61]], darkMetal);
+    lathe([[.19,3.77],[.20,3.8],[.18,3.825],[.14,3.83],[.1,3.82]], darkMetal);
+
+    const switchWell = new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,.025,32), darkMetal); switchWell.position.set(.47,.19,.12); switchWell.rotation.z = Math.PI/2; lamp.add(switchWell);
+    const switchToggle = new THREE.Mesh(new THREE.SphereGeometry(.045,20,14), new THREE.MeshPhysicalMaterial({ color:'#d2a56b', metalness:.68, roughness:.22, emissive:'#5a2c0c', emissiveIntensity:.35 }));
+    switchToggle.position.set(.505,.2,.12); lamp.add(switchToggle);
+
+    // The cord bends over the tabletop and disappears past the frame.
+    const cordCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(-.03,.075,-.63),new THREE.Vector3(-.02,.05,-.78),new THREE.Vector3(.06,.035,-.96),new THREE.Vector3(.25,.025,-1.11),new THREE.Vector3(.6,.022,-1.2),new THREE.Vector3(1.08,.02,-1.27),new THREE.Vector3(1.65,.02,-1.34),new THREE.Vector3(2.25,.02,-1.37)]);
+    const cord = new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 80, .018, 8, false), new THREE.MeshStandardMaterial({ color:'#171715', roughness:.82 })); cord.castShadow = true; scene.add(cord);
+
+    const bulbMat = new THREE.MeshStandardMaterial({ color: '#ffc878', emissive: '#ff8d30', emissiveIntensity: 4.2, roughness: .25 });
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(.12, 32, 20), bulbMat); bulb.position.set(0, 1.02, 0); lamp.add(bulb);
+    const bulbStem = new THREE.Mesh(new THREE.CylinderGeometry(.045,.07,.14,24), darkMetal); bulbStem.position.set(0,.89,0); lamp.add(bulbStem);
+    const bulbGlow = new THREE.PointLight(0xff8c37, 16, 4.7, 1.55); bulbGlow.position.set(0,1.08,0); lamp.add(bulbGlow);
+    const spill = new THREE.PointLight(0xff9b4c, 6, 7.2, 2); spill.position.set(0,1.18,.15); scene.add(spill);
+
+    // A single raymarched smooth-union volume creates connected, stretchable wax.
+    const waxMax = 12;
+    const waxMaterial = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: {
+        uCameraLocal: { value: new THREE.Vector3() }, uTime: { value: 0 }, uPower: { value: 1 }, uWaxColor: { value: new THREE.Color('#d62c19') },
+        uBlobs: { value: Array.from({length:waxMax}, () => new THREE.Vector4()) },
+        uShape: { value: Array.from({length:waxMax}, () => new THREE.Vector4()) },
+        uBlobCount: { value: 0 }, uAmount: { value: .62 }, uBulbColor: { value: new THREE.Color('#ff9a42') },
+        uLightLocal: { value: new THREE.Vector3(0,-1.12,0) },
+      },
+      vertexShader: `
+        out vec3 vLocal;
+        void main() { vLocal = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+      `,
+      fragmentShader: `
+        precision highp float;
+        in vec3 vLocal;
+        out vec4 fragColor;
+        #ifdef gl_FragColor
+        #undef gl_FragColor
+        #endif
+        #define gl_FragColor fragColor
+        uniform vec3 uCameraLocal, uLightLocal;
+        uniform float uTime, uPower, uAmount;
+        uniform vec3 uWaxColor, uBulbColor;
+        uniform vec4 uBlobs[12], uShape[12];
+        uniform int uBlobCount;
+        #include <tonemapping_pars_fragment>
+        #include <colorspace_pars_fragment>
+        float smin(float a, float b, float k) {
+          float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+          return mix(b, a, h) - k * h * (1.0 - h);
+        }
+        float sdEllipsoid(vec3 p, vec3 r) {
+          float k0 = length(p / r);
+          float k1 = length(p / (r * r));
+          return k0 * (k0 - 1.0) / max(k1, 0.0001);
+        }
+        float field(vec3 p) {
+          float d = sdEllipsoid(p - vec3(0.0, -1.16, 0.0), vec3(0.43 * sqrt(uAmount), 0.19, 0.43 * sqrt(uAmount)));
+          for (int i = 0; i < 12; i++) {
+            if (i >= uBlobCount) break;
+            vec4 b = uBlobs[i]; vec4 sh = uShape[i];
+            vec3 q = p - b.xyz;
+            float wave = sin(q.y * 9.0 + uTime * 1.4 + sh.w * 6.0) * cos(q.x * 7.0 - uTime * .7 + q.z * 4.0);
+            q.x += wave * .016 * (0.25 + sh.z);
+            q.z += sin(q.y * 7.5 - uTime * 1.1 + sh.w * 8.0) * .012;
+            float dist = length(vec3(q.x, q.y / max(sh.x, .85), q.z)) * max(sh.x, .85) - b.w;
+            dist += wave * .008;
+            d = smin(d, dist, .12 + b.w * .12);
+          }
+          return d;
+        }
+        vec3 normalAt(vec3 p) {
+          const float e = .008;
+          return normalize(vec3(field(p + vec3(e,0,0)) - field(p - vec3(e,0,0)), field(p + vec3(0,e,0)) - field(p - vec3(0,e,0)), field(p + vec3(0,0,e)) - field(p - vec3(0,0,e))));
+        }
+        void main() {
+          vec3 ro = uCameraLocal;
+          vec3 rd = normalize(vLocal - ro);
+          vec3 lo = vec3(-.64,-1.41,-.64), hi = vec3(.64,1.41,.64);
+          vec3 inv = 1.0 / rd;
+          vec3 ta = (lo - ro) * inv, tb = (hi - ro) * inv;
+          vec3 tmin = min(ta,tb), tmax = max(ta,tb);
+          float t0 = max(max(tmin.x,tmin.y),tmin.z), t1 = min(min(tmax.x,tmax.y),tmax.z);
+          float endT = min(t1, length(vLocal-ro));
+          float t = max(t0, 0.0); float hit = -1.0;
+          for (int i=0; i<78; i++) {
+            if (t > endT) break;
+            float d = field(ro + rd*t);
+            if (d < .0045) { hit=t; break; }
+            t += clamp(d * .72, .009, .085);
+          }
+          if (hit < 0.0) discard;
+          vec3 p = ro + rd * hit;
+          vec3 n = normalAt(p);
+          vec3 l = normalize(uLightLocal - p);
+          vec3 v = normalize(ro - p);
+          float ndl = max(dot(n,l), 0.0);
+          float back = pow(max(dot(-l, rd),0.0), 2.0) * (0.25 + .75 * uPower);
+          float edge = pow(1.0 - abs(dot(n,v)), 2.1);
+          float hot = exp(-max((p.y + 1.18),0.0) * 1.65) * uPower;
+          float thickness = 1.0 / max(abs(dot(n,v)), .22);
+          float thinGlow = exp(-thickness * .48);
+          vec3 halfV = normalize(l+v);
+          float spec = pow(max(dot(n,halfV),0.0), 48.0);
+          vec3 deep = uWaxColor * (.42 + .42 * ndl) * (1.0 - .14 * (1.0-thinGlow));
+          vec3 scatter = uWaxColor * (back * .72 + edge * .38 + hot * .26);
+          vec3 color = deep + scatter + uBulbColor * (hot * .24 + thinGlow * back * .12) + vec3(1.0,.78,.54) * spec * .48;
+          color *= (.82 + .18 * sin(uTime * .75 + p.y * 2.4));
+          float alpha = .94;
+          vec4 clip = projectionMatrix * modelViewMatrix * vec4(p,1.0);
+          gl_FragDepth = (clip.z / clip.w) * .5 + .5;
+          fragColor = vec4(color, alpha);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `,
+      side: THREE.FrontSide,
+      depthWrite: true,
+      depthTest: true,
+      toneMapped: true,
+    });
+    const waxProxy = new THREE.Mesh(new THREE.BoxGeometry(1.28, 2.82, 1.28), waxMaterial);
+    waxProxy.position.y = 2.19; waxProxy.renderOrder = 1; scene.add(waxProxy);
+
+    const presets = {
+      classic: { wax: '#d22d19', liquid: '#eab64c', attenuation: '#ebbd61', bulb: '#ff8a32' },
+      lagoon: { wax: '#21c9bd', liquid: '#174f83', attenuation: '#286c9b', bulb: '#73e7ce' },
+      orchid: { wax: '#ad53ee', liquid: '#e49a54', attenuation: '#c77f63', bulb: '#f5a26a' },
+      citrine: { wax: '#ffd052', liquid: '#2b6881', attenuation: '#3d8290', bulb: '#fff0a4' },
+    };
+    function setPreset(name) {
+      const p = presets[name]; if (!p) return;
+      waxMaterial.uniforms.uWaxColor.value.set(p.wax);
+      waxMaterial.uniforms.uBulbColor.value.set(p.bulb);
+      liquidMat.color.set(p.liquid); liquidMat.attenuationColor.set(p.attenuation);
+      document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.preset === name)));
+    }
+    document.querySelectorAll('.preset').forEach(b => b.addEventListener('click', () => setPreset(b.dataset.preset)));
+
+    const blobs = [];
+    const amountControl = document.querySelector('#amount');
+    const heatControl = document.querySelector('#heat');
+    let waxAmount = Number(amountControl.value) / 100;
+    let heat = Number(heatControl.value) / 100;
+    let powerOn = true, powerLevel = 1, autoOrbit = false;
+    let spawnTimer = 1.1;
+    let seed = 92371;
+    function random() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+    function wallRadius(y) {
+      if (y < 1.7) return THREE.MathUtils.lerp(.41,.535,THREE.MathUtils.clamp((y-.9)/.8,0,1));
+      if (y < 2.55) return .535;
+      return THREE.MathUtils.lerp(.535,.39,THREE.MathUtils.clamp((y-2.55)/.88,0,1));
+    }
+    function makeBlob(y, vy, radius, temp = .5) {
+      return { x:(random()-.5)*.16, z:(random()-.5)*.16, y, vy, radius, base:radius, temp, phase:random()*Math.PI*2, drift:(random()-.5)*.16, active:true, age:random()*4 };
+    }
+    blobs.push(makeBlob(1.42,.20,.185,.87), makeBlob(1.88,.16,.145,.61), makeBlob(2.42,.03,.18,.48), makeBlob(2.93,-.12,.13,.31), makeBlob(1.65,-.05,.105,.57), makeBlob(2.23,.11,.09,.44), makeBlob(3.12,-.18,.085,.21));
+    function activeCount() { let n=0; for (const b of blobs) if (b.active) n++; return n; }
+    function spawnBlob() {
+      if (blobs.length >= waxMax) return;
+      const r = .09 + random() * .105;
+      const y = 1.16 + random() * .15;
+      blobs.push(makeBlob(y, .16 + random()*.15, r, .82 + random()*.14));
+    }
+    function updateSimulation(dt, time) {
+      const wanted = Math.min(waxMax, Math.round(3 + waxAmount * 8));
+      const rate = powerOn ? heat : 0;
+      spawnTimer -= dt;
+      if (powerOn && activeCount() < wanted && spawnTimer <= 0) {
+        spawnBlob(); spawnTimer = (2.25 + random()*2.2) / Math.max(.45, heat);
+      }
+      for (let i=0;i<blobs.length;i++) {
+        const b=blobs[i]; if(!b.active) continue;
+        b.age += dt;
+        const warmZone = Math.exp(-Math.max(b.y-.94,0)*.82);
+        const targetTemp = powerOn ? Math.min(.97, (.12 + .83*warmZone) * (.42 + .72*heat)) : .035;
+        b.temp += (targetTemp-b.temp)*dt*(powerOn ? .48 : .2);
+        const acceleration = powerOn ? (b.temp-.48)*1.65*rate : -.44;
+        b.vy += acceleration*dt;
+        b.vy *= Math.exp(-dt*(powerOn ? .46 : 1.1));
+        if (!powerOn) b.vy *= Math.exp(-dt*.62);
+        b.y += b.vy*dt;
+        b.x += Math.sin(time*.7+b.phase+b.y*1.8)*b.drift*dt;
+        b.z += Math.cos(time*.58+b.phase*1.7+b.y)*b.drift*dt;
+        b.x *= Math.exp(-dt*.2); b.z *= Math.exp(-dt*.2);
+        const r = b.radius * waxAmount * (.82 + b.temp*.25);
+        const low = 1.12 + r*.18, high = 3.31-r*.5;
+        if (b.y < low) {
+          b.y = low; b.vy = Math.max(0,b.vy)*.15;
+          if (!powerOn || (b.temp < .38 && b.age > 1.2)) { b.active=false; continue; }
+          b.radius = Math.min(.26,b.radius + dt*.018);
+        }
+        if (b.y > high) { b.y=high; b.vy=Math.min(0,b.vy)*.32; b.temp=Math.min(b.temp,.4); }
+        const room = Math.max(.02, wallRadius(b.y)-r*.62-.015);
+        const radial = Math.hypot(b.x,b.z);
+        if(radial>room) { b.x*=room/radial; b.z*=room/radial; b.vy-=dt*.04; }
+        if (powerOn && activeCount() < wanted && b.radius > .28 && random() < dt*.055) {
+          const childRadius=b.radius*.60; b.radius*=.90;
+          const child=makeBlob(b.y, b.vy+(.12+random()*.08), childRadius,Math.max(.2,b.temp-.06));
+          child.x=b.x+(random()-.5)*b.radius*.9; child.z=b.z+(random()-.5)*b.radius*.9; child.age=0;
+          if(blobs.length<waxMax) blobs.push(child);
+        }
+      }
+      // Nearby wax volumes merge with conserved volume and momentum.
+      for(let i=0;i<blobs.length;i++) {
+        const a=blobs[i]; if(!a.active) continue;
+        for(let j=i+1;j<blobs.length;j++) {
+          const b=blobs[j]; if(!b.active) continue;
+          const dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z;
+          const ra=a.radius*waxAmount*(.82+a.temp*.25), rb=b.radius*waxAmount*(.82+b.temp*.25);
+          if(dx*dx+dy*dy+dz*dz < Math.pow((ra+rb)*.72,2)) {
+            const va=Math.pow(a.radius,3), vb=Math.pow(b.radius,3), sum=va+vb;
+            a.x=(a.x*va+b.x*vb)/sum; a.y=(a.y*va+b.y*vb)/sum; a.z=(a.z*va+b.z*vb)/sum;
+            a.vy=(a.vy*va+b.vy*vb)/sum; a.temp=(a.temp*va+b.temp*vb)/sum;
+            a.radius=Math.cbrt(sum); a.phase=(a.phase+b.phase)*.5; b.active=false;
+          }
+        }
+      }
+      const blobsU=waxMaterial.uniforms.uBlobs.value, shapeU=waxMaterial.uniforms.uShape.value;
+      let n=0;
+      for(const b of blobs) {
+        if(!b.active || n>=waxMax) continue;
+        const vertical=THREE.MathUtils.clamp(1+Math.abs(b.vy)*.3+(b.vy>0?.06:0),.85,1.34);
+        const radius=b.radius*waxAmount*(.82+b.temp*.25);
+        blobsU[n].set(b.x,b.y-2.19,b.z,radius);
+        shapeU[n].set(vertical, b.vy, b.temp, b.phase);
+        n++;
+      }
+      for(let i=n;i<waxMax;i++){blobsU[i].set(0,0,0,0);shapeU[i].set(1,0,0,0);}
+      waxMaterial.uniforms.uBlobCount.value=n;
+      waxMaterial.uniforms.uAmount.value=waxAmount;
+    }
+
+    const powerButton=document.querySelector('#power'), powerText=document.querySelector('#powerText');
+    powerButton.addEventListener('click',()=>{
+      powerOn=!powerOn; powerButton.setAttribute('aria-checked',String(powerOn)); powerText.textContent=powerOn?'On':'Off';
+      if(powerOn) spawnTimer=2.9;
+    });
+    function paintRange(input) {
+      const pct=(Number(input.value)-Number(input.min))/(Number(input.max)-Number(input.min))*100;
+      input.style.background=`linear-gradient(90deg,#c8894f 0%,#c8894f ${pct}%,rgba(255,255,255,.2) ${pct}%)`;
+    }
+    heatControl.addEventListener('input',()=>{heat=Number(heatControl.value)/100; document.querySelector('#heatOut').value=`${heatControl.value}%`; paintRange(heatControl);});
+    amountControl.addEventListener('input',()=>{waxAmount=Number(amountControl.value)/100; document.querySelector('#amountOut').value=`${amountControl.value}%`; paintRange(amountControl);});
+    paintRange(heatControl); paintRange(amountControl);
+    const orbitButton=document.querySelector('#orbit');
+    orbitButton.addEventListener('click',()=>{autoOrbit=!autoOrbit;orbitButton.setAttribute('aria-pressed',String(autoOrbit));});
+
+    const composer=new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene,camera));
+    const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),.72,.46,.78);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+
+    let previous=performance.now(), accumulator=0, simTime=0;
+    const fixed=1/60;
+    const cameraLocal=new THREE.Vector3();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const elapsed=Math.min((now-previous)/1000,.08); previous=now;
+      accumulator=Math.min(accumulator+elapsed,.12);
+      while(accumulator>=fixed) { simTime+=fixed; updateSimulation(fixed,simTime); accumulator-=fixed; }
+      const targetPower=powerOn?1:0;
+      powerLevel += (targetPower-powerLevel)*Math.min(1,elapsed*(powerOn?.8:.42));
+      const active=activeCount();
+      const shimmer=.94 + .06*Math.sin(now*.0028) + .045*Math.sin(now*.0061+1.7);
+      bulbGlow.intensity=(13.5 + active*.32)*powerLevel*shimmer;
+      spill.intensity=(4.2 + active*.25)*powerLevel*shimmer;
+      roomFill.intensity=.10 + .65*powerLevel;
+      rimLight.intensity=.18 + .92*powerLevel;
+      wallGlow.material.opacity=.035 + .17*powerLevel;
+      bulbMat.emissiveIntensity=.25+4.1*powerLevel;
+      switchToggle.position.x=powerOn?.505:.46;
+      switchToggle.material.emissiveIntensity=powerLevel*.35;
+      waxMaterial.uniforms.uTime.value=now*.001;
+      waxMaterial.uniforms.uPower.value=powerLevel;
+      waxMaterial.uniforms.uLightLocal.value.set(0,1.08-2.19,0);
+      waxProxy.updateMatrixWorld();
+      cameraLocal.copy(camera.position); waxProxy.worldToLocal(cameraLocal); waxMaterial.uniforms.uCameraLocal.value.copy(cameraLocal);
+      if(autoOrbit) controls.autoRotate=true; else controls.autoRotate=false;
+      controls.autoRotateSpeed=.26;
+      controls.update();
+      composer.render();
+    }
+    requestAnimationFrame(animate);
+    window.addEventListener('resize',()=>{
+      camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+      renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.35)); renderer.setSize(innerWidth,innerHeight);
+      composer.setSize(innerWidth,innerHeight); bloom.setSize(innerWidth,innerHeight);
+    });
+  </script>
+</body>
+</html>

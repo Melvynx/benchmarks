@@ -1,0 +1,2306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grok 4.7</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2307080c'/%3E%3Ccircle cx='8' cy='8' r='3' fill='%238fd9cf'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #07080c;
+    --ink: #e7eef5;
+    --dim: #93a0ae;
+    --faint: #6d7b8a;
+    --line: rgba(231, 238, 245, 0.14);
+    --panel: rgba(10, 13, 18, 0.82);
+    --amber: #f0b429;
+    --ice: #8fd9cf;
+    --ok: #b6f3c8;
+    --warn: #ffb020;
+    --bad: #ff5d48;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --shadow: 0 16px 50px rgba(0, 0, 0, 0.38);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+  body { overflow: hidden; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  #view { position: fixed; inset: 0; }
+  #view canvas { width: 100%; height: 100%; display: block; }
+  #boot, #gl-banner {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 5; padding: 14px 18px; background: var(--panel); border: 1px solid var(--line);
+    max-width: min(440px, 92vw);
+  }
+  #gl-banner[hidden], #boot[hidden] { display: none; }
+  .hud { position: fixed; z-index: 2; pointer-events: none; }
+  .hud > * , .panel, .drawer, .tour, .pad button { pointer-events: auto; }
+  .top {
+    top: 0; left: 0; right: 0; display: flex; gap: 18px; align-items: flex-start;
+    padding: 12px 14px 0; 
+  }
+  h1 { margin: 0; font-size: 28px; letter-spacing: -0.045em; font-weight: 650; line-height: 1; }
+  .kicker { margin: 4px 0 0; color: var(--dim); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .phase-strip { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; padding-top: 4px; }
+  .phase-strip span {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 4px 6px; border: 1px solid var(--line); color: var(--faint); background: rgba(0,0,0,.35);
+  }
+  .phase-strip span[data-now="true"] { color: var(--bg); background: var(--ice); border-color: var(--ice); }
+  .phase-strip span[data-now="true"]::before { content: "NOW "; font-weight: 700; }
+  .cluster { display: flex; gap: 8px; align-items: stretch; }
+  .badge {
+    min-width: 128px; padding: 8px 10px; border: 1px solid var(--line); background: #10151c;
+    display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  }
+  .badge b { font-size: 14px; letter-spacing: 0.12em; }
+  .badge small { color: var(--dim); font-family: var(--mono); font-size: 10px; }
+  .badge[data-level="nominal"] { box-shadow: inset 4px 0 0 var(--ok); }
+  .badge[data-level="caution"] { box-shadow: inset 4px 0 0 var(--warn); background-image: repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,176,32,.13) 5px, rgba(255,176,32,.13) 6px); }
+  .badge[data-level="warning"] { box-shadow: inset 4px 0 0 var(--bad); background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,93,72,.16) 4px, rgba(255,93,72,.16) 6px); }
+  .badge[data-level="abort"] { box-shadow: inset 4px 0 0 #fff; background: #6d2018; color: #fff; }
+  .met { padding: 8px 10px; border: 1px solid var(--line); background: rgba(0,0,0,.45); min-width: 132px; }
+  .met span { display: block; color: var(--faint); font-size: 10px; letter-spacing: 0.14em; }
+  .met strong { font-family: var(--mono); font-size: 18px; font-weight: 600; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .left, .right { position: fixed; top: 78px; bottom: 158px; width: min(300px, 32vw); overflow: auto; z-index: 2; padding: 10px; }
+  .left { left: 10px; }
+  .right { right: 10px; }
+  .left h2, .right h2, .drawer h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber); font-weight: 650; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  .cell { min-width: 0; }
+  .cell span { display: block; color: var(--faint); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .cell strong { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+  .wide { grid-column: 1 / -1; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  button.ctrl, .row label.ctrl {
+    background: #141a22; border: 1px solid var(--line); padding: 7px 9px; border-radius: 0;
+  }
+  button.ctrl[aria-pressed="true"], .scales input:checked + span {
+    background: var(--ice); color: #07110f; border-color: var(--ice);
+  }
+  button.danger { border-color: var(--bad); }
+  .scales { display: flex; gap: 4px; }
+  .scales label { display: inline-flex; }
+  .scales input { position: absolute; opacity: 0; pointer-events: none; }
+  .scales span { display: inline-block; padding: 7px 9px; border: 1px solid var(--line); background: #141a22; }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; font-size: 12px; }
+  .checks label { display: flex; gap: 6px; align-items: center; }
+  #log { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow: auto; }
+  #log li { border-top: 1px solid var(--line); padding: 6px 0; font-size: 12px; line-height: 1.35; }
+  #log time { display: block; font-family: var(--mono); color: var(--faint); font-size: 10px; }
+  #log li[data-level="warning"] { box-shadow: inset 3px 0 0 var(--warn); padding-left: 6px; }
+  #log li[data-level="abort"] { box-shadow: inset 3px 0 0 var(--bad); padding-left: 6px; }
+  .plots {
+    position: fixed; left: 10px; right: 10px; bottom: 8px; height: 142px; z-index: 2;
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
+  }
+  .plot { padding: 6px 6px 4px; min-width: 0; }
+  .plot header { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+  .plot canvas { width: 100%; height: 104px; display: block; }
+  #gate { width: 100%; height: 118px; background: #080b10; border: 1px solid var(--line); display: block; }
+  .thruster { display: grid; grid-template-columns: 42px 1fr auto; gap: 6px; align-items: center; font-family: var(--mono); font-size: 10px; margin: 2px 0; }
+  .bar { height: 6px; background: #1c2430; position: relative; }
+  .bar i, .bar b { position: absolute; left: 0; top: 0; bottom: 0; }
+  .bar i { background: rgba(143, 217, 207, 0.35); }
+  .bar b { background: var(--amber); }
+  .thruster[data-failed="true"] { color: var(--bad); }
+  .pad { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pad .keys { display: grid; grid-template-columns: repeat(3, 44px); gap: 4px; justify-content: start; }
+  .pad button { width: 44px; height: 44px; background: #141a22; border: 1px solid var(--line); }
+  .pad button:active, .pad button[data-down="true"] { background: var(--amber); color: #1a1203; }
+  .hint { color: var(--dim); font-size: 11px; line-height: 1.4; margin: 6px 0; }
+  .drawer { position: fixed; right: 10px; bottom: 158px; width: min(360px, 94vw); max-height: 42vh; overflow: auto; z-index: 4; padding: 10px; }
+  .drawer[hidden] { display: none; }
+  .test { display: grid; grid-template-columns: 52px 1fr; gap: 4px 8px; font-size: 12px; padding: 4px 0; border-top: 1px solid var(--line); }
+  .test b { font-family: var(--mono); }
+  .tour {
+    position: fixed; left: 50%; bottom: 158px; transform: translateX(-50%);
+    width: min(560px, 92vw); z-index: 4; padding: 12px 14px;
+  }
+  .tour[hidden] { display: none; }
+  .tour p { margin: 6px 0 10px; line-height: 1.45; }
+  #seed { width: 88px; background: #0c1016; border: 1px solid var(--line); padding: 7px; font-family: var(--mono); }
+  .section { margin-top: 12px; }
+  @media (max-width: 860px) {
+    .left, .right { width: min(92vw, 420px); bottom: auto; max-height: 38vh; top: auto; }
+    .left { bottom: 118px; }
+    .right { top: 78px; bottom: auto; max-height: 34vh; }
+    .plots { height: 108px; grid-template-columns: repeat(5, 180px); overflow-x: auto; }
+    .plot canvas { height: 72px; }
+    h1 { font-size: 22px; }
+    body.panels-off .left, body.panels-off .right, body.panels-off .tour { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<p id="boot" role="status">Loading flight software and renderer…</p>
+<p id="gl-banner" hidden role="alert"></p>
+<header class="hud top">
+  <div>
+    <h1>Grok 4.7</h1>
+    <p class="kicker">Project Janus · Orbital rescue digital twin</p>
+  </div>
+  <div class="phase-strip" id="phase-strip" aria-label="Guidance phase"></div>
+  <div class="cluster">
+    <div class="badge" id="badge" data-level="nominal" role="status"><b>NOMINAL</b><small>Within gates</small></div>
+    <div class="met"><span>MET</span><strong id="met">00:00:00.0</strong></div>
+    <button class="ctrl" id="btn-panels" type="button" aria-pressed="true">Panels</button>
+  </div>
+</header>
+<aside class="panel left" aria-label="Telemetry">
+  <h2>State</h2>
+  <div class="grid" id="telemetry"></div>
+  <div class="section">
+    <h2>Docking gate</h2>
+    <canvas id="gate" width="520" height="240" aria-label="Docking alignment instrument"></canvas>
+    <p class="hint" id="gate-readout"></p>
+  </div>
+  <div class="section">
+    <h2>Autonomy</h2>
+    <ul id="log" aria-live="polite"></ul>
+  </div>
+</aside>
+<aside class="panel right" aria-label="Command">
+  <h2>Command</h2>
+  <div class="row">
+    <button class="ctrl" id="btn-play" type="button">Play</button>
+    <button class="ctrl" id="btn-pause" type="button" aria-pressed="false">Pause</button>
+    <button class="ctrl" id="btn-step" type="button">Step</button>
+    <button class="ctrl" id="btn-reset" type="button">Reset</button>
+    <button class="ctrl danger" id="btn-abort" type="button">Abort</button>
+  </div>
+  <div class="row" role="group" aria-label="Time scale">
+    <div class="scales" id="scales">
+      <label class="ctrl"><input type="radio" name="scale" value="0.25"><span>0.25×</span></label>
+      <label class="ctrl"><input type="radio" name="scale" value="1" checked><span>1×</span></label>
+      <label class="ctrl"><input type="radio" name="scale" value="4"><span>4×</span></label>
+    </div>
+    <button class="ctrl" id="btn-auto" type="button" aria-pressed="true">Auto</button>
+    <button class="ctrl" id="btn-manual" type="button" aria-pressed="false">Manual</button>
+  </div>
+  <div class="row">
+    <label>Seed <input id="seed" type="number" min="0" step="1" value="7" aria-label="Random seed"></label>
+  </div>
+  <div class="section">
+    <h2>Scenario</h2>
+    <div class="row" id="scenarios">
+      <button class="ctrl" type="button" data-scenario="nominal" aria-pressed="true">Nominal rescue</button>
+      <button class="ctrl" type="button" data-scenario="sensor-blackout" aria-pressed="false">Sensor blackout</button>
+      <button class="ctrl" type="button" data-scenario="stuck-thruster" aria-pressed="false">Stuck thruster</button>
+    </div>
+  </div>
+  <div class="section">
+    <h2>Inject</h2>
+    <div class="row">
+      <button class="ctrl" id="btn-tumble" type="button">Inject tumble</button>
+      <button class="ctrl" id="btn-tumble-clear" type="button">Clear tumble</button>
+      <button class="ctrl" id="btn-lidar" type="button" aria-pressed="false">Lidar dropout</button>
+      <button class="ctrl" id="btn-optical" type="button" aria-pressed="false">Optical dropout</button>
+      <button class="ctrl" id="btn-fail" type="button" aria-pressed="false">Fail +X1</button>
+      <button class="ctrl" id="btn-fail-clear" type="button">Clear thruster</button>
+    </div>
+  </div>
+  <div class="section">
+    <h2>Camera</h2>
+    <div class="row" id="cameras">
+      <button class="ctrl" type="button" data-cam="cinematic" aria-pressed="true">Chase</button>
+      <button class="ctrl" type="button" data-cam="target" aria-pressed="false">Target</button>
+      <button class="ctrl" type="button" data-cam="dock" aria-pressed="false">Port</button>
+      <button class="ctrl" type="button" data-cam="cockpit" aria-pressed="false">Cockpit</button>
+      <button class="ctrl" type="button" data-cam="free" aria-pressed="false">Free</button>
+      <button class="ctrl" id="btn-reset-view" type="button">Reset view</button>
+    </div>
+  </div>
+  <div class="section">
+    <h2>Overlays</h2>
+    <div class="checks" id="overlays"></div>
+  </div>
+  <div class="section">
+    <h2>Manual · body frame</h2>
+    <p class="hint">Keys: W/S forward, A/D lateral, R/F vertical, I/K pitch, J/L yaw, U/O roll. Arrows translate. Space pauses. 1–5 cameras. X aborts. M toggles manual.</p>
+    <div class="pad">
+      <div>
+        <div class="hint">Translate</div>
+        <div class="keys" id="pad-trans"></div>
+      </div>
+      <div>
+        <div class="hint">Rotate</div>
+        <div class="keys" id="pad-rot"></div>
+      </div>
+    </div>
+  </div>
+  <div class="section">
+    <h2>Thrusters</h2>
+    <div id="thrusters"></div>
+  </div>
+  <div class="section row">
+    <button class="ctrl" id="btn-tour" type="button">Guided tour</button>
+    <button class="ctrl" id="btn-diag" type="button" aria-expanded="false">Diagnostics</button>
+  </div>
+</aside>
+<section class="plots" aria-label="History plots">
+  <article class="panel plot"><header><span>CG range</span><b id="v-range">—</b></header><canvas id="plot-range"></canvas></article>
+  <article class="panel plot"><header><span>Closing rate</span><b id="v-closing">—</b></header><canvas id="plot-closing"></canvas></article>
+  <article class="panel plot"><header><span>Propellant</span><b id="v-prop">—</b></header><canvas id="plot-prop"></canvas></article>
+  <article class="panel plot"><header><span>Attitude error</span><b id="v-att">—</b></header><canvas id="plot-att"></canvas></article>
+  <article class="panel plot"><header><span>Nav 1σ</span><b id="v-sigma">—</b></header><canvas id="plot-sigma"></canvas></article>
+</section>
+<section class="panel tour" id="tour" hidden>
+  <h2 id="tour-kicker">Tour</h2>
+  <strong id="tour-title"></strong>
+  <p id="tour-body"></p>
+  <div class="row">
+    <button class="ctrl" id="tour-prev" type="button">Back</button>
+    <button class="ctrl" id="tour-next" type="button">Next</button>
+    <button class="ctrl" id="tour-replay" type="button">Replay</button>
+    <button class="ctrl" id="tour-close" type="button">Close</button>
+  </div>
+</section>
+<section class="panel drawer" id="drawer" hidden>
+  <h2>Diagnostics · window.__JANUS__</h2>
+  <p class="hint">reset(seed) restores the active scenario. setScenario("nominal" | "sensor-blackout" | "stuck-thruster") loads that case and resets. step(seconds) integrates fixed steps and does not read the display clock. snapshot() returns truth, estimate, guidance, actuator, safety, sensor, and mission. runSelfTest() builds isolated cases from the same propagation, filter, thruster, and docking functions.</p>
+  <div class="row">
+    <button class="ctrl" id="btn-self" type="button">Run self-test</button>
+  </div>
+  <div id="self-out" aria-live="polite"></div>
+</section>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const MU = 3.986004418e14;
+const R_ORBIT = 6378137 + 415000;
+const N = Math.sqrt(MU / (R_ORBIT ** 3));
+const MASS = 420;
+const THRUST = 28;
+const A_MAX = 0.10;
+const T_MAX = 16;
+const ISP = 220;
+const G0 = 9.80665;
+const FIXED = 0.05;
+const CHASER_PORT = [1.55, 0, 0];
+const TARGET_PORT = [2.35, 0, 0];
+const I_CHASER = [70, 110, 95];
+const I_TARGET = [180, 220, 160];
+const KEEP_OUT = 6.5;
+const LIMITS = {
+  corridorDeg: 12,
+  corridorRange: 24,
+  cylinderRange: 1.5,
+  cylinderRadius: 0.35,
+  soft: { range: 0.40, closing: 0.06, lateral: 0.20, align: 8, rate: 1.5 },
+  hard: { range: 0.20, closing: 0.03, lateral: 0.08, align: 3.5, rate: 0.8 },
+  captureHold: 1.5,
+};
+const PHASES = [
+  ["acquire", "Acquire"],
+  ["far-approach", "Far approach"],
+  ["hold-point", "Hold point"],
+  ["proximity-approach", "Proximity"],
+  ["final-corridor", "Corridor"],
+  ["soft-capture", "Soft capture"],
+  ["hard-dock", "Hard dock"],
+  ["abort", "Abort"],
+];
+const HOLD = [0, -26, 0];
+const OVERLAYS = [
+  ["lvlh", "LVLH axes"],
+  ["trail", "Trajectory"],
+  ["predict", "Predicted path"],
+  ["keepout", "Keep-out sphere"],
+  ["corridor", "Approach corridor"],
+  ["sensors", "Sensor rays"],
+  ["covariance", "Covariance"],
+  ["velocity", "Velocity"],
+  ["plumes", "Thruster plumes"],
+  ["alignment", "Docking guides"],
+];
+const THRUSTERS = [
+  { id: "+X1", pos: [-1.15, 0.42, 0.32], dir: [1, 0, 0] },
+  { id: "+X2", pos: [-1.15, -0.42, -0.32], dir: [1, 0, 0] },
+  { id: "-X1", pos: [1.15, 0.42, -0.32], dir: [-1, 0, 0] },
+  { id: "-X2", pos: [1.15, -0.42, 0.32], dir: [-1, 0, 0] },
+  { id: "+Y1", pos: [0.38, -0.62, 0.36], dir: [0, 1, 0] },
+  { id: "+Y2", pos: [-0.38, -0.62, -0.36], dir: [0, 1, 0] },
+  { id: "-Y1", pos: [0.38, 0.62, -0.36], dir: [0, -1, 0] },
+  { id: "-Y2", pos: [-0.38, 0.62, 0.36], dir: [0, -1, 0] },
+  { id: "+Z1", pos: [0.46, 0.30, -0.58], dir: [0, 0, 1] },
+  { id: "+Z2", pos: [-0.46, -0.30, -0.58], dir: [0, 0, 1] },
+  { id: "-Z1", pos: [0.46, -0.30, 0.58], dir: [0, 0, -1] },
+  { id: "-Z2", pos: [-0.46, 0.30, 0.58], dir: [0, 0, -1] },
+];
+
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const hypot3 = (a) => Math.hypot(a[0], a[1], a[2]);
+const normalize = (a) => { const L = hypot3(a); return L < 1e-12 ? [0, 0, 0] : scale(a, 1 / L); };
+const clone3 = (a) => [a[0], a[1], a[2]];
+function quatMul(a, b) {
+  const aw = a[0], ax = a[1], ay = a[2], az = a[3], bw = b[0], bx = b[1], by = b[2], bz = b[3];
+  return [aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw];
+}
+const quatConj = (q) => [q[0], -q[1], -q[2], -q[3]];
+function quatNorm(q) {
+  const L = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+  return [q[0] / L, q[1] / L, q[2] / L, q[3] / L];
+}
+function quatFromEuler(yaw, pitch, roll) {
+  const cy = Math.cos(yaw / 2), sy = Math.sin(yaw / 2);
+  const cp = Math.cos(pitch / 2), sp = Math.sin(pitch / 2);
+  const cr = Math.cos(roll / 2), sr = Math.sin(roll / 2);
+  return [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy];
+}
+function quatToMat(q) {
+  const w = q[0], x = q[1], y = q[2], z = q[3];
+  const xx = x * x, yy = y * y, zz = z * z, xy = x * y, xz = x * z, yz = y * z, wx = w * x, wy = w * y, wz = w * z;
+  return [
+    [1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)],
+    [2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)],
+    [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)],
+  ];
+}
+function matToQuat(m) {
+  const tr = m[0][0] + m[1][1] + m[2][2];
+  let w, x, y, z;
+  if (tr > 0) {
+    const s = Math.sqrt(tr + 1) * 2;
+    w = 0.25 * s; x = (m[2][1] - m[1][2]) / s; y = (m[0][2] - m[2][0]) / s; z = (m[1][0] - m[0][1]) / s;
+  } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+    const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2;
+    w = (m[2][1] - m[1][2]) / s; x = 0.25 * s; y = (m[0][1] + m[1][0]) / s; z = (m[0][2] + m[2][0]) / s;
+  } else if (m[1][1] > m[2][2]) {
+    const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2;
+    w = (m[0][2] - m[2][0]) / s; x = (m[0][1] + m[1][0]) / s; y = 0.25 * s; z = (m[1][2] + m[2][1]) / s;
+  } else {
+    const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2;
+    w = (m[1][0] - m[0][1]) / s; x = (m[0][2] + m[2][0]) / s; y = (m[1][2] + m[2][1]) / s; z = 0.25 * s;
+  }
+  return quatNorm([w, x, y, z]);
+}
+const mulMV = (m, v) => [m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2], m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2], m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]];
+const mulMT = (m, v) => [m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2], m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2], m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2]];
+function quatOmega(w, dt) {
+  const ang = hypot3(w) * dt;
+  if (ang < 1e-12) return quatNorm([1, w[0] * dt * 0.5, w[1] * dt * 0.5, w[2] * dt * 0.5]);
+  const s = Math.sin(ang / 2) / hypot3(w);
+  return [Math.cos(ang / 2), w[0] * s, w[1] * s, w[2] * s];
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function rng() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function cwDeriv(s, a) {
+  const x = s[0], y = s[1], z = s[2], vx = s[3], vy = s[4], vz = s[5];
+  return [vx, vy, vz, 3 * N * N * x + 2 * N * vy + a[0], -2 * N * vx + a[1], -N * N * z + a[2]];
+}
+function addN(a, b) { return a.map((v, i) => v + b[i]); }
+function scaleN(a, s) { return a.map((v) => v * s); }
+function rk4(s, a, dt) {
+  const f = (z) => cwDeriv(z, a);
+  const k1 = f(s);
+  const k2 = f(addN(s, scaleN(k1, dt / 2)));
+  const k3 = f(addN(s, scaleN(k2, dt / 2)));
+  const k4 = f(addN(s, scaleN(k3, dt)));
+  return addN(s, scaleN(addN(addN(k1, scaleN(k2, 2)), addN(scaleN(k3, 2), k4)), dt / 6));
+}
+function ident(n) {
+  return Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+}
+function matMul(A, B) {
+  const n = A.length, m = B[0].length, p = B.length;
+  const C = Array.from({ length: n }, () => Array(m).fill(0));
+  for (let i = 0; i < n; i++) for (let k = 0; k < p; k++) {
+    const aik = A[i][k];
+    if (!aik) continue;
+    for (let j = 0; j < m; j++) C[i][j] += aik * B[k][j];
+  }
+  return C;
+}
+function transpose(A) {
+  return A[0].map((_, j) => A.map((row) => row[j]));
+}
+function cwPhi(dt) {
+  const n2 = N * N;
+  const A = [
+    [0, 0, 0, 1, 0, 0],
+    [0, 0, 0, 0, 1, 0],
+    [0, 0, 0, 0, 0, 1],
+    [3 * n2, 0, 0, 0, 2 * N, 0],
+    [0, 0, 0, -2 * N, 0, 0],
+    [0, 0, -n2, 0, 0, 0],
+  ];
+  const Adt = A.map((row) => row.map((v) => v * dt));
+  const Adt2 = matMul(Adt, Adt);
+  const I = ident(6);
+  return I.map((row, i) => row.map((v, j) => v + Adt[i][j] + 0.5 * Adt2[i][j]));
+}
+function inv3(m) {
+  const a = m[0][0], b = m[0][1], c = m[0][2], d = m[1][0], e = m[1][1], f = m[1][2], g = m[2][0], h = m[2][1], i = m[2][2];
+  const A = e * i - f * h, B = f * g - d * i, C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  if (Math.abs(det) < 1e-14) return null;
+  const s = 1 / det;
+  return [
+    [A * s, (c * h - b * i) * s, (b * f - c * e) * s],
+    [B * s, (a * i - c * g) * s, (c * d - a * f) * s],
+    [C * s, (b * g - a * h) * s, (a * e - b * d) * s],
+  ];
+}
+function gravityGradient(q, Idiag) {
+  const nadirB = mulMT(quatToMat(q), [-1, 0, 0]);
+  const In = [Idiag[0] * nadirB[0], Idiag[1] * nadirB[1], Idiag[2] * nadirB[2]];
+  return scale(cross(nadirB, In), 3 * N * N);
+}
+function eulerIntegrateW(w, torque, Idiag, dt) {
+  const Iw = [Idiag[0] * w[0], Idiag[1] * w[1], Idiag[2] * w[2]];
+  const gyro = cross(w, Iw);
+  return [
+    w[0] + dt * (torque[0] - gyro[0]) / Idiag[0],
+    w[1] + dt * (torque[1] - gyro[1]) / Idiag[1],
+    w[2] + dt * (torque[2] - gyro[2]) / Idiag[2],
+  ];
+}
+function deg(r) { return r * 180 / Math.PI; }
+
+function desiredDockQuat(targetQ) {
+  const Rt = quatToMat(targetQ);
+  const axis = mulMV(Rt, [1, 0, 0]);
+  const xb = scale(axis, -1);
+  let yb = sub(mulMV(Rt, [0, 1, 0]), scale(xb, dot(xb, mulMV(Rt, [0, 1, 0]))));
+  if (hypot3(yb) < 1e-6) yb = Math.abs(xb[1]) < 0.9 ? [0, 1, 0] : [0, 0, 1];
+  yb = normalize(yb);
+  const zb = cross(xb, yb);
+  return matToQuat([
+    [xb[0], yb[0], zb[0]],
+    [xb[1], yb[1], zb[1]],
+    [xb[2], yb[2], zb[2]],
+  ]);
+}
+function contactGeometry(truth) {
+  const Rt = quatToMat(truth.targetQ);
+  const Rc = quatToMat(truth.q);
+  const axis = mulMV(Rt, [1, 0, 0]);
+  const tgtPort = mulMV(Rt, TARGET_PORT);
+  const chaserPortOff = mulMV(Rc, CHASER_PORT);
+  const chaserPort = add(truth.r, chaserPortOff);
+  const rel = sub(chaserPort, tgtPort);
+  const range = dot(rel, axis);
+  const lateralVec = sub(rel, scale(axis, range));
+  const lateral = hypot3(lateralVec);
+  const align = Math.acos(clamp(dot(mulMV(Rc, [1, 0, 0]), scale(axis, -1)), -1, 1));
+  const wT = mulMV(Rt, truth.targetW);
+  const wC = mulMV(Rc, truth.w);
+  const vTgtPort = cross(wT, tgtPort);
+  const vChaserPort = add(truth.v, cross(wC, chaserPortOff));
+  const rangeRate = dot(sub(vChaserPort, vTgtPort), axis);
+  const closing = -rangeRate;
+  const rate = hypot3(sub(wC, wT));
+  return { axis, tgtPort, chaserPort, range, lateral, lateralVec, align, closing, rate, Rt };
+}
+function dockDecision(g) {
+  const soft = g.range >= 0 && g.range <= LIMITS.soft.range && g.closing <= LIMITS.soft.closing && g.closing >= -0.02 && g.lateral <= LIMITS.soft.lateral && deg(g.align) <= LIMITS.soft.align && deg(g.rate) <= LIMITS.soft.rate;
+  const hard = g.range >= 0.02 && g.range <= LIMITS.hard.range && g.closing <= LIMITS.hard.closing && g.closing >= -0.01 && g.lateral <= LIMITS.hard.lateral && deg(g.align) <= LIMITS.hard.align && deg(g.rate) <= LIMITS.hard.rate;
+  const reasons = [];
+  if (g.range > LIMITS.hard.range || g.range < 0.02) reasons.push(`range ${g.range.toFixed(3)} m outside 0.02–${LIMITS.hard.range} m`);
+  if (g.closing > LIMITS.hard.closing) reasons.push(`closing ${g.closing.toFixed(3)} m/s above ${LIMITS.hard.closing} m/s`);
+  if (g.lateral > LIMITS.hard.lateral) reasons.push(`lateral ${g.lateral.toFixed(3)} m above ${LIMITS.hard.lateral} m`);
+  if (deg(g.align) > LIMITS.hard.align) reasons.push(`alignment ${deg(g.align).toFixed(2)}° above ${LIMITS.hard.align}°`);
+  if (deg(g.rate) > LIMITS.hard.rate) reasons.push(`rate error ${deg(g.rate).toFixed(2)}°/s above ${LIMITS.hard.rate}°/s`);
+  return { soft, hard, reason: reasons.join("; ") || "inside the hard-dock gate" };
+}
+function inCorridor(g) {
+  if (g.range < -0.15 || g.range > LIMITS.corridorRange) return false;
+  if (g.range <= LIMITS.cylinderRange) return g.lateral <= LIMITS.cylinderRadius;
+  return Math.atan2(g.lateral, Math.max(g.range, 0.05)) <= LIMITS.corridorDeg * Math.PI / 180;
+}
+function closingCap(range) {
+  if (range > 12) return 0.28;
+  if (range > 4) return 0.10;
+  if (range > 1.2) return 0.05;
+  return 0.025;
+}
+function wrenchColumn(t) {
+  const F = scale(t.dir, THRUST);
+  const Tq = cross(t.pos, F);
+  return [...F, ...Tq];
+}
+function allocate(wrench, isolated) {
+  const duty = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+  let rem = wrench.slice();
+  for (let k = 0; k < 16; k++) {
+    let best = null;
+    for (const t of THRUSTERS) {
+      if (isolated[t.id]) continue;
+      if (duty[t.id] >= 1) continue;
+      const c = wrenchColumn(t);
+      let score = 0, n2 = 0;
+      for (let i = 0; i < 6; i++) { score += c[i] * rem[i]; n2 += c[i] * c[i]; }
+      if (score <= 0) continue;
+      const frac = Math.min(score / n2, 1 - duty[t.id]);
+      const gain = frac * score - 0.5 * frac * frac * n2;
+      if (!best || gain > best.gain) best = { t, frac, gain, c };
+    }
+    if (!best || best.frac < 0.02 || best.gain < 1e-4) break;
+    duty[best.t.id] += best.frac;
+    rem = rem.map((v, i) => v - best.frac * best.c[i]);
+  }
+  return duty;
+}
+
+const SCENARIOS = {
+  nominal: {
+    r: [0.4, -40, 0.25],
+    v: [0, 0.01, 0],
+    chaserEuler: [1.15, -0.08, 0.05],
+    w: [0.002, -0.001, 0.0015],
+    targetEuler: [-Math.PI / 2 + 0.18, 0.06, -0.04],
+    targetW: [0.0018, -0.0007, 0.0042],
+    propellant: 9.5,
+    failed: null,
+    blackout: false,
+  },
+  "sensor-blackout": {
+    r: [0.3, -34, -0.2],
+    v: [0, 0.02, 0],
+    chaserEuler: [1.25, 0.05, -0.08],
+    w: [0, 0, 0],
+    targetEuler: [-Math.PI / 2 + 0.1, 0.04, 0.02],
+    targetW: [0.0012, 0.0004, 0.0025],
+    propellant: 9.5,
+    failed: null,
+    blackout: true,
+  },
+  "stuck-thruster": {
+    r: [0.5, -38, 0.15],
+    v: [0, 0, 0],
+    chaserEuler: [1.2, -0.05, 0.04],
+    w: [0.001, 0, 0],
+    targetEuler: [-Math.PI / 2 + 0.12, -0.03, 0.05],
+    targetW: [0.0015, 0.0005, 0.003],
+    propellant: 9.5,
+    failed: "+X1",
+    blackout: false,
+  },
+};
+
+class Simulation {
+  constructor() {
+    this.scenario = "nominal";
+    this.seed = 7;
+    this.mode = "auto";
+    this.manual = { f: [0, 0, 0], t: [0, 0, 0] };
+    this.overrideDuty = null;
+    this.logs = [];
+    this.reset(7);
+  }
+  randn() {
+    let u = this.rng();
+    let v = this.rng();
+    if (u < 1e-12) u = 1e-12;
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  reset(seed) {
+    this.seed = seed >>> 0;
+    this.rng = mulberry32(this.seed);
+    const sc = SCENARIOS[this.scenario];
+    this.time = 0;
+    this.phase = "acquire";
+    this.phaseTime = 0;
+    this.phaseTrace = ["acquire"];
+    this.softTimer = 0;
+    this.truth = {
+      r: sc.r.slice(),
+      v: sc.v.slice(),
+      q: quatNorm(quatFromEuler(sc.chaserEuler[0], sc.chaserEuler[1], sc.chaserEuler[2])),
+      w: sc.w.slice(),
+      targetQ: quatNorm(quatFromEuler(sc.targetEuler[0], sc.targetEuler[1], sc.targetEuler[2])),
+      targetW: sc.targetW.slice(),
+      propellant: sc.propellant,
+    };
+    this.baselineTargetW = sc.targetW.slice();
+    this.failed = sc.failed;
+    this.isolated = {};
+    this.suspect = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+    this.impulseCmd = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+    this.impulseAch = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+    this.duty = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+    this.achieved = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+    this.sensorOverride = { lidar: null, optical: null };
+    this.blackout = { started: false, until: 0, done: false };
+    this.scriptBlackout = false;
+    this.measCount = 0;
+    this.lastMeas = "none";
+    this.lastAccel = [0, 0, 0];
+    this.contactForce = [0, 0, 0];
+    this.contactTorque = [0, 0, 0];
+    this.waypoint = sc.r.slice();
+    this.reason = "Acquire: coasting the translation loop until the position fix is inside 1.5 m 1σ.";
+    this.dockLock = null;
+    this.acquireAnchor = null;
+    this.rangeCmd = 12;
+    this.x = [
+      sc.r[0] + this.randn() * 1.4,
+      sc.r[1] + this.randn() * 1.4,
+      sc.r[2] + this.randn() * 1.4,
+      sc.v[0] + this.randn() * 0.02,
+      sc.v[1] + this.randn() * 0.02,
+      sc.v[2] + this.randn() * 0.02,
+    ];
+    this.qHat = quatNorm(quatMul(this.truth.q, quatOmega([this.randn() * 0.02, this.randn() * 0.02, this.randn() * 0.02], 1)));
+    this.wHat = this.truth.w.slice();
+    this.targetQHat = this.truth.targetQ.slice();
+    this.targetWHat = this.truth.targetW.slice();
+    this.attVar = 0.02;
+    this.P = ident(6).map((row, i) => row.map((v, j) => {
+      if (i !== j) return 0;
+      return i < 3 ? 25 : 0.04;
+    }));
+    this.history = { range: [], closing: [], prop: [], att: [], sigma: [] };
+    this.trail = [];
+    this.prediction = [];
+    this.logs = [];
+    this.lastLogKey = "";
+    this.lastLogT = -10;
+    this.log("info", "Scenario", `${this.scenario} seeded with ${this.seed}. Relative motion is Clohessy–Wiltshire in LVLH, n = ${N.toFixed(6)} rad/s.`);
+    this.recordSample();
+  }
+  log(level, title, text) {
+    const key = title + "|" + text;
+    if (key === this.lastLogKey && this.time - this.lastLogT < 0.4) return;
+    this.lastLogKey = key;
+    this.lastLogT = this.time;
+    this.reason = text;
+    this.logs.unshift({ t: this.time, level, title, text });
+    if (this.logs.length > 80) this.logs.pop();
+  }
+  setPhase(next, why) {
+    if (this.phase === next) return;
+    this.phase = next;
+    this.phaseTime = 0;
+    this.phaseTrace.push(next);
+    const level = next === "abort" ? "abort" : "info";
+    this.log(level, PHASES.find((p) => p[0] === next)?.[1] || next, why);
+  }
+  lidarOn() { return this.sensorOverride.lidar === null ? !this.scriptBlackout : !this.sensorOverride.lidar; }
+  opticalOn() { return this.sensorOverride.optical === null ? !this.scriptBlackout : !this.sensorOverride.optical; }
+  positionSigma() {
+    return Math.sqrt(Math.max(0, this.P[0][0] + this.P[1][1] + this.P[2][2]));
+  }
+  step(seconds) {
+    let left = Number(seconds);
+    if (!Number.isFinite(left) || left <= 0) return;
+    while (left > 1e-12) {
+      const dt = Math.min(FIXED, left);
+      this.#step(dt);
+      left -= dt;
+    }
+  }
+  #step(dt) {
+    this.time += dt;
+    this.phaseTime += dt;
+    this.#scripts();
+    this.#propagateTarget(dt);
+    this.#propagateNav(dt);
+    this.#guide(dt);
+    this.#actuators(dt);
+    if (this.phase !== "hard-dock") this.#propagateChaser(dt);
+    else this.#holdDock(dt);
+    this.#detect(dt);
+    this.#sample(dt);
+  }
+  #scripts() {
+    const sc = SCENARIOS[this.scenario];
+    if (!sc.blackout) { this.scriptBlackout = false; return; }
+    const dist = hypot3(this.truth.r);
+    if (!this.blackout.started && this.time > 12 && dist < 24 && (this.phase === "far-approach" || this.phase === "hold-point" || this.phase === "proximity-approach" || this.phase === "final-corridor")) {
+      this.blackout.started = true;
+      this.blackout.until = this.time + 36;
+      this.scriptBlackout = true;
+      this.log("warning", "Blackout", "Optical navigation and lidar dropped out inside 24 m. The filter will coast on inertial data and the position covariance is only allowed to grow.");
+    }
+    if (this.blackout.started && !this.blackout.done && this.time >= this.blackout.until) {
+      this.scriptBlackout = false;
+      this.blackout.done = true;
+      this.log("info", "Recovery", "Lidar range and optical bearing are back. Position updates resume and the covariance can contract.");
+    }
+  }
+  #propagateTarget(dt) {
+    const tau = gravityGradient(this.truth.targetQ, I_TARGET);
+    const w0 = this.truth.targetW;
+    const wMid = eulerIntegrateW(w0, tau, I_TARGET, dt / 2);
+    this.truth.targetW = eulerIntegrateW(w0, tau, I_TARGET, dt);
+    this.truth.targetQ = quatNorm(quatMul(this.truth.targetQ, quatOmega(wMid, dt)));
+  }
+  #propagateNav(dt) {
+    const aMeas = [
+      this.lastAccel[0] + this.randn() * 0.0015,
+      this.lastAccel[1] + this.randn() * 0.0015,
+      this.lastAccel[2] + this.randn() * 0.0015,
+    ];
+    this.x = rk4(this.x, aMeas, dt);
+    const Phi = cwPhi(dt);
+    let Pn = matMul(matMul(Phi, this.P), transpose(Phi));
+    const qPos = 0.012 * dt;
+    const qVel = 0.0015 * dt;
+    for (let i = 0; i < 3; i++) Pn[i][i] += qPos;
+    for (let i = 3; i < 6; i++) Pn[i][i] += qVel;
+    const traceBefore = this.P[0][0] + this.P[1][1] + this.P[2][2];
+    let traceAfter = Pn[0][0] + Pn[1][1] + Pn[2][2];
+    const minTrace = traceBefore + 3 * qPos;
+    if (traceAfter < minTrace) {
+      const extra = (minTrace - traceAfter) / 3;
+      Pn[0][0] += extra; Pn[1][1] += extra; Pn[2][2] += extra;
+      traceAfter = minTrace;
+    }
+    this.P = Pn;
+    for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) {
+      const s = 0.5 * (this.P[i][j] + this.P[j][i]);
+      this.P[i][j] = s; this.P[j][i] = s;
+    }
+    const wMeas = this.truth.w.map((w) => w + this.randn() * 0.00035);
+    this.qHat = quatNorm(quatMul(this.qHat, quatOmega(wMeas, dt)));
+    this.wHat = wMeas;
+    if (this.opticalOn()) {
+      const noisy = quatNorm(quatMul(this.truth.targetQ, quatOmega([this.randn() * 0.004, this.randn() * 0.004, this.randn() * 0.004], 1)));
+      this.targetQHat = quatNorm(quatMul(quatConj(quatOmega([0, 0, 0], 0)), this.#slerp(this.targetQHat, noisy, 0.25)));
+      this.targetWHat = this.truth.targetW.map((w, i) => this.targetWHat[i] * 0.7 + (w + this.randn() * 0.0004) * 0.3);
+      const qMeas = quatNorm(quatMul(this.truth.q, quatOmega([this.randn() * 0.003, this.randn() * 0.003, this.randn() * 0.003], 1)));
+      this.qHat = this.#slerp(this.qHat, qMeas, hypot3(this.truth.r) < 80 ? 0.18 : 0.05);
+      this.attVar = this.attVar * 0.82 + 0.0004;
+    } else {
+      this.targetQHat = quatNorm(quatMul(this.targetQHat, quatOmega(this.targetWHat, dt)));
+      this.attVar += 0.0012 * dt;
+    }
+    this.#measure();
+  }
+  #slerp(a, b, t) {
+    let bq = b;
+    let d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+    if (d < 0) { bq = b.map((v) => -v); d = -d; }
+    if (d > 0.9995) return quatNorm(a.map((v, i) => v + (bq[i] - v) * t));
+    const th = Math.acos(clamp(d, -1, 1));
+    const s = Math.sin(th);
+    const w1 = Math.sin((1 - t) * th) / s;
+    const w2 = Math.sin(t * th) / s;
+    return quatNorm(a.map((v, i) => v * w1 + bq[i] * w2));
+  }
+  #measure() {
+    const lidar = this.lidarOn();
+    const optical = this.opticalOn();
+    if (!lidar && !optical) { this.lastMeas = "none"; return; }
+    const rTrue = this.truth.r;
+    const range = Math.max(hypot3(rTrue), 1e-6);
+    const los = scale(rTrue, 1 / range);
+    const axis = Math.abs(los[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const t1 = normalize(cross(los, axis));
+    const t2 = cross(los, t1);
+    let dir = los;
+    let rangeMeas = range;
+    if (optical) dir = normalize(add(los, add(scale(t1, this.randn() * 0.0011), scale(t2, this.randn() * 0.0011))));
+    if (lidar) rangeMeas = Math.max(0.01, range + this.randn() * 0.04);
+    const rHat = [this.x[0], this.x[1], this.x[2]];
+    const rangeHat = Math.max(hypot3(rHat), 1e-3);
+    const losHat = normalize(rHat);
+    let z;
+    let varAlong;
+    let varTrans;
+    let frame;
+    if (lidar && optical) {
+      z = scale(dir, rangeMeas); frame = dir; varAlong = 0.04 * 0.04; varTrans = (range * 0.0011) ** 2;
+    } else if (lidar) {
+      z = scale(losHat, rangeMeas); frame = losHat; varAlong = 0.04 * 0.04; varTrans = 1e6;
+    } else {
+      z = scale(dir, rangeHat); frame = dir; varAlong = 1e6; varTrans = (rangeHat * 0.0011) ** 2;
+    }
+    const R = [[varTrans, 0, 0], [0, varTrans, 0], [0, 0, varTrans]];
+    const dv = varAlong - varTrans;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) R[i][j] += dv * frame[i] * frame[j];
+    this.#kalman(z, R);
+    this.measCount += 1;
+    this.lastMeas = lidar && optical ? "lidar+optical" : lidar ? "lidar" : "optical";
+  }
+  #kalman(z, R) {
+    const y = [z[0] - this.x[0], z[1] - this.x[1], z[2] - this.x[2]];
+    const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) S[i][j] = this.P[i][j] + R[i][j];
+    const Sinv = inv3(S);
+    if (!Sinv) return;
+    const K = Array.from({ length: 6 }, () => [0, 0, 0]);
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) {
+      let s = 0;
+      for (let k = 0; k < 3; k++) s += this.P[i][k] * Sinv[k][j];
+      K[i][j] = s;
+    }
+    for (let i = 0; i < 6; i++) this.x[i] += K[i][0] * y[0] + K[i][1] * y[1] + K[i][2] * y[2];
+    const IKH = ident(6);
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) IKH[i][j] -= K[i][j];
+    const KT = transpose(K);
+    const KRKt = matMul(matMul(K, R), KT);
+    const Pnew = matMul(matMul(IKH, this.P), transpose(IKH)).map((row, i) => row.map((v, j) => v + KRKt[i][j]));
+    this.P = Pnew;
+    for (let i = 0; i < 6; i++) {
+      this.P[i][i] = Math.max(this.P[i][i], 1e-8);
+      for (let j = i + 1; j < 6; j++) {
+        const s = 0.5 * (this.P[i][j] + this.P[j][i]);
+        this.P[i][j] = s; this.P[j][i] = s;
+      }
+    }
+  }
+  #guide(dt) {
+    const g = contactGeometry(this.truth);
+    this.geo = g;
+    this.contactForce = [0, 0, 0];
+    this.contactTorque = [0, 0, 0];
+    if (this.phase === "hard-dock") {
+      this.desiredF = [0, 0, 0];
+      this.desiredT = [0, 0, 0];
+      return;
+    }
+    if (this.mode === "manual") {
+      const Rc = quatToMat(this.qHat);
+      const Fb = [this.manual.f[0] * THRUST * 1.5, this.manual.f[1] * THRUST * 1.5, this.manual.f[2] * THRUST * 1.5];
+      this.desiredF = Fb;
+      this.desiredT = this.manual.t.map((v) => clamp(v, -1, 1) * 10);
+      this.#safetyAbort(g);
+      return;
+    }
+    if (this.phase === "abort") { this.#commandRetreat(); return; }
+    if (this.#safetyAbort(g)) return;
+    const sigma = this.positionSigma();
+    const blind = !this.lidarOn() && !this.opticalOn();
+    if (blind && sigma > 0.45 && ["far-approach", "hold-point", "proximity-approach", "final-corridor"].includes(this.phase)) {
+      if (hypot3(this.truth.r) < 18) {
+        this.setPhase("abort", `Lidar and optical are both dark with position 1σ at ${sigma.toFixed(2)} m inside 18 m. Retreating on the last inertial state instead of pressing the corridor.`);
+        this.#commandRetreat();
+        return;
+      }
+      this.setPhase("hold-point", `Sensor blackout: position 1σ is ${sigma.toFixed(2)} m and still growing on the inertial coast. Holding the −V-bar point until a position update returns.`);
+    }
+    const est = [this.x[0], this.x[1], this.x[2]];
+    const estV = [this.x[3], this.x[4], this.x[5]];
+    if (this.phase === "acquire") {
+      this.#pointLos(est);
+      if (sigma > 1.5) this.#track(est, estV, est, [0, 0, 0], true);
+      else {
+        if (!this.acquireAnchor) this.acquireAnchor = est.slice();
+        this.waypoint = this.acquireAnchor.slice();
+        this.#track(est, estV, this.acquireAnchor, [0, 0, 0], false);
+      }
+      if (this.phaseTime > 6 && sigma < 1.5 && hypot3(estV) < 0.08) {
+        this.setPhase("far-approach", `Acquire complete: position 1σ is ${sigma.toFixed(2)} m inside the 1.5 m gate and the estimated rate is ${hypot3(estV).toFixed(3)} m/s. Committing to the −V-bar hold at 26 m.`);
+      }
+      return;
+    }
+    if (this.phase === "far-approach") {
+      this.waypoint = HOLD.slice();
+      this.#pointLos(est);
+      this.#track(est, estV, HOLD, [0, 0, 0], false);
+      const err = hypot3(sub(est, HOLD));
+      if (err < 1.3 && hypot3(estV) < 0.06) {
+        this.setPhase("hold-point", `Far approach arrived ${err.toFixed(2)} m from the −V-bar hold with ${hypot3(estV).toFixed(3)} m/s. Holding to match the docking attitude before proximity.`);
+      }
+      return;
+    }
+    if (this.phase === "hold-point" || this.phase === "proximity-approach" || this.phase === "final-corridor" || this.phase === "soft-capture") {
+      this.#dockAttitude();
+    }
+    const decision = dockDecision(g);
+    if (this.phase === "final-corridor" && decision.soft) {
+      this.setPhase("soft-capture", `Soft capture: port range ${g.range.toFixed(2)} m, lateral ${g.lateral.toFixed(3)} m, alignment ${deg(g.align).toFixed(2)}°, closing ${g.closing.toFixed(3)} m/s. All inside the soft gate, so the latches take the load.`);
+    }
+    if (this.phase === "soft-capture") {
+      if (!decision.soft && g.range < LIMITS.soft.range && g.closing > 0.02) {
+        this.#bounce(g, "Soft-capture limits were lost while closing. The contact was rejected and the relative velocity was reflected along the port axis.");
+        return;
+      }
+      this.#spring(g);
+      this.desiredF = [0, 0, 0];
+      this.desiredT = [0, 0, 0];
+      this.softTimer += dt;
+      if (this.softTimer >= LIMITS.captureHold && decision.hard) this.tryHardDock();
+      else if (this.softTimer >= LIMITS.captureHold && !decision.hard) {
+        this.log("warning", "Hold", `Soft capture has been held ${this.softTimer.toFixed(1)} s but hard dock is still blocked: ${dockDecision(g).reason}.`);
+      }
+      return;
+    }
+    if ((this.phase === "final-corridor" || this.phase === "proximity-approach") && g.range < LIMITS.soft.range && g.range > -0.05 && g.closing > 0.01 && !decision.soft) {
+      this.#bounce(g, `Contact rejected outside the soft gate (${dockDecision(g).reason}). The vehicles bounced instead of snapping together.`);
+      return;
+    }
+    if (this.phase === "hold-point") {
+      this.waypoint = HOLD.slice();
+      this.#track(est, estV, HOLD, [0, 0, 0], false);
+      const alignDeg = deg(this.#alignError());
+      const rateDeg = deg(hypot3(sub(this.wHat, this.#targetWLvlhBody())));
+      if (!blind && this.phaseTime > 8 && alignDeg < 10 && rateDeg < 1.2 && sigma < 1.2) {
+        this.rangeCmd = 12;
+        this.setPhase("proximity-approach", `Hold complete: attitude error ${alignDeg.toFixed(1)}° and rate error ${rateDeg.toFixed(2)}°/s are inside the gate. Moving to a 12 m port standoff on the docking axis.`);
+      }
+      return;
+    }
+    if (this.phase === "proximity-approach") {
+      const rDes = this.#portCg(this.targetQHat, this.qHat, 12);
+      const vDes = this.#portRate(this.targetQHat, this.targetWHat, this.qHat, this.wHat, 12, 0);
+      this.waypoint = rDes;
+      this.#track(est, estV, rDes, vDes, false);
+      if (g.range < 13.2 && g.range > 8 && g.lateral < 0.55 && deg(g.align) < 6 && Math.abs(g.closing) < 0.12) {
+        this.rangeCmd = Math.min(g.range, 12);
+        this.setPhase("final-corridor", `Proximity standoff reached at port range ${g.range.toFixed(2)} m with lateral ${g.lateral.toFixed(2)} m. Entering the corridor and bleeding the closing rate to the displayed caps.`);
+      }
+      return;
+    }
+    if (this.phase === "final-corridor") {
+      if (!inCorridor(g) && g.range < 18 && g.range > 1.6) {
+        this.setPhase("proximity-approach", `Replan: port lateral ${g.lateral.toFixed(2)} m is outside the ${LIMITS.corridorDeg}° corridor at ${g.range.toFixed(1)} m. Returning to the 12 m standoff instead of cutting the keep-out sphere.`);
+        return;
+      }
+      const cap = g.lateral > 0.4 ? 0.02 : closingCap(g.range);
+      const closingCmd = Math.min(cap, 0.08);
+      this.rangeCmd = Math.max(0.12, Math.min(g.range, this.rangeCmd) - closingCmd * dt);
+      const rDes = this.#portCg(this.targetQHat, this.qHat, this.rangeCmd);
+      const vDes = this.#portRate(this.targetQHat, this.targetWHat, this.qHat, this.wHat, this.rangeCmd, -closingCmd);
+      this.waypoint = rDes;
+      this.#track(est, estV, rDes, vDes, false);
+    }
+  }
+  #portRate(targetQ, targetW, chaserQ, chaserW, range, rangeRate) {
+    const Rt = quatToMat(targetQ);
+    const Rc = quatToMat(chaserQ);
+    const wT = mulMV(Rt, targetW);
+    const wC = mulMV(Rc, chaserW);
+    const axis = mulMV(Rt, [1, 0, 0]);
+    const tgtPort = mulMV(Rt, TARGET_PORT);
+    const portOff = mulMV(Rc, CHASER_PORT);
+    return add(add(cross(wT, tgtPort), scale(cross(wT, axis), range)), sub(scale(axis, rangeRate), cross(wC, portOff)));
+  }
+  #portCg(targetQ, chaserQ, range) {
+    const Rt = quatToMat(targetQ);
+    const Rc = quatToMat(chaserQ);
+    const axis = mulMV(Rt, [1, 0, 0]);
+    const tgtPort = mulMV(Rt, TARGET_PORT);
+    const portOff = mulMV(Rc, CHASER_PORT);
+    return sub(add(tgtPort, scale(axis, range)), portOff);
+  }
+  #targetWLvlhBody() {
+    const wLvlh = mulMV(quatToMat(this.targetQHat), this.targetWHat);
+    return mulMT(quatToMat(this.qHat), wLvlh);
+  }
+  #alignError() {
+    const qDes = desiredDockQuat(this.targetQHat);
+    let qe = quatMul(quatConj(this.qHat), qDes);
+    if (qe[0] < 0) qe = qe.map((v) => -v);
+    return 2 * Math.acos(clamp(qe[0], -1, 1));
+  }
+  #pointLos(est) {
+    const los = normalize(scale(est, -1));
+    if (hypot3(los) < 0.5) return;
+    const up = [0, 0, 1];
+    let y = sub(up, scale(los, dot(up, los)));
+    if (hypot3(y) < 1e-4) y = [0, 1, 0];
+    y = normalize(y);
+    const z = cross(los, y);
+    const qDes = matToQuat([[los[0], y[0], z[0]], [los[1], y[1], z[1]], [los[2], y[2], z[2]]]);
+    this.#attitudeTrack(qDes, [0, 0, 0]);
+  }
+  #dockAttitude() {
+    this.#attitudeTrack(desiredDockQuat(this.targetQHat), this.#targetWLvlhBody());
+  }
+  #attitudeTrack(qDes, wCmd) {
+    let qe = quatMul(quatConj(this.qHat), qDes);
+    if (qe[0] < 0) qe = qe.map((v) => -v);
+    const wErr = sub(this.wHat, wCmd);
+    let tau = [
+      70 * qe[1] - 18 * wErr[0],
+      70 * qe[2] - 18 * wErr[1],
+      70 * qe[3] - 18 * wErr[2],
+    ];
+    const L = hypot3(tau);
+    if (L > T_MAX) tau = scale(tau, T_MAX / L);
+    this.desiredT = tau;
+  }
+  #track(est, estV, rDes, vDes, dampOnly) {
+    const cmd = dampOnly ? [0, 0, 0] : [
+      0.02 * (rDes[0] - est[0]) + 0.28 * (vDes[0] - estV[0]),
+      0.02 * (rDes[1] - est[1]) + 0.28 * (vDes[1] - estV[1]),
+      0.02 * (rDes[2] - est[2]) + 0.28 * (vDes[2] - estV[2]),
+    ];
+    if (dampOnly) {
+      cmd[0] = 0.22 * (0 - estV[0]);
+      cmd[1] = 0.22 * (0 - estV[1]);
+      cmd[2] = 0.22 * (0 - estV[2]);
+    }
+    const cw = [3 * N * N * est[0] + 2 * N * estV[1], -2 * N * estV[0], -N * N * est[2]];
+    let a = sub(cmd, cw);
+    const L = hypot3(a);
+    if (L > A_MAX) a = scale(a, A_MAX / L);
+    const F = mulMT(quatToMat(this.qHat), scale(a, MASS));
+    this.desiredF = F;
+  }
+  #commandRetreat() {
+    const r = [this.x[0], this.x[1], this.x[2]];
+    const v = [this.x[3], this.x[4], this.x[5]];
+    const dist = hypot3(r);
+    const dir = dist < 0.5 ? [0, -1, 0] : scale(r, 1 / dist);
+    const goal = scale(dir, Math.max(dist + 14, KEEP_OUT + 18));
+    this.waypoint = goal;
+    this.#track(r, v, goal, scale(dir, 0.25), false);
+    this.#pointLos(r);
+  }
+  #safetyAbort(g) {
+    if (this.phase === "hard-dock" || this.phase === "soft-capture") return false;
+    const dist = hypot3(this.truth.r);
+    if (dist < KEEP_OUT && !inCorridor(g)) {
+      this.setPhase("abort", `Keep-out sphere (${KEEP_OUT.toFixed(1)} m) was crossed at ${dist.toFixed(2)} m outside the approach corridor. Aborting to a radial retreat.`);
+      this.#commandRetreat();
+      return true;
+    }
+    return false;
+  }
+  #spring(g) {
+    const rangeErr = g.range - 0.12;
+    let F = add(scale(g.axis, -220 * rangeErr + 140 * (g.closing)), scale(g.lateralVec, -180));
+    const qDes = desiredDockQuat(this.truth.targetQ);
+    let qe = quatMul(quatConj(this.truth.q), qDes);
+    if (qe[0] < 0) qe = qe.map((v) => -v);
+    this.contactForce = F;
+    this.contactTorque = [90 * qe[1], 90 * qe[2], 90 * qe[3]];
+  }
+  #bounce(g, why) {
+    this.truth.v = add(this.truth.v, scale(g.axis, 1.32 * Math.max(g.closing, 0)));
+    this.log("warning", "Contact", why);
+    if (g.closing > 0.12 || deg(g.align) > 25) {
+      this.setPhase("abort", "The impact exceeded the soft-capture envelope. Retreating along the departure direction.");
+      this.#commandRetreat();
+    } else if (this.phase !== "final-corridor") {
+      this.setPhase("final-corridor", "Capture failed. Re-establishing the corridor approach.");
+    }
+  }
+  tryHardDock() {
+    const g = contactGeometry(this.truth);
+    const d = dockDecision(g);
+    if (!d.hard) {
+      this.lastReject = d.reason;
+      return false;
+    }
+    const qRel = quatMul(quatConj(this.truth.targetQ), this.truth.q);
+    this.dockLock = { range: g.range, lateral: mulMT(g.Rt, g.lateralVec), qRel };
+    this.setPhase("hard-dock", `Hard dock: soft capture held ${this.softTimer.toFixed(1)} s inside the hard gate (range ${g.range.toFixed(3)} m, lateral ${g.lateral.toFixed(3)} m, align ${deg(g.align).toFixed(2)}°, closing ${g.closing.toFixed(3)} m/s).`);
+    return true;
+  }
+  #holdDock(dt) {
+    if (!this.dockLock) return;
+    const Rt = quatToMat(this.truth.targetQ);
+    const axis = mulMV(Rt, [1, 0, 0]);
+    const tgtPort = mulMV(Rt, TARGET_PORT);
+    const qC = quatNorm(quatMul(this.truth.targetQ, this.dockLock.qRel));
+    const Rc = quatToMat(qC);
+    const lateral = mulMV(Rt, this.dockLock.lateral);
+    const rNew = sub(add(add(tgtPort, scale(axis, this.dockLock.range)), lateral), mulMV(Rc, CHASER_PORT));
+    this.truth.v = scale(sub(rNew, this.truth.r), 1 / Math.max(dt, 1e-4));
+    this.truth.r = rNew;
+    this.truth.q = qC;
+    this.truth.w = mulMT(Rc, mulMV(Rt, this.truth.targetW));
+    this.lastAccel = [0, 0, 0];
+  }
+  #actuators(dt) {
+    let duty;
+    if (this.overrideDuty && this.time < this.overrideDuty.until) {
+      duty = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+      duty[this.overrideDuty.id] = this.overrideDuty.duty;
+    } else if (this.phase === "soft-capture" || this.phase === "hard-dock") {
+      duty = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+    } else if (this.truth.propellant <= 0) {
+      duty = Object.fromEntries(THRUSTERS.map((t) => [t.id, 0]));
+    } else {
+      const wrench = [...(this.desiredF || [0, 0, 0]), ...(this.desiredT || [0, 0, 0])];
+      duty = allocate(wrench, this.isolated);
+    }
+    this.duty = duty;
+    let mdot = 0;
+    const forceBody = [0, 0, 0];
+    const torqueBody = [0, 0, 0];
+    for (const t of THRUSTERS) {
+      const cmd = (duty[t.id] || 0) * THRUST;
+      const ach = this.failed === t.id ? 0 : cmd;
+      this.achieved[t.id] = ach;
+      this.impulseCmd[t.id] += cmd * dt;
+      this.impulseAch[t.id] += ach * dt;
+      mdot += ach / (ISP * G0);
+      const F = scale(t.dir, ach);
+      forceBody[0] += F[0]; forceBody[1] += F[1]; forceBody[2] += F[2];
+      const Tq = cross(t.pos, F);
+      torqueBody[0] += Tq[0]; torqueBody[1] += Tq[1]; torqueBody[2] += Tq[2];
+    }
+    this.truth.propellant = Math.max(0, this.truth.propellant - mdot * dt);
+    this.forceBody = forceBody;
+    this.torqueBody = torqueBody;
+  }
+  #propagateChaser(dt) {
+    const Rc = quatToMat(this.truth.q);
+    const aLvlh = mulMV(Rc, scale(this.forceBody, 1 / MASS));
+    const springA = scale(this.contactForce, 1 / MASS);
+    const a = add(aLvlh, springA);
+    this.lastAccel = aLvlh;
+    const s = rk4([...this.truth.r, ...this.truth.v], a, dt);
+    this.truth.r = [s[0], s[1], s[2]];
+    this.truth.v = [s[3], s[4], s[5]];
+    const tau = add(add(this.torqueBody, this.contactTorque), gravityGradient(this.truth.q, I_CHASER));
+    const w0 = this.truth.w;
+    const wMid = eulerIntegrateW(w0, tau, I_CHASER, dt / 2);
+    this.truth.w = eulerIntegrateW(w0, tau, I_CHASER, dt);
+    this.truth.q = quatNorm(quatMul(this.truth.q, quatOmega(wMid, dt)));
+  }
+  #detect(dt) {
+    if (this.phase === "hard-dock") return;
+    let expected = [0, 0, 0];
+    for (const t of THRUSTERS) {
+      if (this.isolated[t.id]) continue;
+      const F = scale(t.dir, (this.duty[t.id] || 0) * THRUST);
+      expected = add(expected, F);
+    }
+    const residual = sub(expected, this.forceBody);
+    for (const t of THRUSTERS) {
+      const duty = this.duty[t.id] || 0;
+      if (duty < 0.25 || this.isolated[t.id]) { this.suspect[t.id] *= 0.5; continue; }
+      const missing = dot(residual, t.dir);
+      const expectN = duty * THRUST;
+      if (missing > 0.45 * expectN) this.suspect[t.id] += dt;
+      else this.suspect[t.id] = Math.max(0, this.suspect[t.id] - dt * 0.5);
+      if (this.suspect[t.id] > 0.45 && !this.isolated[t.id]) {
+        this.isolated[t.id] = true;
+        this.log("warning", "Fault", `${t.id} was commanded but the body-force residual shows about ${missing.toFixed(1)} N missing along its axis. Isolated from the mix. The remaining thrusters reallocate; attitude control takes the couple. Keep-out logic is unchanged.`);
+      }
+    }
+  }
+  #sample(dt) {
+    const prev = this.time - dt;
+    if (Math.floor(this.time / 0.25) !== Math.floor(prev / 0.25)) this.recordSample();
+    if (Math.floor(this.time / 0.5) !== Math.floor(prev / 0.5)) {
+      this.trail.push(this.truth.r.slice());
+      if (this.trail.length > 360) this.trail.shift();
+      this.prediction = this.#predict();
+    }
+  }
+  recordSample() {
+    const g = this.geo || contactGeometry(this.truth);
+    const dist = hypot3(this.truth.r);
+    const closing = dist < 1e-6 ? 0 : -dot(this.truth.v, scale(this.truth.r, 1 / dist));
+    const push = (k, v) => {
+      this.history[k].push({ t: this.time, v });
+      if (this.history[k].length > 480) this.history[k].shift();
+    };
+    push("range", dist);
+    push("closing", closing);
+    push("prop", this.truth.propellant);
+    push("att", deg(g.align));
+    push("sigma", this.positionSigma());
+  }
+  #predict() {
+    let s = [this.x[0], this.x[1], this.x[2], this.x[3], this.x[4], this.x[5]];
+    const out = [];
+    for (let i = 0; i < 40; i++) {
+      s = rk4(s, [0, 0, 0], 2);
+      out.push([s[0], s[1], s[2]]);
+    }
+    return out;
+  }
+  placeContact({ range, lateral, alignDeg, closing, rateDeg }) {
+    this.scenario = "nominal";
+    this.failed = null;
+    this.isolated = {};
+    this.scriptBlackout = false;
+    this.sensorOverride = { lidar: false, optical: false };
+    this.truth.targetQ = [1, 0, 0, 0];
+    this.truth.targetW = [0, 0, 0];
+    this.targetQHat = [1, 0, 0, 0];
+    this.targetWHat = [0, 0, 0];
+    let q = desiredDockQuat(this.truth.targetQ);
+    q = quatNorm(quatMul(q, quatOmega([0, alignDeg * Math.PI / 180, 0], 1)));
+    this.truth.q = q;
+    this.qHat = q.slice();
+    const r = this.#portCg(this.truth.targetQ, q, range);
+    const Rt = quatToMat(this.truth.targetQ);
+    const lateralLvlh = mulMV(Rt, [0, lateral, 0]);
+    this.truth.r = add(r, lateralLvlh);
+    const axis = mulMV(Rt, [1, 0, 0]);
+    this.truth.v = scale(axis, -closing);
+    const rate = (rateDeg || 0) * Math.PI / 180;
+    this.truth.w = [rate, 0, 0];
+    this.wHat = this.truth.w.slice();
+    this.x = [...this.truth.r, ...this.truth.v];
+    this.mode = "auto";
+    this.phase = "final-corridor";
+    this.phaseTrace.push("final-corridor");
+    this.softTimer = 0;
+    this.dockLock = null;
+  }
+  abort() {
+    this.mode = "auto";
+    this.setPhase("abort", "Abort commanded. Guidance is opening the range along the LVLH radial and will not re-enter the keep-out sphere.");
+  }
+  snapshot() {
+    const g = contactGeometry(this.truth);
+    const dist = hypot3(this.truth.r);
+    const cgClosing = dist < 1e-6 ? 0 : -dot(this.truth.v, scale(this.truth.r, 1 / dist));
+    const corridor = inCorridor(g);
+    const cap = closingCap(Math.max(g.range, 0));
+    const ang = g.range > LIMITS.cylinderRange ? deg(Math.atan2(g.lateral, Math.max(g.range, 0.05))) : 0;
+    const margins = {
+      keepOut: corridor || this.phase === "hard-dock" || this.phase === "soft-capture" ? (KEEP_OUT - 0) : dist - KEEP_OUT,
+      corridor: g.range <= LIMITS.cylinderRange ? LIMITS.cylinderRadius - g.lateral : LIMITS.corridorDeg - ang,
+      closing: cap - g.closing,
+      lateral: LIMITS.soft.lateral - g.lateral,
+      align: LIMITS.soft.align - deg(g.align),
+    };
+    let level = "nominal";
+    const closingBreach = g.range < 16 && margins.closing < -0.01;
+    if (this.phase === "abort") level = "abort";
+    else if (margins.keepOut < 0 || closingBreach) level = "warning";
+    else if (margins.keepOut < 1.2 || (g.range < 16 && margins.closing < 0.015) || (g.range < 12 && margins.align < 2)) level = "caution";
+    const commandedN = THRUSTERS.reduce((s, t) => s + (this.duty[t.id] || 0) * THRUST, 0);
+    const achievedN = THRUSTERS.reduce((s, t) => s + (this.achieved[t.id] || 0), 0);
+    const finiteArr = (a) => a.map((v) => v);
+    return {
+      truth: {
+        r: finiteArr(this.truth.r), v: finiteArr(this.truth.v), q: this.truth.q.slice(), w: finiteArr(this.truth.w),
+        targetQ: this.truth.targetQ.slice(), targetW: finiteArr(this.truth.targetW), propellant: this.truth.propellant, mass: MASS,
+      },
+      estimate: {
+        r: [this.x[0], this.x[1], this.x[2]], v: [this.x[3], this.x[4], this.x[5]], q: this.qHat.slice(), w: this.wHat.slice(),
+        targetQ: this.targetQHat.slice(), targetW: this.targetWHat.slice(),
+        positionSigma: this.positionSigma(),
+        velocitySigma: Math.sqrt(Math.max(0, this.P[3][3] + this.P[4][4] + this.P[5][5])),
+        attitudeSigmaDeg: deg(Math.sqrt(Math.max(0, this.attVar))),
+        positionVariance: [this.P[0][0], this.P[1][1], this.P[2][2]],
+        covariance: this.P.map((row) => row.slice()),
+      },
+      guidance: { phase: this.phase, mode: this.mode, waypoint: (this.waypoint || [0, 0, 0]).slice(), reason: this.reason },
+      actuator: {
+        commandedN, achievedN, failedId: this.failed,
+        thrusters: THRUSTERS.map((t) => ({
+          id: t.id,
+          duty: this.duty[t.id] || 0,
+          achievedN: this.achieved[t.id] || 0,
+          failed: this.failed === t.id,
+          isolated: !!this.isolated[t.id],
+          impulseCommanded: this.impulseCmd[t.id] || 0,
+          impulseAchieved: this.impulseAch[t.id] || 0,
+        })),
+      },
+      safety: {
+        keepOutM: KEEP_OUT, inCorridor: corridor, closingLimit: cap, closingRate: g.closing, cgClosing, cgRange: dist, level,
+        margins, contact: { range: g.range, lateral: g.lateral, alignDeg: deg(g.align), closing: g.closing, rateDeg: deg(g.rate) },
+      },
+      sensor: {
+        lidar: this.lidarOn(), optical: this.opticalOn(), imu: true,
+        dropout: !this.lidarOn() || !this.opticalOn(), measurement: this.lastMeas,
+        positionSigma: this.positionSigma(), updates: this.measCount,
+      },
+      mission: {
+        time: this.time, scenario: this.scenario, seed: this.seed, phase: this.phase,
+        paused: false, timeScale: 1, docked: this.phase === "hard-dock", status: level,
+      },
+    };
+  }
+}
+
+function advanceWallClock(clock, wallDt) {
+  if (clock.paused || clock.hidden) return;
+  const dt = Math.min(0.1, Math.max(0, wallDt));
+  clock.acc += dt * clock.timeScale;
+  let n = 0;
+  while (clock.acc >= FIXED && n < 8) {
+    clock.sim.step(FIXED);
+    clock.acc -= FIXED;
+    n += 1;
+  }
+}
+function walkFinite(value, path, bad) {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) bad.push(path || "root");
+    return;
+  }
+  if (Array.isArray(value)) value.forEach((v, i) => walkFinite(v, `${path}[${i}]`, bad));
+  else if (value && typeof value === "object") Object.keys(value).forEach((k) => walkFinite(value[k], path ? `${path}.${k}` : k, bad));
+}
+
+function runSelfTest() {
+  const tests = [];
+  const check = (name, pass, detail) => tests.push({ name, pass: !!pass, detail: String(detail) });
+  {
+    const s = new Simulation();
+    s.reset(3);
+    s.step(40);
+    s.mode = "manual";
+    s.manual = { f: [1, -1, 0.5], t: [0.4, -0.2, 0.3] };
+    s.step(8);
+    const bad = [];
+    walkFinite(s.snapshot(), "", bad);
+    check("Finite propagation", bad.length === 0, bad.length ? `Non-finite at ${bad.slice(0, 4).join(", ")}` : `State stayed finite through 48 s, phase ${s.phase}.`);
+  }
+  {
+    const sim = new Simulation();
+    sim.reset(4);
+    const clock = { sim, paused: false, hidden: false, acc: 0, timeScale: 1 };
+    const t0 = sim.time;
+    advanceWallClock(clock, 0.16);
+    const t1 = sim.time;
+    const r1 = sim.truth.r.slice();
+    clock.paused = true;
+    advanceWallClock(clock, 0.16);
+    advanceWallClock(clock, 0.2);
+    const held = sim.time === t1 && sim.truth.r.every((v, i) => v === r1[i]);
+    check("Pause holds state", t1 > t0 && held, held ? `Running frame advanced t ${t0.toFixed(2)} → ${t1.toFixed(2)} s; paused frames held t and position.` : `Pause failed: t0 ${t0}, t1 ${t1}, t2 ${sim.time}.`);
+  }
+  {
+    const run = () => {
+      const s = new Simulation();
+      s.reset(99);
+      s.mode = "manual";
+      s.manual = { f: [0.6, -0.25, 0.1], t: [0, 0.3, -0.15] };
+      s.step(3);
+      return JSON.stringify(s.snapshot());
+    };
+    const a = run();
+    const b = run();
+    check("Seeded reproducibility", a === b, a === b ? "Two runs with seed 99 and the same manual wrench matched snapshot JSON." : "Snapshots diverged for an identical seed and manual input.");
+  }
+  {
+    const s = new Simulation();
+    s.reset(5);
+    s.mode = "manual";
+    s.manual = { f: [1, 1, 0], t: [0.2, 0, 0] };
+    let prev = s.truth.propellant;
+    let ok = true;
+    let min = prev;
+    for (let i = 0; i < 40; i++) {
+      s.step(0.5);
+      if (s.truth.propellant > prev + 1e-9) ok = false;
+      prev = s.truth.propellant;
+      min = Math.min(min, prev);
+    }
+    check("Propellant monotonic", ok, `Propellant moved from 9.500 kg to ${prev.toFixed(3)} kg and never increased.`);
+  }
+  {
+    const s = new Simulation();
+    s.reset(2);
+    s.failed = "+X1";
+    s.overrideDuty = { id: "+X1", duty: 1, until: 5 };
+    s.step(1);
+    const row = s.snapshot().actuator.thrusters.find((t) => t.id === "+X1");
+    const pass = row.impulseAchieved === 0 && row.impulseCommanded > 0;
+    check("Failed thruster impulse", pass, `+X1 commanded impulse ${row.impulseCommanded.toFixed(2)} N·s, achieved ${row.impulseAchieved.toFixed(3)} N·s.`);
+  }
+  {
+    const s = new Simulation();
+    s.reset(11);
+    s.step(6);
+    const u1 = s.positionSigma();
+    const updates = s.measCount;
+    s.sensorOverride.lidar = true;
+    s.sensorOverride.optical = true;
+    s.step(5);
+    const u2 = s.positionSigma();
+    const pass = u2 + 1e-9 >= u1 && s.measCount === updates && s.lastMeas === "none";
+    check("Blackout covariance", pass, `Position 1σ ${u1.toFixed(3)} → ${u2.toFixed(3)} m over 5 s with lidar and optical off. Measurement updates stayed at ${updates}.`);
+  }
+  {
+    const s = new Simulation();
+    s.reset(8);
+    s.step(0.2);
+    const r0 = hypot3(s.truth.r);
+    s.abort();
+    s.step(18);
+    const r1 = hypot3(s.truth.r);
+    const dist = hypot3(s.truth.r);
+    const closing = dist < 1e-6 ? 0 : -dot(s.truth.v, scale(s.truth.r, 1 / dist));
+    const pass = r1 > r0 + 0.8 && closing < 0 && s.phase === "abort";
+    check("Abort retreat", pass, `Range ${r0.toFixed(2)} → ${r1.toFixed(2)} m, CG closing ${closing.toFixed(3)} m/s, phase ${s.phase}.`);
+  }
+  {
+    const s = new Simulation();
+    s.reset(1);
+    s.placeContact({ range: 0.12, lateral: 1.4, alignDeg: 36, closing: 0.01, rateDeg: 2.4 });
+    const decision = dockDecision(contactGeometry(s.truth));
+    const committed = s.tryHardDock();
+    s.step(0.6);
+    const pass = decision.hard === false && committed === false && s.phase !== "hard-dock";
+    check("Docking gate rejection", pass, `Hard gate refused (${decision.reason}). Phase after the attempt: ${s.phase}.`);
+  }
+  {
+    const s = new Simulation();
+    s.reset(1);
+    s.placeContact({ range: 0.12, lateral: 0.015, alignDeg: 0.4, closing: 0.004, rateDeg: 0.05 });
+    s.step(4);
+    const pass = s.phase === "hard-dock" && s.phaseTrace.includes("soft-capture");
+    check("Soft capture to hard dock", pass, `Phase trace ${s.phaseTrace.join(" → ")}.`);
+  }
+  return { passed: tests.every((t) => t.pass), tests };
+}
+
+const clock = { sim: new Simulation(), paused: false, hidden: false, acc: 0, timeScale: 1 };
+const sim = clock.sim;
+let cameraMode = "cinematic";
+let snapCamera = false;
+const overlayOn = Object.fromEntries(OVERLAYS.map(([id]) => [id, true]));
+const keys = new Set();
+const touch = { f: [0, 0, 0], t: [0, 0, 0] };
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let lastSelf = null;
+let gfx = null;
+
+function readManual() {
+  const f = [0, 0, 0];
+  const t = [0, 0, 0];
+  const addKey = (code, vec, i, s) => { if (keys.has(code)) vec[i] += s; };
+  addKey("KeyW", f, 0, 1); addKey("ArrowUp", f, 0, 1);
+  addKey("KeyS", f, 0, -1); addKey("ArrowDown", f, 0, -1);
+  addKey("KeyD", f, 1, 1); addKey("ArrowRight", f, 1, 1);
+  addKey("KeyA", f, 1, -1); addKey("ArrowLeft", f, 1, -1);
+  addKey("KeyR", f, 2, 1); addKey("KeyF", f, 2, -1);
+  addKey("KeyI", t, 1, 1); addKey("KeyK", t, 1, -1);
+  addKey("KeyJ", t, 2, -1); addKey("KeyL", t, 2, 1);
+  addKey("KeyU", t, 0, -1); addKey("KeyO", t, 0, 1);
+  sim.manual = {
+    f: f.map((v, i) => clamp(v + touch.f[i], -1, 1)),
+    t: t.map((v, i) => clamp(v + touch.t[i], -1, 1)),
+  };
+}
+
+const TOUR = [
+  { cam: "target", on: ["lvlh", "trail", "predict"], title: "Relative orbital motion", body: "The target sits at the origin of a local-vertical local-horizontal frame. X is radial (R-bar), Y is along-track (V-bar), Z is cross-track. Translation is integrated with the Clohessy–Wiltshire equations for this circular orbit, so a pure V-bar offset is a natural hold and an R-bar offset wants continuous thrust." },
+  { cam: "cinematic", on: ["covariance", "sensors"], title: "Truth and the filter", body: "The vehicles move on the truth state. Guidance flies the estimate. Lidar measures range and the optical head measures bearing; together they update a Kalman covariance. Turn either sensor off and the ellipsoid is only allowed to grow — the filter does not invent a position fix." },
+  { cam: "target", on: ["keepout", "corridor", "alignment"], title: "Corridor and keep-out", body: "The wire sphere is the keep-out volume. Inside it, the chaser is legal only in the approach cone and the short capture cylinder on the target port axis. Crossing the sphere anywhere else forces an abort and a radial retreat." },
+  { cam: "dock", on: ["alignment", "velocity"], title: "Attitude match", body: "Hard dock needs the chaser nose anti-aligned with the target port, a small lateral miss, and a closing rate under the displayed cap. The port camera and the gate instrument are both reading that same contact geometry." },
+  { cam: "cinematic", on: ["plumes"], title: "A dead thruster", body: "Each jet has a lever arm, so force and torque are coupled. If +X1 is failed it can still be commanded, but achieved force stays zero. The residual against the IMU flags it, the allocator drops it, and the twin plus the attitude jets take the load without relaxing the keep-out rule." },
+  { cam: "dock", on: ["alignment", "corridor"], title: "Soft capture, then hard dock", body: "Inside the soft gate the port spring and damper take the load. Too much lateral miss, angle, or closing speed and the contact reflects instead of latching. Hard dock is a later transition, only after the capture has held inside the tighter gate." },
+];
+let tourStep = 0;
+
+function applyTour(i) {
+  tourStep = (i + TOUR.length) % TOUR.length;
+  const step = TOUR[tourStep];
+  cameraMode = step.cam;
+  snapCamera = false;
+  for (const [id] of OVERLAYS) overlayOn[id] = step.on.includes(id);
+  document.querySelectorAll("#overlays input").forEach((el) => { el.checked = !!overlayOn[el.dataset.overlay]; });
+  document.querySelectorAll("#cameras button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.cam === cameraMode)));
+  document.getElementById("tour-title").textContent = step.title;
+  document.getElementById("tour-body").textContent = step.body;
+  document.getElementById("tour-kicker").textContent = `Tour ${tourStep + 1} / ${TOUR.length}`;
+  document.getElementById("tour").hidden = false;
+}
+
+function fmt(n, d = 2) { return Number.isFinite(n) ? n.toFixed(d) : "—"; }
+function fmtMET(t) {
+  const sign = t < 0 ? "-" : "";
+  t = Math.abs(t);
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = t % 60;
+  return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${s.toFixed(1).padStart(4, "0")}`;
+}
+function syncScenarioButtons() {
+  document.querySelectorAll("#scenarios button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scenario === sim.scenario)));
+}
+function renderSelf(result) {
+  const host = document.getElementById("self-out");
+  if (!result) { host.textContent = "No self-test yet."; return; }
+  host.innerHTML = "";
+  const head = document.createElement("p");
+  head.className = "hint";
+  head.textContent = result.passed ? "SELF-TEST PASSED" : "SELF-TEST FAILED";
+  host.appendChild(head);
+  for (const t of result.tests) {
+    const row = document.createElement("div");
+    row.className = "test";
+    const flag = document.createElement("b");
+    flag.textContent = t.pass ? "PASS" : "FAIL";
+    const text = document.createElement("div");
+    text.innerHTML = `<strong></strong><div class="hint"></div>`;
+    text.querySelector("strong").textContent = t.name;
+    text.querySelector(".hint").textContent = t.detail;
+    row.append(flag, text);
+    host.appendChild(row);
+  }
+}
+
+const tel = document.getElementById("telemetry");
+const telFields = [
+  ["cg", "CG range", "m"], ["port", "Port range", "m"], ["close", "Closing", "m/s"], ["sigma", "Pos 1σ", "m"],
+  ["att", "Align", "deg"], ["rate", "Rate err", "deg/s"], ["prop", "Propellant", "kg"], ["thrust", "Thrust cmd/ach", "N"],
+  ["pos", "Position LVLH", "m"], ["vel", "Velocity LVLH", "m/s"], ["sens", "Sensors", ""], ["margin", "Safety margins", ""],
+];
+for (const [id, label] of telFields) {
+  const cell = document.createElement("div");
+  cell.className = "cell" + (id === "pos" || id === "vel" || id === "sens" || id === "margin" || id === "thrust" ? " wide" : "");
+  cell.innerHTML = `<span></span><strong id="tel-${id}"></strong>`;
+  cell.querySelector("span").textContent = label;
+  tel.appendChild(cell);
+}
+const strip = document.getElementById("phase-strip");
+for (const [id, label] of PHASES) {
+  const s = document.createElement("span");
+  s.dataset.phase = id;
+  s.textContent = label;
+  strip.appendChild(s);
+}
+const ov = document.getElementById("overlays");
+for (const [id, label] of OVERLAYS) {
+  const lab = document.createElement("label");
+  lab.innerHTML = `<input type="checkbox" data-overlay="${id}" checked> ${label}`;
+  ov.appendChild(lab);
+}
+const thrHost = document.getElementById("thrusters");
+for (const t of THRUSTERS) {
+  const row = document.createElement("div");
+  row.className = "thruster";
+  row.dataset.id = t.id;
+  row.innerHTML = `<span>${t.id}</span><div class="bar"><i></i><b></b></div><em>—</em>`;
+  thrHost.appendChild(row);
+}
+function makePad(host, items) {
+  for (const item of items) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = item.label;
+    b.setAttribute("aria-label", item.aria);
+    if (!item.axis) b.disabled = true;
+    else {
+      const set = (down) => {
+        b.dataset.down = String(down);
+        touch[item.group][item.axis] = down ? item.sign : (touch[item.group][item.axis] === item.sign ? 0 : touch[item.group][item.axis]);
+        if (down && sim.mode !== "manual") {
+          sim.mode = "manual";
+          sim.log("info", "Manual", "Manual command accepted. Guidance is hands-off until Auto is selected; the keep-out interlock still watches truth.");
+          document.getElementById("btn-auto").setAttribute("aria-pressed", "false");
+          document.getElementById("btn-manual").setAttribute("aria-pressed", "true");
+        }
+      };
+      b.addEventListener("pointerdown", (e) => { b.setPointerCapture(e.pointerId); set(true); });
+      b.addEventListener("pointerup", () => set(false));
+      b.addEventListener("pointercancel", () => set(false));
+    }
+    host.appendChild(b);
+  }
+}
+makePad(document.getElementById("pad-trans"), [
+  { label: "" }, { label: "W", aria: "Translate forward", group: "f", axis: 0, sign: 1 }, { label: "R", aria: "Translate up", group: "f", axis: 2, sign: 1 },
+  { label: "A", aria: "Translate left", group: "f", axis: 1, sign: -1 }, { label: "S", aria: "Translate back", group: "f", axis: 0, sign: -1 }, { label: "D", aria: "Translate right", group: "f", axis: 1, sign: 1 },
+  { label: "" }, { label: "F", aria: "Translate down", group: "f", axis: 2, sign: -1 }, { label: "" },
+]);
+makePad(document.getElementById("pad-rot"), [
+  { label: "" }, { label: "I", aria: "Pitch up", group: "t", axis: 1, sign: 1 }, { label: "" },
+  { label: "J", aria: "Yaw left", group: "t", axis: 2, sign: -1 }, { label: "K", aria: "Pitch down", group: "t", axis: 1, sign: -1 }, { label: "L", aria: "Yaw right", group: "t", axis: 2, sign: 1 },
+  { label: "U", aria: "Roll left", group: "t", axis: 0, sign: -1 }, { label: "" }, { label: "O", aria: "Roll right", group: "t", axis: 0, sign: 1 },
+]);
+
+function drawPlot(canvas, data, color) {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const w = canvas.clientWidth || 120;
+  const h = canvas.clientHeight || 80;
+  canvas.width = Math.max(1, Math.floor(w * dpr));
+  canvas.height = Math.max(1, Math.floor(h * dpr));
+  const g = canvas.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  g.strokeStyle = "rgba(231,238,245,0.08)";
+  g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+  if (!data || data.length < 2) {
+    g.fillStyle = "#93a0ae"; g.font = "11px ui-monospace, monospace"; g.fillText("waiting for samples", 8, h / 2);
+    return;
+  }
+  let min = Infinity, max = -Infinity;
+  for (const p of data) { min = Math.min(min, p.v); max = Math.max(max, p.v); }
+  if (max - min < 1e-6) { max += 0.5; min -= 0.5; }
+  const pad = (max - min) * 0.1;
+  min -= pad; max += pad;
+  g.strokeStyle = color; g.lineWidth = 1.6; g.beginPath();
+  data.forEach((p, i) => {
+    const x = 4 + (i / (data.length - 1)) * (w - 8);
+    const y = h - 14 - ((p.v - min) / (max - min)) * (h - 22);
+    if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  });
+  g.stroke();
+  g.fillStyle = "#93a0ae"; g.font = "10px ui-monospace, monospace";
+  g.fillText(max.toFixed(2), 4, 10);
+  g.fillText(min.toFixed(2), 4, h - 2);
+}
+function drawGate(snap) {
+  const canvas = document.getElementById("gate");
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const w = canvas.clientWidth || 260;
+  const h = 118;
+  canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
+  const g = canvas.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const c = contactGeometry(sim.truth);
+  const right = mulMV(c.Rt, [0, 1, 0]);
+  const up = mulMV(c.Rt, [0, 0, 1]);
+  const lx = dot(c.lateralVec, right);
+  const ly = dot(c.lateralVec, up);
+  const cx = w * 0.36, cy = h / 2;
+  const scalePx = 280;
+  g.strokeStyle = "rgba(231,238,245,0.35)"; g.lineWidth = 1;
+  g.beginPath(); g.arc(cx, cy, LIMITS.soft.lateral * scalePx, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = "#8fd9cf";
+  g.beginPath(); g.arc(cx, cy, LIMITS.hard.lateral * scalePx, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = "rgba(231,238,245,0.25)";
+  g.beginPath(); g.moveTo(cx - 70, cy); g.lineTo(cx + 70, cy); g.moveTo(cx, cy - 50); g.lineTo(cx, cy + 50); g.stroke();
+  g.fillStyle = snap.safety.level === "abort" ? "#ff5d48" : "#f0b429";
+  g.beginPath();
+  g.arc(cx + lx * scalePx, cy - ly * scalePx, 4, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#e7eef5"; g.font = "11px ui-monospace, monospace";
+  const hard = snap.phase === "hard-dock" || dockDecision(c).hard;
+  g.fillText(hard ? "HARD GATE: IN" : dockDecision(c).soft ? "SOFT GATE: IN" : "GATE: OUT", w * 0.68, 28);
+  g.fillStyle = "#93a0ae";
+  g.fillText(`align ${fmt(deg(c.align), 2)}°`, w * 0.68, 52);
+  g.fillText(`close ${fmt(c.closing, 3)}`, w * 0.68, 70);
+  document.getElementById("gate-readout").textContent = `Soft gate ≤ ${LIMITS.soft.lateral} m / ${LIMITS.soft.align}° / ${LIMITS.soft.closing} m/s. Hard gate ≤ ${LIMITS.hard.lateral} m / ${LIMITS.hard.align}° / ${LIMITS.hard.closing} m/s. Outer ring is soft lateral, inner ring is hard lateral.`;
+}
+
+function updateHUD() {
+  const snap = sim.snapshot();
+  snap.mission.paused = clock.paused;
+  snap.mission.timeScale = clock.timeScale;
+  document.getElementById("met").textContent = fmtMET(snap.mission.time);
+  const badge = document.getElementById("badge");
+  badge.dataset.level = snap.safety.level;
+  const labels = { nominal: ["NOMINAL", "Within gates"], caution: ["CAUTION", "Margin is thin"], warning: ["WARNING", "Gate exceeded"], abort: ["ABORT", "Safe retreat"] };
+  const [a, b] = labels[snap.safety.level];
+  badge.querySelector("b").textContent = a;
+  badge.querySelector("small").textContent = b;
+  document.querySelectorAll("#phase-strip span").forEach((el) => el.dataset.now = String(el.dataset.phase === snap.guidance.phase));
+  const set = (id, text) => { document.getElementById(id).textContent = text; };
+  set("tel-cg", `${fmt(snap.safety.cgRange, 2)} m`);
+  set("tel-port", `${fmt(snap.safety.contact.range, 2)} m`);
+  set("tel-close", `${fmt(snap.safety.contact.closing, 3)} m/s`);
+  set("tel-sigma", `${fmt(snap.estimate.positionSigma, 2)} m`);
+  set("tel-att", `${fmt(snap.safety.contact.alignDeg, 2)}°`);
+  set("tel-rate", `${fmt(snap.safety.contact.rateDeg, 2)}°/s`);
+  set("tel-prop", `${fmt(snap.truth.propellant, 2)} kg`);
+  set("tel-thrust", `${fmt(snap.actuator.commandedN, 1)} / ${fmt(snap.actuator.achievedN, 1)} N`);
+  set("tel-pos", snap.truth.r.map((v) => fmt(v, 2)).join("  "));
+  set("tel-vel", snap.truth.v.map((v) => fmt(v, 3)).join("  "));
+  set("tel-sens", `lidar ${snap.sensor.lidar ? "ON" : "OFF"} · optical ${snap.sensor.optical ? "ON" : "OFF"} · IMU ON · ${snap.sensor.measurement}`);
+  const m = snap.safety.margins;
+  set("tel-margin", `keep-out ${fmt(m.keepOut, 1)} m · corridor ${fmt(m.corridor, 1)} · closing ${fmt(m.closing, 3)} · lateral ${fmt(m.lateral, 2)} · align ${fmt(m.align, 1)}°`);
+  document.getElementById("v-range").textContent = fmt(sim.history.range.at(-1)?.v ?? NaN, 2);
+  document.getElementById("v-closing").textContent = fmt(sim.history.closing.at(-1)?.v ?? NaN, 3);
+  document.getElementById("v-prop").textContent = fmt(sim.history.prop.at(-1)?.v ?? NaN, 2);
+  document.getElementById("v-att").textContent = fmt(sim.history.att.at(-1)?.v ?? NaN, 1);
+  document.getElementById("v-sigma").textContent = fmt(sim.history.sigma.at(-1)?.v ?? NaN, 2);
+  drawPlot(document.getElementById("plot-range"), sim.history.range, "#8fd9cf");
+  drawPlot(document.getElementById("plot-closing"), sim.history.closing, "#f0b429");
+  drawPlot(document.getElementById("plot-prop"), sim.history.prop, "#e7eef5");
+  drawPlot(document.getElementById("plot-att"), sim.history.att, "#ffb020");
+  drawPlot(document.getElementById("plot-sigma"), sim.history.sigma, "#ff5d48");
+  drawGate(snap);
+  const log = document.getElementById("log");
+  log.innerHTML = "";
+  for (const entry of sim.logs.slice(0, 8)) {
+    const li = document.createElement("li");
+    li.dataset.level = entry.level;
+    const time = document.createElement("time");
+    time.textContent = `${fmtMET(entry.t)}  ${entry.title}`;
+    li.append(time, document.createTextNode(entry.text));
+    log.appendChild(li);
+  }
+  for (const t of THRUSTERS) {
+    const row = thrHost.querySelector(`[data-id="${t.id}"]`);
+    const duty = sim.duty[t.id] || 0;
+    const ach = (sim.achieved[t.id] || 0) / THRUST;
+    row.dataset.failed = String(sim.failed === t.id || !!sim.isolated[t.id]);
+    row.querySelector("i").style.width = `${Math.min(100, duty * 100)}%`;
+    row.querySelector("b").style.width = `${Math.min(100, ach * 100)}%`;
+    const tag = sim.isolated[t.id] ? "ISOLATED" : sim.failed === t.id ? "DEAD" : `${fmt(sim.achieved[t.id] || 0, 0)} N`;
+    row.querySelector("em").textContent = tag;
+  }
+  document.getElementById("btn-pause").setAttribute("aria-pressed", String(clock.paused));
+  document.getElementById("btn-lidar").setAttribute("aria-pressed", String(!sim.lidarOn()));
+  document.getElementById("btn-optical").setAttribute("aria-pressed", String(!sim.opticalOn()));
+  document.getElementById("btn-fail").setAttribute("aria-pressed", String(sim.failed === "+X1"));
+  document.body.dataset.phase = sim.phase;
+  document.body.dataset.camera = cameraMode;
+  document.body.dataset.paused = String(clock.paused);
+  if (gfx) gfx.updateGfx();
+}
+
+function bootGraphics() {
+  const host = document.getElementById("view");
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.75));
+  renderer.setSize(host.clientWidth, host.clientHeight, false);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.autoClear = false;
+  host.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const bg = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(42, host.clientWidth / Math.max(1, host.clientHeight), 0.15, 400);
+  const bgCamera = new THREE.PerspectiveCamera(42, camera.aspect, 0.1, 400);
+  camera.position.set(12, -22, 8);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = !reducedMotion;
+  controls.enabled = false;
+  controls.target.set(0, 0, 0);
+  const hemi = new THREE.HemisphereLight(0xc9d7ea, 0x2a2118, 0.55);
+  const sun = new THREE.DirectionalLight(0xfff1dd, 3.1);
+  sun.position.set(30, 18, 12);
+  scene.add(hemi, sun);
+  const starRng = mulberry32(20260921);
+  const starPos = new Float32Array(1800 * 3);
+  const starCol = new Float32Array(1800 * 3);
+  for (let i = 0; i < 1800; i++) {
+    const u = starRng(), v = starRng();
+    const th = 2 * Math.PI * u, ph = Math.acos(2 * v - 1);
+    const r = 90;
+    starPos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+    starPos[i * 3 + 1] = r * Math.sin(ph) * Math.sin(th);
+    starPos[i * 3 + 2] = r * Math.cos(ph);
+    const c = 0.75 + starRng() * 0.25;
+    starCol[i * 3] = c; starCol[i * 3 + 1] = c * (0.92 + starRng() * 0.08); starCol[i * 3 + 2] = c * 0.9;
+  }
+  const stars = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 1.15, sizeAttenuation: false, vertexColors: true, depthWrite: false }));
+  stars.geometry.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+  stars.geometry.setAttribute("color", new THREE.BufferAttribute(starCol, 3));
+  bg.add(stars);
+  const earthMat = new THREE.ShaderMaterial({
+    uniforms: { uSun: { value: new THREE.Vector3(1, 0.2, 0.3) }, uTime: { value: 0 } },
+    vertexShader: "varying vec3 vN; void main(){ vN = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
+    fragmentShader: `
+      varying vec3 vN; uniform vec3 uSun; uniform float uTime;
+      float hash(vec3 p){ p = fract(p*0.3183099+vec3(0.11,0.17,0.13)); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+      float noise(vec3 x){ vec3 i=floor(x); vec3 f=fract(x); f=f*f*(3.0-2.0*f); float n=mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z); return n; }
+      float fbm(vec3 p){ float a=0.5; float s=0.0; for(int i=0;i<5;i++){ s+=a*noise(p); p*=2.02; a*=0.5;} return s; }
+      void main(){
+        vec3 n = normalize(vN);
+        float land = smoothstep(0.48, 0.62, fbm(n*2.2));
+        float ice = smoothstep(0.78, 0.9, abs(n.y));
+        vec3 ocean = vec3(0.015, 0.07, 0.13);
+        vec3 ground = mix(vec3(0.05,0.13,0.07), vec3(0.18,0.16,0.1), smoothstep(0.55,0.75,fbm(n*5.0)));
+        vec3 col = mix(ocean, ground, land);
+        col = mix(col, vec3(0.72,0.76,0.8), ice*(1.0-land));
+        float cloud = smoothstep(0.52, 0.74, fbm(n*3.4 + vec3(uTime*0.012, 0.0, uTime*0.004)));
+        col = mix(col, vec3(0.82,0.86,0.9), cloud*0.8);
+        float day = clamp(dot(n, normalize(uSun))*1.25 + 0.05, 0.0, 1.0);
+        float cities = smoothstep(0.62, 0.8, fbm(n*8.0)) * (1.0-land*0.15);
+        vec3 night = vec3(0.35, 0.22, 0.08) * cities;
+        col = col*day + night*(1.0-day)*0.9;
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(24, 64, 48), earthMat);
+  earth.position.set(-38, 0, 0);
+  const atmo = new THREE.Mesh(new THREE.SphereGeometry(25.1, 48, 32), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.BackSide, blending: THREE.AdditiveBlending,
+    uniforms: { uSun: { value: earthMat.uniforms.uSun.value } },
+    vertexShader: "varying vec3 vN; varying vec3 vV; void main(){ vec4 w = modelViewMatrix * vec4(position,1.0); vV = normalize(-w.xyz); vN = normalize(mat3(modelViewMatrix)*position); gl_Position = projectionMatrix * w; }",
+    fragmentShader: "varying vec3 vN; varying vec3 vV; uniform vec3 uSun; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.4); float sun = clamp(dot(normalize(uSun), normalize(vN)), 0.0, 1.0); vec3 col = mix(vec3(0.25,0.45,0.85), vec3(0.85,0.55,0.25), pow(sun, 1.4)); gl_FragColor = vec4(col, f * 0.85); }",
+  }));
+  atmo.position.copy(earth.position);
+  bg.add(earth, atmo);
+  function mat(color, metal = 0.55, rough = 0.42, emissive = 0x000000, ei = 1) {
+    return new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough, emissive, emissiveIntensity: ei });
+  }
+  const solarCanvas = document.createElement("canvas");
+  solarCanvas.width = 128; solarCanvas.height = 256;
+  const sg = solarCanvas.getContext("2d");
+  sg.fillStyle = "#071426"; sg.fillRect(0, 0, 128, 256);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 8; x++) {
+    sg.fillStyle = (x + y) % 2 ? "#10284a" : "#0b1c36";
+    sg.fillRect(x * 16 + 1, y * 16 + 1, 14, 14);
+  }
+  const solarTex = new THREE.CanvasTexture(solarCanvas);
+  solarTex.colorSpace = THREE.SRGBColorSpace;
+  const solarMat = new THREE.MeshStandardMaterial({ map: solarTex, metalness: 0.4, roughness: 0.35, emissive: 0x071018, emissiveIntensity: 0.4 });
+  function nozzle(group, pos, dir) {
+    const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.16, 8), mat(0x22262c, 0.8, 0.35));
+    mesh.position.set(pos[0], pos[1], pos[2]);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-dir[0], -dir[1], -dir[2]));
+    mesh.quaternion.copy(q);
+    group.add(mesh);
+  }
+  function buildChaser() {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.15, 1.15), mat(0xc5ccd4, 0.72, 0.32)));
+    const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 0.7, 20), mat(0xb9a27a, 0.6, 0.4));
+    nose.rotation.z = Math.PI / 2; nose.position.x = 1.05; g.add(nose);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 12, 28), mat(0xd7c07a, 0.7, 0.28));
+    ring.rotation.y = Math.PI / 2; ring.position.x = 1.48; g.add(ring);
+    const probe = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.28, 10), mat(0xdedede, 0.8, 0.25));
+    probe.rotation.z = Math.PI / 2; probe.position.x = 1.62; g.add(probe);
+    for (const s of [-1, 1]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.4, 0.9), solarMat);
+      wing.position.set(0.1, 0, s * 1.55); g.add(wing);
+    }
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(0.38, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xd5d8de, 0.75, 0.25));
+    dish.position.set(-0.2, 0, 0.95); g.add(dish);
+    const lidar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.35, 12), mat(0x8fd9cf, 0.4, 0.35, 0x06332e, 0.4));
+    lidar.position.set(0.95, 0.28, 0.42); g.add(lidar);
+    const cam = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.18, 12), mat(0x111111, 0.5, 0.3, 0x224488, 0.3));
+    cam.rotation.z = Math.PI / 2; cam.position.set(1.15, -0.22, 0.35); g.add(cam);
+    for (const t of THRUSTERS) nozzle(g, t.pos, t.dir);
+    const lights = [{ c: 0xff3344, p: [0, 0, 0.62] }, { c: 0x33ff88, p: [0, 0, -0.62] }, { c: 0xffffff, p: [-0.9, 0, 0.2] }];
+    for (const L of lights) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), mat(0x111111, 0, 1, L.c, 2));
+      m.position.set(L.p[0], L.p[1], L.p[2]); m.userData.nav = L.c; g.add(m);
+    }
+    return g;
+  }
+  function buildTarget() {
+    const g = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 3.1, 28), mat(0xc8c1b4, 0.35, 0.62));
+    hull.rotation.z = Math.PI / 2; g.add(hull);
+    const aft = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.3, 1.3), mat(0x8d877c, 0.45, 0.55));
+    aft.position.x = -1.7; g.add(aft);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.05, 12, 32), mat(0xe0c36a, 0.7, 0.3));
+    ring.rotation.y = Math.PI / 2; ring.position.x = 2.28; g.add(ring);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.45, 20), mat(0xb7b1a6, 0.4, 0.5));
+    collar.rotation.z = Math.PI / 2; collar.position.x = 1.9; g.add(collar);
+    const good = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.8, 1.05), solarMat);
+    good.position.set(-0.2, 0, 1.7); g.add(good);
+    const bent = new THREE.Group();
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.2, 0.9), solarMat);
+    panel.position.y = 1.0; bent.add(panel);
+    bent.position.set(-0.4, 0, -1.45); bent.rotation.x = 0.55; bent.rotation.y = 0.2; g.add(bent);
+    for (let i = 0; i < 4; i++) {
+      const truss = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.04), mat(0x9aa3ad, 0.7, 0.35));
+      truss.position.set(-0.2, (i - 1.5) * 0.18, 1.15); g.add(truss);
+    }
+    const scorch = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.08), mat(0x2a2724, 0.2, 0.85));
+    scorch.position.set(0.4, 0.7, 0.86); g.add(scorch);
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), mat(0x111111, 0, 1, 0xff8800, 2));
+    beacon.position.set(-1.7, 0.7, 0); beacon.userData.beacon = true; g.add(beacon);
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 16), mat(0xdedede, 0.6, 0.35));
+    dish.position.set(-1.2, 0, 1.05); g.add(dish);
+    return g;
+  }
+  const chaser = buildChaser();
+  const target = buildTarget();
+  scene.add(chaser, target);
+  const plumes = THRUSTERS.map((t) => {
+    const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.85, 8), new THREE.MeshBasicMaterial({ color: 0xffc48a, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+    mesh.visible = false; scene.add(mesh); return mesh;
+  });
+  function line(color) {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(600), 3));
+    const obj = new THREE.Line(geom, new THREE.LineBasicMaterial({ color }));
+    scene.add(obj); return obj;
+  }
+  const trail = line(0x8fd9cf);
+  const predict = line(0xf0b429);
+  const axes = new THREE.Group();
+  const axisCols = [0xff5d48, 0x7dffb3, 0x7eb6ff];
+  for (let i = 0; i < 3; i++) {
+    const dir = new THREE.Vector3(i === 0 ? 1 : 0, i === 1 ? 1 : 0, i === 2 ? 1 : 0);
+    axes.add(new THREE.ArrowHelper(dir, new THREE.Vector3(), 8, axisCols[i], 0.6, 0.35));
+  }
+  scene.add(axes);
+  const keep = new THREE.Mesh(new THREE.SphereGeometry(KEEP_OUT, 18, 12), new THREE.MeshBasicMaterial({ color: 0xff5d48, wireframe: true, transparent: true, opacity: 0.16, depthWrite: false }));
+  scene.add(keep);
+  const cov = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), new THREE.MeshBasicMaterial({ color: 0x8fd9cf, wireframe: true, transparent: true, opacity: 0.7 }));
+  scene.add(cov);
+  const vel = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 1, 0xf0b429, 0.35, 0.22);
+  scene.add(vel);
+  const sensorRay = new THREE.Line(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3)), new THREE.LineBasicMaterial({ color: 0x8fd9cf }));
+  scene.add(sensorRay);
+  const corridor = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xf0b429 }));
+  corridor.geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 80), 3));
+  scene.add(corridor);
+  const alignRingT = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.012, 8, 32), new THREE.MeshBasicMaterial({ color: 0xe0c36a }));
+  const alignRingC = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.01, 8, 28), new THREE.MeshBasicMaterial({ color: 0x8fd9cf }));
+  scene.add(alignRingT, alignRingC);
+  const ruler = new THREE.Group();
+  const rulerLine = new THREE.Mesh(new THREE.BoxGeometry(0.03, 10, 0.03), mat(0xf0b429, 0.2, 0.5, 0xf0b429, 0.3));
+  rulerLine.position.set(8, -15, 0); ruler.add(rulerLine);
+  for (let i = 0; i <= 10; i++) {
+    const tick = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.03, 0.03), mat(0xf0b429, 0.2, 0.4));
+    tick.position.set(8, -20 + i, 0); ruler.add(tick);
+  }
+  scene.add(ruler);
+  const tmpV = new THREE.Vector3();
+  const tmpQ = new THREE.Quaternion();
+  const desiredPos = new THREE.Vector3();
+  const desiredQuat = new THREE.Quaternion();
+  const lookM = new THREE.Matrix4();
+  function poseLook(pos, targetPos, up) {
+    lookM.lookAt(pos, targetPos, up);
+    desiredQuat.setFromRotationMatrix(lookM);
+    desiredPos.copy(pos);
+  }
+  function resize() {
+    const w = host.clientWidth, h = Math.max(1, host.clientHeight);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    bgCamera.aspect = camera.aspect; bgCamera.fov = camera.fov; bgCamera.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.75));
+    renderer.setSize(w, h, false);
+  }
+  addEventListener("resize", resize);
+  renderer.domElement.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    const b = document.getElementById("gl-banner");
+    b.hidden = false;
+    b.textContent = "WebGL context lost. The simulation keeps integrating; graphics return if the browser restores the context.";
+  });
+  renderer.domElement.addEventListener("webglcontextrestored", () => { document.getElementById("gl-banner").hidden = true; resize(); });
+  function updateGfx() {
+    const phi = N * sim.time;
+    const beta = 0.5;
+    const sunDir = new THREE.Vector3(Math.cos(phi), Math.sin(phi) * Math.cos(beta), Math.sin(phi) * Math.sin(beta)).normalize();
+    earthMat.uniforms.uSun.value.copy(sunDir);
+    earthMat.uniforms.uTime.value = sim.time;
+    const eclipse = THREE.MathUtils.smoothstep(sunDir.x, 0.15, -0.45);
+    sun.intensity = 3.15 * (1 - 0.88 * eclipse);
+    sun.position.copy(sunDir).multiplyScalar(40);
+    earth.rotation.y = N * sim.time;
+    chaser.position.set(sim.truth.r[0], sim.truth.r[1], sim.truth.r[2]);
+    chaser.quaternion.set(sim.truth.q[1], sim.truth.q[2], sim.truth.q[3], sim.truth.q[0]);
+    target.quaternion.set(sim.truth.targetQ[1], sim.truth.targetQ[2], sim.truth.targetQ[3], sim.truth.targetQ[0]);
+    const blink = reducedMotion ? 1 : (Math.sin(sim.time * 3) > 0 ? 1 : 0.15);
+    chaser.traverse((o) => { if (o.userData && o.userData.nav) o.material.emissiveIntensity = blink * 2; });
+    target.traverse((o) => { if (o.userData && o.userData.beacon) o.material.emissiveIntensity = reducedMotion ? 1.5 : 0.4 + 1.4 * (0.5 + 0.5 * Math.sin(sim.time * 2.2)); });
+    THRUSTERS.forEach((t, i) => {
+      const ach = sim.achieved[t.id] || 0;
+      const show = overlayOn.plumes && ach > 0.8;
+      plumes[i].visible = show;
+      if (!show) return;
+      const exhaust = tmpV.set(-t.dir[0], -t.dir[1], -t.dir[2]).normalize();
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), exhaust);
+      const local = new THREE.Vector3(t.pos[0], t.pos[1], t.pos[2]).applyQuaternion(chaser.quaternion).add(chaser.position);
+      plumes[i].position.copy(local).addScaledVector(exhaust, 0.42);
+      plumes[i].quaternion.copy(chaser.quaternion).multiply(q);
+      plumes[i].scale.setScalar(0.6 + ach / THRUST);
+    });
+    axes.visible = overlayOn.lvlh;
+    keep.visible = overlayOn.keepout;
+    cov.visible = overlayOn.covariance;
+    const sig = [Math.sqrt(Math.max(1e-6, sim.P[0][0])), Math.sqrt(Math.max(1e-6, sim.P[1][1])), Math.sqrt(Math.max(1e-6, sim.P[2][2]))];
+    cov.scale.set(3 * sig[0], 3 * sig[1], 3 * sig[2]);
+    cov.position.set(sim.x[0], sim.x[1], sim.x[2]);
+    vel.visible = overlayOn.velocity;
+    const speed = hypot3(sim.truth.v);
+    if (speed > 1e-4) {
+      vel.position.set(sim.truth.r[0], sim.truth.r[1], sim.truth.r[2]);
+      vel.setDirection(tmpV.set(sim.truth.v[0], sim.truth.v[1], sim.truth.v[2]).normalize());
+      vel.setLength(clamp(speed * 8, 0.4, 12), 0.35, 0.2);
+    }
+    trail.visible = overlayOn.trail;
+    const trailPts = sim.trail;
+    const arr = trail.geometry.attributes.position.array;
+    const nT = Math.min(trailPts.length, 200);
+    for (let i = 0; i < nT; i++) {
+      const p = trailPts[trailPts.length - nT + i];
+      arr[i * 3] = p[0]; arr[i * 3 + 1] = p[1]; arr[i * 3 + 2] = p[2];
+    }
+    trail.geometry.setDrawRange(0, nT);
+    trail.geometry.attributes.position.needsUpdate = true;
+    predict.visible = overlayOn.predict;
+    const parr = predict.geometry.attributes.position.array;
+    const pred = sim.prediction;
+    for (let i = 0; i < pred.length; i++) {
+      parr[i * 3] = pred[i][0]; parr[i * 3 + 1] = pred[i][1]; parr[i * 3 + 2] = pred[i][2];
+    }
+    predict.geometry.setDrawRange(0, pred.length);
+    predict.geometry.attributes.position.needsUpdate = true;
+    const gnow = sim.geo || contactGeometry(sim.truth);
+    corridor.visible = overlayOn.corridor;
+    const cpos = corridor.geometry.attributes.position.array;
+    const origin = gnow.tgtPort, axis = gnow.axis;
+    const side = normalize(Math.abs(axis[0]) < 0.9 ? cross(axis, [1, 0, 0]) : cross(axis, [0, 1, 0]));
+    const up = cross(axis, side);
+    let wri = 0;
+    const rings = [0.2, 8, 16, 24];
+    for (const dist of rings) {
+      const rad = dist <= LIMITS.cylinderRange ? LIMITS.cylinderRadius : Math.tan(LIMITS.corridorDeg * Math.PI / 180) * dist;
+      const segs = 10;
+      for (let k = 0; k < segs; k++) {
+        const a0 = (k / segs) * Math.PI * 2, a1 = ((k + 1) / segs) * Math.PI * 2;
+        const p0 = add(add(origin, scale(axis, dist)), add(scale(side, Math.cos(a0) * rad), scale(up, Math.sin(a0) * rad)));
+        const p1 = add(add(origin, scale(axis, dist)), add(scale(side, Math.cos(a1) * rad), scale(up, Math.sin(a1) * rad)));
+        cpos[wri++] = p0[0]; cpos[wri++] = p0[1]; cpos[wri++] = p0[2];
+        cpos[wri++] = p1[0]; cpos[wri++] = p1[1]; cpos[wri++] = p1[2];
+      }
+    }
+    corridor.geometry.setDrawRange(0, wri / 3);
+    corridor.geometry.attributes.position.needsUpdate = true;
+    sensorRay.visible = overlayOn.sensors && (sim.lidarOn() || sim.opticalOn());
+    chaser.updateMatrixWorld(true);
+    const rayOrigin = chaser.localToWorld(new THREE.Vector3(0.95, 0.28, 0.42));
+    const rayAttr = sensorRay.geometry.attributes.position;
+    rayAttr.setXYZ(0, rayOrigin.x, rayOrigin.y, rayOrigin.z);
+    rayAttr.setXYZ(1, 0, 0, 0);
+    rayAttr.needsUpdate = true;
+    alignRingT.visible = alignRingC.visible = overlayOn.alignment;
+    alignRingT.position.set(gnow.tgtPort[0], gnow.tgtPort[1], gnow.tgtPort[2]);
+    tmpQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tmpV.set(gnow.axis[0], gnow.axis[1], gnow.axis[2]).normalize());
+    alignRingT.quaternion.copy(tmpQ);
+    alignRingC.position.set(gnow.chaserPort[0], gnow.chaserPort[1], gnow.chaserPort[2]);
+    const cx = mulMV(quatToMat(sim.truth.q), [1, 0, 0]);
+    tmpQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tmpV.set(cx[0], cx[1], cx[2]).normalize());
+    alignRingC.quaternion.copy(tmpQ);
+    const upW = new THREE.Vector3(1, 0.15, 0.2).normalize();
+    const focus = new THREE.Vector3(sim.truth.r[0] * 0.45, sim.truth.r[1] * 0.45, sim.truth.r[2] * 0.45);
+    if (cameraMode === "cinematic") {
+      const dist = hypot3(sim.truth.r);
+      const pull = clamp(8 + Math.min(dist, 50) * 0.05, 8, 14);
+      const back = new THREE.Vector3(0.42, -0.78, 0.34).normalize().multiplyScalar(pull);
+      const eye = new THREE.Vector3(sim.truth.r[0], sim.truth.r[1], sim.truth.r[2]).add(back);
+      const aim = new THREE.Vector3(sim.truth.r[0] * 0.78, sim.truth.r[1] * 0.78, sim.truth.r[2] * 0.78);
+      poseLook(eye, aim, upW);
+    } else if (cameraMode === "target") {
+      poseLook(new THREE.Vector3(14, -22, 10), new THREE.Vector3(0, 0, 0), upW);
+    } else if (cameraMode === "dock") {
+      const p = add(gnow.tgtPort, scale(gnow.axis, 7));
+      poseLook(new THREE.Vector3(p[0], p[1], p[2] + 1.2), new THREE.Vector3(gnow.tgtPort[0], gnow.tgtPort[1], gnow.tgtPort[2]), upW);
+    } else if (cameraMode === "cockpit") {
+      const eye = add(sim.truth.r, mulMV(quatToMat(sim.truth.q), [1.25, 0, 0.12]));
+      const look = add(eye, mulMV(quatToMat(sim.truth.q), [8, 0, 0]));
+      poseLook(new THREE.Vector3(eye[0], eye[1], eye[2]), new THREE.Vector3(look[0], look[1], look[2]), new THREE.Vector3(...mulMV(quatToMat(sim.truth.q), [0, 0, 1])));
+    } else {
+      desiredPos.set(16, -26, 12);
+      poseLook(desiredPos.clone(), new THREE.Vector3(0, 0, 0), upW);
+    }
+    const freeLive = cameraMode === "free" && controls.enabled && !snapCamera;
+    if (!freeLive) {
+      if (snapCamera || reducedMotion) {
+        camera.position.copy(desiredPos);
+        camera.quaternion.copy(desiredQuat);
+        snapCamera = false;
+        if (cameraMode === "free") {
+          controls.target.set(0, 0, 0);
+          controls.enabled = true;
+          controls.update();
+        }
+      } else {
+        const k = 1 - Math.exp(-4.5 * 0.016);
+        camera.position.lerp(desiredPos, k);
+        camera.quaternion.slerp(desiredQuat, k);
+        if (cameraMode === "free" && camera.position.distanceTo(desiredPos) < 0.4) {
+          controls.target.set(0, 0, 0);
+          controls.enabled = true;
+        }
+      }
+    } else controls.update();
+    if (cameraMode !== "free") controls.enabled = false;
+    bgCamera.quaternion.copy(camera.quaternion);
+    bgCamera.position.set(0, 0, 0);
+    renderer.clear();
+    renderer.render(bg, bgCamera);
+    renderer.clearDepth();
+    renderer.render(scene, camera);
+  }
+  resize();
+  return { resize, updateGfx, resetView() {
+    snapCamera = true;
+    controls.enabled = false;
+    if (cameraMode === "free") {
+      camera.position.set(16, -26, 12);
+      controls.target.set(0, 0, 0);
+      controls.update();
+      snapCamera = false;
+      controls.enabled = true;
+    }
+  } };
+}
+
+window.__JANUS__ = {
+  reset(seed) {
+    const s = seed === undefined || seed === null ? sim.seed : (Number(seed) | 0);
+    sim.reset(s);
+    clock.acc = 0;
+    const input = document.getElementById("seed");
+    if (input) input.value = String(sim.seed);
+    syncScenarioButtons();
+  },
+  setScenario(name) {
+    if (!SCENARIOS[name]) return false;
+    sim.scenario = name;
+    sim.reset(sim.seed);
+    clock.acc = 0;
+    syncScenarioButtons();
+    return true;
+  },
+  step(seconds) { readManual(); sim.step(seconds); },
+  snapshot() {
+    const snap = sim.snapshot();
+    snap.mission.paused = clock.paused;
+    snap.mission.timeScale = clock.timeScale;
+    return snap;
+  },
+  runSelfTest() {
+    lastSelf = runSelfTest();
+    renderSelf(lastSelf);
+    const drawer = document.getElementById("drawer");
+    if (drawer) drawer.hidden = false;
+    return lastSelf;
+  },
+};
+
+function bind() {
+  document.getElementById("boot").hidden = true;
+  document.getElementById("btn-play").onclick = () => { clock.paused = false; };
+  document.getElementById("btn-pause").onclick = () => { clock.paused = true; };
+  document.getElementById("btn-step").onclick = () => { window.__JANUS__.step(0.25); };
+  document.getElementById("btn-reset").onclick = () => { window.__JANUS__.reset(Number(document.getElementById("seed").value)); };
+  document.getElementById("btn-abort").onclick = () => sim.abort();
+  document.getElementById("btn-auto").onclick = () => {
+    sim.mode = "auto";
+    sim.log("info", "Auto", "Automatic guidance resumed from the current phase using the navigation estimate.");
+    document.getElementById("btn-auto").setAttribute("aria-pressed", "true");
+    document.getElementById("btn-manual").setAttribute("aria-pressed", "false");
+  };
+  document.getElementById("btn-manual").onclick = () => {
+    sim.mode = "manual";
+    sim.log("info", "Manual", "Manual mode. Body-frame translation and rotation commands go to the same allocator. The keep-out interlock still uses truth.");
+    document.getElementById("btn-auto").setAttribute("aria-pressed", "false");
+    document.getElementById("btn-manual").setAttribute("aria-pressed", "true");
+  };
+  document.getElementById("scales").addEventListener("change", (e) => {
+    if (e.target.name === "scale") clock.timeScale = Number(e.target.value);
+  });
+  document.getElementById("scenarios").addEventListener("click", (e) => {
+    const name = e.target?.dataset?.scenario;
+    if (name) window.__JANUS__.setScenario(name);
+  });
+  document.getElementById("cameras").addEventListener("click", (e) => {
+    const cam = e.target?.dataset?.cam;
+    if (!cam) return;
+    cameraMode = cam;
+    snapCamera = false;
+    document.body.dataset.camera = cam;
+    document.querySelectorAll("#cameras button").forEach((b) => { if (b.dataset.cam) b.setAttribute("aria-pressed", String(b.dataset.cam === cam)); });
+  });
+  document.getElementById("btn-reset-view").onclick = () => gfx && gfx.resetView();
+  document.getElementById("overlays").addEventListener("change", (e) => {
+    const id = e.target?.dataset?.overlay;
+    if (id) overlayOn[id] = e.target.checked;
+  });
+  document.getElementById("btn-tumble").onclick = () => {
+    sim.truth.targetW = add(sim.truth.targetW, [0.01, -0.004, 0.018]);
+    sim.log("caution", "Tumble", `Operator injected target rate. ω is now ${sim.truth.targetW.map((v) => fmt(deg(v), 2)).join(", ")} °/s.`);
+  };
+  document.getElementById("btn-tumble-clear").onclick = () => {
+    sim.truth.targetW = sim.baselineTargetW.slice();
+    sim.log("info", "Tumble", "Target angular rate restored to the scenario baseline.");
+  };
+  document.getElementById("btn-lidar").onclick = () => {
+    const drop = sim.lidarOn();
+    sim.sensorOverride.lidar = drop ? true : false;
+    sim.log(drop ? "warning" : "info", "Lidar", drop ? "Operator forced a lidar dropout. Range updates stop; bearing can still constrain the cross-axis if optical is up." : "Operator restored lidar. Range measurements re-enter the filter.");
+  };
+  document.getElementById("btn-optical").onclick = () => {
+    const drop = sim.opticalOn();
+    sim.sensorOverride.optical = drop ? true : false;
+    sim.log(drop ? "warning" : "info", "Optical", drop ? "Operator forced an optical dropout. Bearing and relative attitude updates stop." : "Operator restored the optical head.");
+  };
+  document.getElementById("btn-fail").onclick = () => {
+    sim.failed = "+X1";
+    delete sim.isolated["+X1"];
+    sim.suspect["+X1"] = 0;
+    sim.log("warning", "Fault", "Operator failed +X1. Commanded force from that jet will produce no impulse until fault detection isolates it.");
+  };
+  document.getElementById("btn-fail-clear").onclick = () => {
+    sim.failed = null;
+    sim.isolated = {};
+    sim.log("info", "Fault", "Thruster fault cleared. All jets are back in the allocation set.");
+  };
+  document.getElementById("btn-tour").onclick = () => applyTour(0);
+  document.getElementById("tour-next").onclick = () => applyTour(tourStep + 1);
+  document.getElementById("tour-prev").onclick = () => applyTour(tourStep - 1);
+  document.getElementById("tour-replay").onclick = () => applyTour(0);
+  document.getElementById("tour-close").onclick = () => { document.getElementById("tour").hidden = true; };
+  document.getElementById("btn-diag").onclick = () => {
+    const d = document.getElementById("drawer");
+    d.hidden = !d.hidden;
+    document.getElementById("btn-diag").setAttribute("aria-expanded", String(!d.hidden));
+  };
+  document.getElementById("btn-self").onclick = () => window.__JANUS__.runSelfTest();
+  document.getElementById("btn-panels").onclick = () => {
+    document.body.classList.toggle("panels-off");
+    const on = !document.body.classList.contains("panels-off");
+    document.getElementById("btn-panels").setAttribute("aria-pressed", String(on));
+  };
+  addEventListener("keydown", (e) => {
+    const tag = e.target && e.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (e.repeat && e.code === "Space") return;
+    if (e.code === "Space" && e.target && e.target.closest && e.target.closest("button")) return;
+    if (e.code === "Space") { clock.paused = !clock.paused; e.preventDefault(); }
+    else if (e.key === "1") cameraMode = "cinematic";
+    else if (e.key === "2") cameraMode = "target";
+    else if (e.key === "3") cameraMode = "dock";
+    else if (e.key === "4") cameraMode = "cockpit";
+    else if (e.key === "5") cameraMode = "free";
+    else if (e.key === "x" || e.key === "X") sim.abort();
+    else if (e.key === "m" || e.key === "M") document.getElementById(sim.mode === "auto" ? "btn-manual" : "btn-auto").click();
+    else if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
+    if (e.key >= "1" && e.key <= "5") {
+      document.querySelectorAll("#cameras button").forEach((b) => { if (b.dataset.cam) b.setAttribute("aria-pressed", String(b.dataset.cam === cameraMode)); });
+    }
+    keys.add(e.code);
+  });
+  addEventListener("keyup", (e) => keys.delete(e.code));
+  addEventListener("visibilitychange", () => { clock.hidden = document.hidden; last = performance.now(); });
+  renderSelf(null);
+  syncScenarioButtons();
+}
+
+let last = performance.now();
+function frame(now) {
+  const wall = Math.min(0.1, Math.max(0, (now - last) / 1000));
+  last = now;
+  clock.hidden = document.hidden;
+  readManual();
+  advanceWallClock(clock, wall);
+  updateHUD();
+  requestAnimationFrame(frame);
+}
+
+try {
+  gfx = bootGraphics();
+  bind();
+  requestAnimationFrame(frame);
+} catch (err) {
+  document.getElementById("boot").hidden = true;
+  const b = document.getElementById("gl-banner");
+  b.hidden = false;
+  b.textContent = "Graphics failed to start. Telemetry, guidance, and window.__JANUS__ still run. " + (err && err.message ? err.message : "");
+  try { bind(); } catch (e) { /* UI already bound */ }
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>

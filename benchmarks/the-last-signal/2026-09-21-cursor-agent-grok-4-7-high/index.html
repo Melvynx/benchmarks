@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Grok 4.7</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --salt: #e6dccb;
+    --copper: #e08a55;
+    --ink: #08090d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--ink);
+    overflow: hidden;
+    touch-action: none;
+  }
+  body {
+    font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    z-index: 0;
+    touch-action: none;
+    cursor: default;
+  }
+  body.tuning canvas { cursor: crosshair; }
+  h1 {
+    position: fixed;
+    z-index: 3;
+    top: 16px;
+    left: 20px;
+    margin: 0;
+    font: 500 15px/1 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    letter-spacing: 0.18em;
+    color: rgba(230, 220, 203, 0.78);
+    pointer-events: none;
+  }
+  #line, #hint, #message {
+    position: fixed;
+    z-index: 3;
+    margin: 0;
+    pointer-events: none;
+    text-align: center;
+  }
+  #line {
+    left: 28px;
+    top: 36%;
+    width: min(16rem, 28vw);
+    color: rgba(230, 220, 203, 0.9);
+    text-align: left;
+    font: italic 400 clamp(16px, 2.1vw, 22px)/1.45 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  }
+  #hint {
+    left: 50%;
+    bottom: max(58px, 8vh);
+    transform: translateX(-50%);
+    width: min(34rem, 90vw);
+    color: rgba(224, 138, 85, 0.72);
+    font: 500 11px/1.4 "Iowan Old Style", Palatino, Georgia, serif;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  #message {
+    color: #f3e6d6;
+    font: 500 clamp(15px, 2.6vw, 30px)/1.25 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    letter-spacing: 0.16em;
+    text-shadow: 0 0 18px rgba(224, 138, 85, 0.35);
+    transform: translate(-50%, -50%);
+  }
+  #choices {
+    position: fixed;
+    z-index: 4;
+    left: 50%;
+    bottom: max(36px, 5.5vh);
+    transform: translateX(-50%);
+    display: none;
+    gap: 14px;
+    width: min(560px, 92vw);
+  }
+  #choices:not([hidden]) { display: flex; }
+  #hint[hidden], #message[hidden] { display: none !important; }
+  button {
+    font: 500 12px/1 "Iowan Old Style", Palatino, Georgia, serif;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--salt);
+    background: rgba(8, 9, 13, 0.28);
+    border: 1px solid rgba(224, 138, 85, 0.65);
+    cursor: pointer;
+  }
+  #choices button {
+    flex: 1;
+    padding: 15px 12px;
+  }
+  #choices button:hover,
+  #choices button:focus-visible {
+    background: rgba(224, 138, 85, 0.16);
+  }
+  #replay {
+    position: fixed;
+    z-index: 4;
+    top: 14px;
+    right: 18px;
+    padding: 8px 2px;
+    border: 0;
+    background: transparent;
+    color: rgba(230, 220, 203, 0.48);
+    letter-spacing: 0.22em;
+  }
+  body.done #replay { color: rgba(230, 220, 203, 0.86); }
+  #replay:hover, #replay:focus-visible { color: var(--salt); }
+  :focus-visible {
+    outline: 1px solid rgba(224, 138, 85, 0.95);
+    outline-offset: 3px;
+  }
+  #progress {
+    position: fixed;
+    z-index: 5;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: rgba(230, 220, 203, 0.08);
+    pointer-events: none;
+  }
+  #progress i {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--copper);
+  }
+  @media (max-width: 720px) {
+    h1 { font-size: 13px; letter-spacing: 0.14em; top: 12px; left: 12px; }
+    #line {
+      left: 50%;
+      top: auto;
+      bottom: max(124px, 18vh);
+      width: min(36rem, 90vw);
+      text-align: center;
+      transform: translateX(-50%);
+      font-size: 16px;
+    }
+    #hint { bottom: max(86px, 12vh); letter-spacing: 0.12em; }
+    #choices { bottom: max(28px, 4vh); gap: 8px; }
+    #choices button { padding: 13px 6px; letter-spacing: 0.12em; font-size: 11px; }
+    #message { letter-spacing: 0.08em; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #message, #line, #hint { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <h1>Grok 4.7</h1>
+  <canvas id="stage" aria-hidden="true"></canvas>
+  <p id="line" aria-live="polite"></p>
+  <p id="hint" hidden>Drag each arc onto the ring · 1 2 3 · arrows</p>
+  <p id="message" hidden>WE REMEMBER YOUR SKY.</p>
+  <div id="choices" hidden>
+    <button type="button" id="btn-silent">Stay silent</button>
+    <button type="button" id="btn-answer">Answer</button>
+  </div>
+  <button type="button" id="replay">Replay</button>
+  <div id="progress" aria-hidden="true"><i id="bar"></i></div>
+<script>
+(function () {
+  "use strict";
+
+  var STEP = 20;
+  var TOL = 0.04;
+  var ANGV = 2.15;
+  var DUR = {
+    ACT1: 26000,
+    GLOW: 15000,
+    REVEAL: 8000,
+    A3_SHOW: 4800,
+    A3_AUTO: 7600,
+    ENDING: 22000,
+    AUTO: [[1600, 6200], [6800, 11800], [12400, 18600]]
+  };
+  var BASE = [-2.35, -0.2, 1.9];
+  var BOOT = { seed: 217, autoplay: true, ending: "answer", applied: false };
+
+  var canvas = document.getElementById("stage");
+  var ctx = canvas.getContext("2d", { alpha: false });
+  var lineEl = document.getElementById("line");
+  var hintEl = document.getElementById("hint");
+  var messageEl = document.getElementById("message");
+  var choicesEl = document.getElementById("choices");
+  var btnAnswer = document.getElementById("btn-answer");
+  var btnSilent = document.getElementById("btn-silent");
+  var replayEl = document.getElementById("replay");
+  var barEl = document.getElementById("bar");
+  var motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  var cssW = 1;
+  var cssH = 1;
+  var dpr = 1;
+  var state = null;
+  var world = null;
+  var grain = null;
+  var lastCam = { z: 1, x: 0, y: 0 };
+  var lastLayout = null;
+  var drag = -1;
+  var choiceArmed = false;
+  var testing = false;
+  var lastTick = 0;
+  var acc = 0;
+  var shownLine = "\0";
+  var shownHint = null;
+  var shownMsg = null;
+  var shownChoices = null;
+
+  function mulberry32(a) {
+    a >>>= 0;
+    return function () {
+      a |= 0;
+      a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function ease(u) {
+    u = clamp(u, 0, 1);
+    return u * u * (3 - 2 * u);
+  }
+  function wrapAngle(a) {
+    var t = Math.PI * 2;
+    a = (a + Math.PI) % t;
+    if (a < 0) a += t;
+    return a - Math.PI;
+  }
+  function reduced() { return !!(motionQuery && motionQuery.matches); }
+
+  function derive(seed) {
+    var rng = mulberry32(seed >>> 0);
+    var targets = [];
+    var initial = [];
+    var i;
+    for (i = 0; i < 3; i++) {
+      var target = 0.32 + rng() * 0.36;
+      var init = target;
+      var k;
+      for (k = 0; k < 8; k++) {
+        var dist = 0.28 + rng() * 0.2;
+        init = clamp(target + (rng() < 0.5 ? -dist : dist), 0.06, 0.94);
+        if (Math.abs(init - target) >= 0.22) break;
+      }
+      if (Math.abs(init - target) < 0.22) init = clamp(target + 0.34, 0.06, 0.94);
+      targets.push(target);
+      initial.push(init);
+    }
+    var lines = [];
+    for (i = 0; i < 56; i++) {
+      lines.push({
+        y: rng(),
+        speed: 0.02 + rng() * 0.12,
+        len: 0.05 + rng() * 0.26,
+        alpha: 0.045 + rng() * 0.16,
+        thick: rng() < 0.82 ? 1 : 1.6,
+        ph: rng() * Math.PI * 2,
+        shear: (rng() - 0.5) * 18,
+        x0: rng()
+      });
+    }
+    var dust = [];
+    for (i = 0; i < 20; i++) dust.push({ x: rng(), y: rng(), r: 0.4 + rng() * 1.4, a: 0.15 + rng() * 0.45 });
+    var aperture = [];
+    for (i = 0; i < 10; i++) aperture.push(0.78 + rng() * 0.36);
+    var stains = [];
+    for (i = 0; i < 4; i++) stains.push({ x: rng(), y: rng() * 0.8, rx: 18 + rng() * 50, ry: 10 + rng() * 28 });
+    return {
+      seed: seed,
+      targets: targets,
+      initial: initial,
+      lines: lines,
+      dust: dust,
+      aperture: aperture,
+      stains: stains,
+      ringPhase: rng() * Math.PI * 2,
+      hz: [0.0011 + rng() * 0.0004, 0.0009 + rng() * 0.0005, 0.0013 + rng() * 0.0004],
+      ph: [rng() * 6.28, rng() * 6.28, rng() * 6.28],
+      amp: [0.028 + rng() * 0.012, 0.024 + rng() * 0.014, 0.03 + rng() * 0.012],
+      boltSeed: (seed ^ 0x9e3779b9) >>> 0
+    };
+  }
+
+  function buildGrain(seed) {
+    var c = document.createElement("canvas");
+    c.width = 128;
+    c.height = 128;
+    var g = c.getContext("2d");
+    var rng = mulberry32((seed ^ 0x51ed) >>> 0);
+    var img = g.createImageData(128, 128);
+    var n = img.data.length;
+    var p;
+    for (p = 0; p < n; p += 4) {
+      var v = (rng() * 255) | 0;
+      img.data[p] = v;
+      img.data[p + 1] = v;
+      img.data[p + 2] = v;
+      img.data[p + 3] = (rng() * 46) | 0;
+    }
+    g.putImageData(img, 0, 0);
+    grain = ctx.createPattern(c, "repeat");
+  }
+
+  function displayValue(i) {
+    if (state.locked[i] || state.resolved || state.autoplay) return state.frag[i];
+    var wob = Math.sin(state.worldT * world.hz[i] + world.ph[i]) * world.amp[i];
+    return clamp(state.frag[i] + wob, 0, 1);
+  }
+
+  function coherence() {
+    if (state.resolved || state.act === "act3") return 1;
+    if (state.act === "ending") return state.choice === "answer" ? 1 : clamp(1 - state.t / 14000, 0, 1);
+    var s = 0;
+    var i;
+    for (i = 0; i < 3; i++) {
+      var d = Math.abs(displayValue(i) - world.targets[i]);
+      s += 1 - Math.min(1, d / 0.34);
+    }
+    return s / 3;
+  }
+
+  function glowAmt() {
+    if (state.act === "act1") return ease(clamp((state.t - DUR.GLOW) / 4200, 0, 1));
+    if (state.act === "act2") return 0.45 + coherence() * 0.55;
+    if (state.act === "act3") return 0.92;
+    if (state.choice === "silent") return 1 - ease(clamp(state.t / 12000, 0, 1));
+    return 1;
+  }
+
+  function splitAmount() {
+    if (state.act === "act1") return ease(clamp((state.t - (DUR.ACT1 - 3600)) / 3600, 0, 1));
+    return 1;
+  }
+
+  function ringPlacement(L) {
+    var win = {
+      x: L.window.x + L.window.w * 0.5,
+      y: L.window.y + L.window.h * 0.46
+    };
+    var dial = { x: L.jar.x, y: L.jar.y - L.unit * 0.11 };
+    var small = Math.max(18, L.unit * 0.045);
+    var big = Math.min(L.window.w, L.window.h) * (L.narrow ? 0.34 : 0.33);
+    var u;
+    if (state.act === "act1") {
+      u = splitAmount();
+      return {
+        x: dial.x + (win.x - dial.x) * u,
+        y: dial.y + (win.y - dial.y) * u,
+        r: small + (big - small) * u
+      };
+    }
+    if (state.act === "ending" && state.choice === "answer") {
+      u = ease(clamp((state.t - 1600) / 12000, 0, 1));
+      return {
+        x: win.x + L.window.w * 0.04 * u,
+        y: win.y + L.window.h * 0.02 - L.window.h * 0.1 * u,
+        r: big * (1 + u * 0.28)
+      };
+    }
+    if (state.act === "ending" && state.choice === "silent") {
+      u = ease(clamp(state.t / 14000, 0, 1));
+      return {
+        x: win.x + (dial.x - win.x) * u,
+        y: win.y + (dial.y - win.y) * u,
+        r: big + (small - big) * u
+      };
+    }
+    return { x: win.x, y: win.y, r: big };
+  }
+
+  function arcOffset(i) {
+    var dv;
+    if (state.act === "act1") dv = (world.initial[i] - world.targets[i]) * splitAmount();
+    else if (state.resolved && state.act === "act2") {
+      var u = 1 - ease(clamp((state.t - state.resolveTime) / 700, 0, 1));
+      dv = (displayValue(i) - world.targets[i]) * u;
+    } else dv = displayValue(i) - world.targets[i];
+    return dv * ANGV;
+  }
+
+  function pose() {
+    if (state.act === "ending" && state.choice === "answer") return "reach";
+    if (state.act === "ending" && state.choice === "silent") return "down";
+    if (state.act === "act3" && state.t >= DUR.A3_SHOW) return "wait";
+    return "keep";
+  }
+
+  function choiceAvailable() {
+    return state.act === "act3" && state.t >= DUR.A3_SHOW && !state.choice;
+  }
+
+  function messageOn() {
+    if (!state.resolved) return false;
+    if (state.act === "ending" && state.choice === "silent" && state.t > 15000) return false;
+    if (state.act === "ending" && state.choice === "answer" && state.t > 14000) return false;
+    return true;
+  }
+
+  function caption() {
+    var t = state.t;
+    if (state.act === "act1") {
+      if (t < 4200) return "";
+      if (t < 9800) return "A keeper. An abandoned station.";
+      if (t < DUR.GLOW) return "Thirty years of weather. Thirty years of quiet.";
+      return "At 02:17, the dead receiver began to glow.";
+    }
+    if (state.act === "act2") {
+      if (!state.resolved && t > 900 && t < 4200) return "The signal arrived in three fragments.";
+      return "";
+    }
+    if (state.act === "act3") {
+      if (t < DUR.A3_SHOW) return "The channel stayed open.";
+      return "Only the choice.";
+    }
+    if (state.act === "ending" && state.choice === "answer") {
+      if (t < 6400) return "A reply went into the storm.";
+      if (t < 14000) return "Something in the weather answered.";
+      return "The sky kept a seam.";
+    }
+    if (state.act === "ending" && state.choice === "silent") {
+      if (t < 6400) return "The hand stayed down.";
+      if (t < 14000) return "The ring sank back into the glass.";
+      return "The room kept its weather.";
+    }
+    return "";
+  }
+
+  function progress() {
+    var a2 = 18600 + DUR.REVEAL;
+    var total = DUR.ACT1 + a2 + DUR.A3_AUTO + DUR.ENDING;
+    var done = 0;
+    if (state.completed) return 1;
+    if (state.act === "act1") done = state.t;
+    else if (state.act === "act2") done = DUR.ACT1 + Math.min(state.t, a2);
+    else if (state.act === "act3") done = DUR.ACT1 + a2 + Math.min(state.t, DUR.A3_AUTO);
+    else done = DUR.ACT1 + a2 + DUR.A3_AUTO + Math.min(state.t, DUR.ENDING);
+    return clamp(done / total, 0, 1);
+  }
+
+  function layout() {
+    var w = cssW;
+    var h = cssH;
+    var narrow = w < 760;
+    var win = narrow
+      ? { x: w * 0.05, y: h * 0.09, w: w * 0.9, h: h * 0.44 }
+      : { x: w * 0.37, y: h * 0.07, w: w * 0.52, h: Math.min(h * 0.7, w * 0.46) };
+    var floorY = narrow ? h * 0.79 : Math.min(h * 0.86, win.y + win.h + h * 0.1);
+    if (win.y + win.h > floorY - 8) win.h = Math.max(80, floorY - win.y - 18);
+    var unit = Math.min(w, h);
+    var jar = narrow
+      ? { x: w * 0.66, y: h * 0.71 }
+      : { x: win.x + Math.min(190, win.w * 0.26), y: floorY - unit * 0.012 };
+    var op = narrow
+      ? { x: w * 0.3, y: h * 0.73 }
+      : { x: win.x - unit * 0.055, y: floorY - unit * 0.004 };
+    return {
+      w: w,
+      h: h,
+      narrow: narrow,
+      window: win,
+      floorY: floorY,
+      unit: unit,
+      jar: jar,
+      op: op,
+      roofY: Math.max(0, win.y - (narrow ? 8 : 26)),
+      lamp: { x: (op.x + jar.x) * 0.5, y: floorY - unit * 0.015 }
+    };
+  }
+
+  function camera() {
+    if (reduced()) return { z: 1, x: 0, y: 0 };
+    var z = 1;
+    var x = 0;
+    var y = 0;
+    var u;
+    if (state.act === "act1") {
+      u = ease(clamp(state.t / 20000, 0, 1));
+      z = 1 + u * 0.045;
+      y = -u * 8;
+    } else if (state.act === "act2") {
+      z = 1.045;
+      y = -8;
+    } else if (state.act === "act3") {
+      z = 1.05;
+      y = -10;
+    } else if (state.choice === "answer") {
+      u = ease(clamp(state.t / 14000, 0, 1));
+      z = 1.04 + u * 0.035;
+      y = -8 - u * 8;
+    } else {
+      u = ease(clamp(state.t / 16000, 0, 1));
+      z = 1.05 - u * 0.06;
+      y = -10 + u * 18;
+    }
+    var bolt = boltStrength(state.worldT);
+    if (bolt > 0) x += Math.sin(state.worldT * 0.4) * bolt * 4;
+    return { z: z, x: x, y: y };
+  }
+
+  function boltStrength(time) {
+    var span = 9000;
+    var slot = Math.floor(time / span);
+    var rng = mulberry32((world.boltSeed + slot * 9973) >>> 0);
+    if (rng() > 0.72) return 0;
+    var at = rng() * span;
+    var local = time - slot * span;
+    var d = Math.abs(local - at);
+    if (d > 220) return 0;
+    return Math.pow(1 - d / 220, 2);
+  }
+
+  function enter(act, over) {
+    if (!isFinite(over) || over < 0) over = 0;
+    state.actStartWorld = state.worldT - over;
+    state.act = act;
+    state.t = over;
+    state.history.push(act);
+  }
+
+  function allAligned() {
+    var i;
+    for (i = 0; i < 3; i++) {
+      if (Math.abs(state.frag[i] - world.targets[i]) > TOL) return false;
+    }
+    return true;
+  }
+
+  function alignFragment(index, value) {
+    index = Math.trunc(Number(index));
+    if (index < 0 || index > 2) return false;
+    if (!state || state.act !== "act2" || state.resolved) return false;
+    var v = Number(value);
+    if (!isFinite(v)) return false;
+    v = clamp(v, 0, 1);
+    state.frag[index] = v;
+    state.locked[index] = true;
+    if (allAligned()) {
+      state.resolved = true;
+      state.resolveTime = state.t;
+      var i;
+      for (i = 0; i < 3; i++) {
+        state.frag[i] = world.targets[i];
+        state.locked[i] = true;
+      }
+    }
+    return true;
+  }
+
+  function applyAutoAlign() {
+    if (!state.autoplay || state.manual || state.act !== "act2" || state.resolved) return;
+    var i;
+    for (i = 0; i < 3; i++) {
+      var win = DUR.AUTO[i];
+      if (state.t >= win[1]) alignFragment(i, world.targets[i]);
+      else if (state.t >= win[0]) {
+        var u = ease((state.t - win[0]) / (win[1] - win[0]));
+        alignFragment(i, world.initial[i] + (world.targets[i] - world.initial[i]) * u);
+      }
+      if (state.resolved) return;
+    }
+  }
+
+  function choose(ending) {
+    if (ending !== "answer" && ending !== "silent") return false;
+    if (!state || state.act !== "act3" || state.choice) return false;
+    if (state.t < DUR.A3_SHOW) return false;
+    state.choice = ending;
+    enter("ending", 0);
+    return true;
+  }
+
+  function step(dt) {
+    if (state.completed) return;
+    state.t += dt;
+    state.worldT = state.actStartWorld + state.t;
+    if (state.act === "act1") {
+      if (state.t >= DUR.ACT1) enter("act2", state.t - DUR.ACT1);
+    } else if (state.act === "act2") {
+      if (!state.resolved) applyAutoAlign();
+      if (state.resolved && state.t >= state.resolveTime + DUR.REVEAL) {
+        enter("act3", state.t - (state.resolveTime + DUR.REVEAL));
+      }
+    } else if (state.act === "act3") {
+      if (!state.choice && state.autoplay && !state.manual && state.t >= DUR.A3_AUTO) choose(state.autoEnding);
+    } else if (state.act === "ending") {
+      if (state.t >= DUR.ENDING) {
+        state.t = DUR.ENDING;
+        state.worldT = state.actStartWorld + state.t;
+        state.completed = true;
+      }
+    }
+  }
+
+  function snapshot() {
+    return {
+      seed: state.seed,
+      act: state.act,
+      actTime: state.t,
+      worldTime: state.worldT,
+      fragmentState: {
+        values: [state.frag[0], state.frag[1], state.frag[2]],
+        targets: [world.targets[0], world.targets[1], world.targets[2]],
+        aligned: [
+          Math.abs(state.frag[0] - world.targets[0]) <= TOL,
+          Math.abs(state.frag[1] - world.targets[1]) <= TOL,
+          Math.abs(state.frag[2] - world.targets[2]) <= TOL
+        ],
+        resolved: state.resolved
+      },
+      choiceAvailable: choiceAvailable(),
+      selectedEnding: state.choice,
+      completionState: state.completed,
+      autoplay: { enabled: state.autoplay, ending: state.autoEnding }
+    };
+  }
+
+  function reset(seed) {
+    var n = Math.trunc(Number(seed));
+    if (!isFinite(n)) n = BOOT.seed;
+    var ap = state ? state.autoplay : true;
+    var ae = state ? state.autoEnding : "answer";
+    world = derive(n);
+    state = {
+      seed: n,
+      act: "act1",
+      t: 0,
+      worldT: 0,
+      actStartWorld: 0,
+      frag: world.initial.slice(),
+      locked: [false, false, false],
+      resolved: false,
+      resolveTime: 0,
+      choice: null,
+      completed: false,
+      manual: false,
+      autoplay: ap,
+      autoEnding: ae,
+      history: ["act1"],
+      selectedFrag: 0
+    };
+    choiceArmed = false;
+    drag = -1;
+    buildGrain(n);
+    sync();
+    return snapshot();
+  }
+
+  function setAutoplay(enabled, ending) {
+    state.autoplay = !!enabled;
+    if (ending === "answer" || ending === "silent") state.autoEnding = ending;
+    if (state.autoplay) state.manual = false;
+    return { enabled: state.autoplay, ending: state.autoEnding };
+  }
+
+  function seek(ms) {
+    ms = Number(ms);
+    if (!isFinite(ms) || ms < 0) ms = 0;
+    if (state.act === "act1") state.t = Math.min(ms, DUR.ACT1 - STEP);
+    else if (state.act === "act2") {
+      if (state.resolved) state.t = clamp(ms, state.resolveTime, state.resolveTime + DUR.REVEAL - STEP);
+      else state.t = ms;
+    } else if (state.act === "ending") state.t = Math.min(ms, DUR.ENDING - STEP);
+    else state.t = ms;
+    state.worldT = state.actStartWorld + state.t;
+    if (state.act === "act2" && !state.resolved && state.autoplay && !state.manual) applyAutoAlign();
+    sync();
+    return state.t;
+  }
+
+  function takeOver() {
+    state.manual = true;
+    state.autoplay = false;
+  }
+
+  function runSelfTest() {
+    testing = true;
+    var tests = [];
+    function Tst(name, passed, detail) {
+      var row = { name: name, passed: !!passed };
+      if (detail != null && detail !== "") row.detail = String(detail);
+      tests.push(row);
+    }
+    function adv(ms) {
+      var n = Math.round(ms / STEP);
+      while (n-- > 0) step(STEP);
+    }
+    function reachAct2() {
+      var n = 0;
+      while (state.act === "act1" && n++ < 8000) step(STEP);
+    }
+    try {
+      reset(917);
+      setAutoplay(false);
+      adv(5000);
+      var a = JSON.stringify(snapshot());
+      reset(917);
+      setAutoplay(false);
+      adv(5000);
+      Tst("deterministic reset", a === JSON.stringify(snapshot()));
+
+      reset(917);
+      setAutoplay(false);
+      adv(6000);
+      var b = JSON.stringify(snapshot());
+      reset(917);
+      setAutoplay(false);
+      seek(6000);
+      Tst("seek deterministic", b === JSON.stringify(snapshot()));
+
+      reset(917);
+      setAutoplay(false);
+      var gated = state.frag[0];
+      var rejected = alignFragment(0, world.targets[0]) === false;
+      Tst("fragment gating", rejected && state.frag[0] === gated && state.act === "act1" && !state.resolved);
+
+      reset(917);
+      setAutoplay(false);
+      seek(DUR.GLOW + 800);
+      Tst("required line", caption() === "At 02:17, the dead receiver began to glow.");
+
+      reset(917);
+      setAutoplay(false);
+      reachAct2();
+      var in2 = state.act === "act2";
+      var blocked = choose("answer") === false;
+      adv(24000);
+      var held = state.act === "act2" && !state.resolved && !messageOn();
+      alignFragment(0, world.targets[0]);
+      var partial = state.act === "act2" && !state.resolved;
+      alignFragment(1, world.targets[1]);
+      alignFragment(2, world.targets[2]);
+      Tst("fragments resolve", in2 && blocked && held && partial && state.resolved && messageOn());
+
+      reset(917);
+      setAutoplay(false);
+      reachAct2();
+      alignFragment(0, world.targets[0]);
+      alignFragment(1, world.targets[1]);
+      alignFragment(2, world.targets[2]);
+      adv(DUR.REVEAL + 80);
+      var early = state.act === "act3" && choose("silent") === false;
+      adv(DUR.A3_SHOW + 40);
+      var okSilent = choose("silent") === true;
+      var guard = 0;
+      while (!state.completed && guard++ < 8000) step(STEP);
+      Tst("silent ending", early && okSilent && state.completed && state.choice === "silent" && state.act === "ending");
+
+      reset(917);
+      setAutoplay(false);
+      reachAct2();
+      alignFragment(0, world.targets[0]);
+      alignFragment(1, world.targets[1]);
+      alignFragment(2, world.targets[2]);
+      adv(DUR.REVEAL + DUR.A3_SHOW + 80);
+      var okAnswer = choose("answer") === true;
+      guard = 0;
+      while (!state.completed && guard++ < 8000) step(STEP);
+      Tst("answer ending", okAnswer && state.completed && state.choice === "answer" && state.history.join(">") === "act1>act2>act3>ending");
+
+      reset(917);
+      setAutoplay(true, "answer");
+      guard = 0;
+      while (!state.completed && guard++ < 20000) step(STEP);
+      Tst("ordered act progression", state.history.join(">") === "act1>act2>act3>ending", state.history.join(">"));
+      Tst("autoplay", state.completed && state.choice === "answer" && state.resolved);
+
+      reset(917);
+      setAutoplay(true, "silent");
+      guard = 0;
+      while (!state.completed && guard++ < 20000) step(STEP);
+      Tst("autoplay silent ending", state.completed && state.choice === "silent");
+
+      reset(404);
+      setAutoplay(true, "answer");
+      adv(8000);
+      reset(404);
+      Tst("replay", state.act === "act1" && state.t === 0 && state.worldT === 0 && !state.completed && state.choice === null && !state.resolved);
+
+      Tst("automatic startup configuration", BOOT.seed === 217 && BOOT.autoplay === true && BOOT.ending === "answer" && BOOT.applied === true);
+
+      reset(217);
+      setAutoplay(true, "answer");
+      var nums = [];
+      (function walk(v) {
+        if (typeof v === "number") nums.push(v);
+        else if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v === "object") Object.keys(v).forEach(function (k) { walk(v[k]); });
+      })(snapshot());
+      Tst("finite numeric state", nums.length > 8 && nums.every(function (n) { return typeof n === "number" && isFinite(n); }));
+    } catch (err) {
+      Tst("self-test execution", false, err && err.message ? err.message : err);
+    }
+    testing = false;
+    reset(217);
+    setAutoplay(true, "answer");
+    lastTick = 0;
+    acc = 0;
+    sync();
+    return { passed: tests.every(function (t) { return t.passed; }), tests: tests };
+  }
+
+  function screenToWorld(px, py) {
+    var c = lastCam;
+    return {
+      x: (px - cssW / 2) / c.z + cssW / 2 - c.x,
+      y: (py - cssH / 2) / c.z + cssH / 2 - c.y
+    };
+  }
+
+  function pickArc(x, y) {
+    if (!lastLayout || state.act !== "act2" || state.resolved) return -1;
+    var ring = ringPlacement(lastLayout);
+    var ang = Math.atan2((y - ring.y) / 0.96, x - ring.x);
+    var rad = Math.hypot(x - ring.x, (y - ring.y) / 0.96);
+    if (Math.abs(rad - ring.r) > Math.max(34, ring.r * 0.28)) return -1;
+    var best = -1;
+    var bestD = 0.7;
+    var i;
+    for (i = 0; i < 3; i++) {
+      var mid = BASE[i] + arcOffset(i);
+      var d = Math.abs(wrapAngle(ang - mid));
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  function applyAngle(i, x, y) {
+    if (!lastLayout) return;
+    var ring = ringPlacement(lastLayout);
+    var ang = Math.atan2((y - ring.y) / 0.96, x - ring.x);
+    var delta = wrapAngle(ang - BASE[i]);
+    alignFragment(i, world.targets[i] + delta / ANGV);
+  }
+
+  function resize() {
+    var rect = canvas.getBoundingClientRect();
+    var w = Math.max(1, rect.width || window.innerWidth || 1);
+    var h = Math.max(1, rect.height || window.innerHeight || 1);
+    var d = Math.min(2, window.devicePixelRatio || 1);
+    if (w === cssW && h === cssH && d === dpr && canvas.width) return;
+    cssW = w;
+    cssH = h;
+    dpr = d;
+    canvas.width = Math.max(1, Math.floor(w * d));
+    canvas.height = Math.max(1, Math.floor(h * d));
+  }
+
+  function sync() {
+    if (!state) return;
+    resize();
+    var cap = caption();
+    if (cap !== shownLine) {
+      lineEl.textContent = cap;
+      shownLine = cap;
+    }
+    var hint = state.act === "act2" && !state.resolved;
+    if (hint !== shownHint) {
+      hintEl.hidden = !hint;
+      shownHint = hint;
+    }
+    var msg = messageOn();
+    if (msg !== shownMsg) {
+      messageEl.hidden = !msg;
+      shownMsg = msg;
+    }
+    render();
+    if (msg && lastLayout) {
+      var ring = ringPlacement(lastLayout);
+      var anchor = worldToScreen(ring.x, ring.y - Math.min(48, ring.r * 0.28));
+      messageEl.style.left = anchor.x + "px";
+      messageEl.style.top = anchor.y + "px";
+      var fade = 1;
+      if (state.act === "ending" && state.choice === "silent") fade = clamp(1 - (state.t - 9000) / 6000, 0.15, 1);
+      if (state.act === "ending" && state.choice === "answer") fade = clamp(1 - (state.t - 8000) / 6000, 0.2, 1);
+      messageEl.style.opacity = String(fade);
+    }
+    var canChoose = choiceAvailable();
+    if (canChoose !== shownChoices) {
+      choicesEl.hidden = !canChoose;
+      shownChoices = canChoose;
+    }
+    if (canChoose && !state.autoplay && !choiceArmed) {
+      btnAnswer.focus();
+      choiceArmed = true;
+    }
+    if (!canChoose) choiceArmed = false;
+    barEl.style.width = (progress() * 100) + "%";
+    document.body.classList.toggle("tuning", state.act === "act2" && !state.resolved);
+    document.body.classList.toggle("done", !!state.completed);
+    document.body.classList.toggle("choosing", canChoose);
+  }
+
+  function worldToScreen(x, y) {
+    var c = lastCam;
+    return {
+      x: (x - cssW / 2 + c.x) * c.z + cssW / 2,
+      y: (y - cssH / 2 + c.y) * c.z + cssH / 2
+    };
+  }
+
+  function drawStorm(L, coh) {
+    var w = L.w;
+    var h = L.h;
+    var i;
+    for (i = 0; i < 8; i++) {
+      ctx.fillStyle = i % 2 ? "#10141c" : "#0c1016";
+      ctx.fillRect(0, (h * i) / 8, w, h / 8 + 1);
+    }
+    var speedK = 0.18 + (1 - coh) * 0.95;
+    ctx.lineCap = "round";
+    for (i = 0; i < world.lines.length; i++) {
+      var ln = world.lines[i];
+      var travel = ((state.worldT / 1000) * ln.speed * speedK + ln.x0) % 1;
+      var x = (-ln.len + travel * (1 + ln.len)) * w;
+      var y = (ln.y * h + Math.sin(state.worldT * 0.00025 + ln.ph) * (10 * (1 - coh * 0.85))) % h;
+      if (y < 0) y += h;
+      ctx.globalAlpha = ln.alpha * (0.45 + 0.55 * (1 - coh * 0.65));
+      ctx.strokeStyle = i % 5 === 0 ? "#d9d0c2" : "#9aa4b0";
+      ctx.lineWidth = ln.thick;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + ln.len * w, y + ln.shear * (0.25 + (1 - coh)));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    var bolt = reduced() ? 0 : boltStrength(state.worldT);
+    if (bolt > 0) {
+      ctx.fillStyle = "rgba(232, 236, 240, " + (bolt * 0.18) + ")";
+      ctx.fillRect(0, 0, w, h);
+      drawBolt(L, bolt);
+    }
+  }
+
+  function drawBolt(L, bolt) {
+    var slot = Math.floor(state.worldT / 9000);
+    var rng = mulberry32((world.boltSeed + slot * 9973 + 17) >>> 0);
+    var W = L.window;
+    var x = W.x + rng() * W.w;
+    var y = L.roofY;
+    ctx.strokeStyle = "rgba(236, 240, 244, " + (0.35 + bolt * 0.5) + ")";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    var s;
+    for (s = 0; s < 6; s++) {
+      x += (rng() - 0.5) * 36;
+      y += W.h * 0.12;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  function drawShell(L) {
+    var W = L.window;
+    ctx.fillStyle = "#141820";
+    ctx.fillRect(0, L.roofY, L.w, Math.max(0, W.y - L.roofY));
+    ctx.fillRect(0, W.y, Math.max(0, W.x), Math.max(0, L.floorY - W.y));
+    ctx.fillRect(W.x + W.w, W.y, Math.max(0, L.w - (W.x + W.w)), Math.max(0, L.floorY - W.y));
+    ctx.fillRect(W.x, W.y + W.h, W.w, Math.max(0, L.floorY - (W.y + W.h)));
+    var s;
+    ctx.fillStyle = "rgba(255,255,255,0.018)";
+    for (s = 0; s < world.stains.length; s++) {
+      var st = world.stains[s];
+      ctx.beginPath();
+      ctx.ellipse(st.x * L.w * 0.34, L.roofY + 20 + st.y * (L.floorY - L.roofY), st.rx, st.ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#100e0c";
+    ctx.fillRect(0, L.roofY - 7, L.w, 9);
+    ctx.fillStyle = "#1a140f";
+    ctx.fillRect(0, L.floorY, L.w, L.h - L.floorY);
+    ctx.strokeStyle = "rgba(0,0,0,0.4)";
+    ctx.lineWidth = 1.5;
+    var y;
+    for (y = L.floorY + 16; y < L.h; y += 20) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(L.w, y + 1.5);
+      ctx.stroke();
+    }
+  }
+
+  function drawWindow(L, coh) {
+    var W = L.window;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(W.x, W.y, W.w, W.h);
+    ctx.clip();
+    ctx.fillStyle = "rgba(150, 168, 176, 0.045)";
+    ctx.fillRect(W.x, W.y, W.w, W.h);
+    var y0 = W.y + W.h * 0.62;
+    ctx.strokeStyle = "rgba(228, 220, 203, 0.28)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(W.x, y0);
+    ctx.lineTo(W.x + W.w * 0.32, y0 + 7);
+    ctx.lineTo(W.x + W.w * 0.68, y0 - 3);
+    ctx.lineTo(W.x + W.w, y0 + 5);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(228, 220, 203, 0.16)";
+    var i;
+    for (i = 0; i < 10; i++) {
+      var yy = W.y + ((i * 97 + state.worldT * (0.004 + (1 - coh) * 0.01)) % W.h);
+      ctx.beginPath();
+      ctx.moveTo(W.x + 8, yy);
+      ctx.lineTo(W.x + W.w - 8, yy + 2);
+      ctx.stroke();
+    }
+    if (state.act === "ending" && state.choice === "answer" && state.t > 9000) {
+      drawAperture(L, ease(clamp((state.t - 9000) / 5000, 0, 1)));
+    }
+    ctx.restore();
+    ctx.strokeStyle = "#2c241e";
+    ctx.lineWidth = L.narrow ? 8 : 12;
+    ctx.strokeRect(W.x, W.y, W.w, W.h);
+    ctx.lineWidth = L.narrow ? 3 : 4;
+    ctx.beginPath();
+    ctx.moveTo(W.x + W.w / 2, W.y);
+    ctx.lineTo(W.x + W.w / 2, W.y + W.h);
+    ctx.moveTo(W.x, W.y + W.h / 2);
+    ctx.lineTo(W.x + W.w, W.y + W.h / 2);
+    ctx.stroke();
+    var g = glowAmt();
+    if (g > 0.02) {
+      ctx.globalAlpha = g;
+      ctx.fillStyle = "#e6dccb";
+      ctx.font = "500 " + (L.narrow ? 12 : 14) + "px Georgia, serif";
+      ctx.fillText("02:17", W.x + 14, W.y + 24);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawAperture(L, u) {
+    var ring = ringPlacement(L);
+    var r = Math.min(L.window.w, L.window.h) * 0.22 * (0.4 + u);
+    ctx.save();
+    ctx.translate(ring.x, ring.y + 10);
+    ctx.beginPath();
+    var i;
+    for (i = 0; i < world.aperture.length; i++) {
+      var a = (i / world.aperture.length) * Math.PI * 2;
+      var rr = r * world.aperture[i];
+      var x = Math.cos(a) * rr;
+      var y = Math.sin(a) * rr * 0.72;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(142, 164, 138, " + (0.92 * u) + ")";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(48, 58, 46, 0.8)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-r, r * 0.08);
+    ctx.lineTo(r, r * 0.02);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawMast(L, g) {
+    var W = L.window;
+    var x = Math.min(W.x + W.w * 0.78, L.w - 120);
+    var foot = L.roofY;
+    var top = foot - Math.min(42, L.h * 0.05);
+    if (top < 52) return;
+    ctx.strokeStyle = "#1a1614";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, foot);
+    ctx.lineTo(x + 6, top);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(224, 138, 85, " + (0.15 + g * 0.75) + ")";
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    ctx.moveTo(x + 6, top);
+    if (state.act === "ending" && state.choice === "answer") {
+      var u = ease(clamp((state.t - 1200) / 8000, 0, 1));
+      ctx.lineTo(x + 6 + 10 * (1 - u), (top + foot) * 0.5 + 20 * (1 - u));
+    } else {
+      ctx.quadraticCurveTo(x + 40, (top + foot) * 0.55, x - 10, foot + 8);
+    }
+    ctx.stroke();
+  }
+
+  function drawOperator(x, y, s, mode) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.fillStyle = "#07080c";
+    ctx.strokeStyle = "#07080c";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.fillRect(-36, -6, 48, 8);
+    ctx.fillRect(-32, -6, 5, 26);
+    ctx.fillRect(6, -6, 5, 26);
+    ctx.beginPath();
+    ctx.moveTo(-16, -118);
+    ctx.quadraticCurveTo(-46, -78, -34, -8);
+    ctx.lineTo(24, -6);
+    ctx.quadraticCurveTo(30, -64, 12, -118);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-2, -142, 17, 20, 0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-6, -154, 16, 9, -0.3, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    if (mode === "reach") {
+      ctx.moveTo(8, -90);
+      ctx.quadraticCurveTo(64, -120, 102, -138);
+    } else if (mode === "down") {
+      ctx.moveTo(4, -78);
+      ctx.quadraticCurveTo(18, -30, 6, 4);
+    } else if (mode === "wait") {
+      ctx.moveTo(6, -86);
+      ctx.quadraticCurveTo(62, -70, 96, -92);
+    } else {
+      ctx.moveTo(4, -84);
+      ctx.quadraticCurveTo(46, -48, 58, -28);
+    }
+    ctx.stroke();
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(12, -142, 7, -0.5, 1.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(16, -136);
+    ctx.quadraticCurveTo(30, -118, 8, -108);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255, 186, 112, 0.9)";
+    ctx.fillRect(7, -144, 5, 1.6);
+    ctx.restore();
+  }
+
+  function drawReceiver(x, y, s, g, mode) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(0, 8, 78, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#3a2c22";
+    ctx.fillRect(-78, -16, 156, 24);
+    ctx.fillStyle = "#2a2018";
+    ctx.fillRect(-78, -16, 156, 6);
+    ctx.fillStyle = "#1a1f27";
+    ctx.fillRect(-64, -86, 128, 72);
+    ctx.strokeStyle = g > 0.04 ? "rgba(224, 138, 85, " + (0.35 + g * 0.65) + ")" : "#3a2e28";
+    ctx.lineWidth = 1.7;
+    var i;
+    for (i = 0; i < 9; i++) {
+      ctx.beginPath();
+      ctx.ellipse(-6, -78 + i * 7, 18, 4.2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (g > 0) {
+      var glow = ctx.createRadialGradient(-6, -50, 2, -6, -48, 36);
+      glow.addColorStop(0, "rgba(255, 206, 160, " + (0.35 * g) + ")");
+      glow.addColorStop(1, "rgba(255, 206, 160, 0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(-6, -50, 36, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = "rgba(214, 224, 220, " + (0.25 + g * 0.45) + ")";
+    ctx.strokeRect(30, -78, 16, 52);
+    ctx.beginPath();
+    ctx.moveTo(34, -74);
+    ctx.lineTo(42, -30);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(230, 215, 196, 0.7)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(-36, -52, 15, Math.PI, 0);
+    ctx.stroke();
+    var ang = Math.PI + g * Math.PI * 0.82;
+    ctx.beginPath();
+    ctx.moveTo(-36, -52);
+    ctx.lineTo(-36 + Math.cos(ang) * 13, -52 + Math.sin(ang) * 13);
+    ctx.stroke();
+    var press = mode === "reach" ? 5 : 0;
+    ctx.strokeStyle = "#8a6248";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(48, -22);
+    ctx.lineTo(78, -22);
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(62, -22);
+    ctx.lineTo(70, -34 + press);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawLamp(x, y, amt) {
+    ctx.save();
+    ctx.translate(x, y);
+    var glow = ctx.createRadialGradient(0, -24, 4, 0, -8, 120);
+    glow.addColorStop(0, "rgba(255, 176, 90, " + (0.22 * amt) + ")");
+    glow.addColorStop(1, "rgba(255, 176, 90, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, -10, 120, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#2a241c";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -48);
+    ctx.stroke();
+    ctx.fillStyle = "#4a3b2c";
+    ctx.beginPath();
+    ctx.moveTo(-18, -50);
+    ctx.lineTo(18, -50);
+    ctx.lineTo(11, -30);
+    ctx.lineTo(-11, -30);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255, 196, 120, " + (0.35 + amt * 0.5) + ")";
+    ctx.fillRect(-8, -34, 16, 3);
+    ctx.restore();
+  }
+
+  function ringPoint(cx, cy, r, a) {
+    var wob = Math.sin(a * 3 + world.ringPhase) * r * 0.018 + Math.sin(a * 7 + 1.7) * r * 0.008;
+    return [cx + Math.cos(a) * (r + wob), cy + Math.sin(a) * (r + wob) * 0.96];
+  }
+
+  function traceRing(cx, cy, r, a0, a1) {
+    var steps = 28;
+    var s;
+    ctx.beginPath();
+    for (s = 0; s <= steps; s++) {
+      var a = a0 + (a1 - a0) * (s / steps);
+      var p = ringPoint(cx, cy, r, a);
+      if (s === 0) ctx.moveTo(p[0], p[1]);
+      else ctx.lineTo(p[0], p[1]);
+    }
+  }
+
+  function drawMotif(L, g, coh) {
+    var ring = ringPlacement(L);
+    var cx = ring.x;
+    var cy = ring.y;
+    var r = ring.r;
+    var echo = coh;
+    if (echo > 0.05 && state.act !== "act1") {
+      ctx.save();
+      ctx.globalAlpha = echo * 0.28;
+      ctx.strokeStyle = "#e4dccb";
+      ctx.lineWidth = 1;
+      var k;
+      for (k = 1; k <= 4; k++) {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r * (0.7 + k * 0.28), r * (0.62 + k * 0.24), world.ringPhase * 0.02, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    var alpha = state.act === "act1" ? 0.25 + g * 0.75 : 0.35 + g * 0.65;
+    if (state.act === "ending" && state.choice === "silent") alpha *= 1 - ease(clamp(state.t / 13000, 0, 1));
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    if (state.act === "act2" && !state.resolved) {
+      ctx.globalAlpha = 0.22;
+      ctx.strokeStyle = "#c9b8a4";
+      ctx.lineWidth = 1;
+      traceRing(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 0.7;
+      var n;
+      for (n = 0; n < 3; n++) {
+        var tick = ringPoint(cx, cy, r, BASE[n]);
+        var inn = ringPoint(cx, cy, r * 0.86, BASE[n]);
+        ctx.beginPath();
+        ctx.moveTo(inn[0], inn[1]);
+        ctx.lineTo(tick[0], tick[1]);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    var showFull = state.resolved || state.act === "act3" || (state.act === "ending" && state.choice === "answer" && state.t > 2600) || (state.act === "act1" && splitAmount() < 0.08);
+    if (showFull && !(state.act === "act2" && !state.resolved)) {
+      ctx.strokeStyle = "rgba(255, 214, 176, " + (0.25 * alpha) + ")";
+      ctx.lineWidth = Math.max(6, r * 0.045);
+      traceRing(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(224, 138, 85, " + alpha + ")";
+      ctx.lineWidth = Math.max(1.4, r * 0.012);
+      traceRing(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (state.act === "act1" && splitAmount() >= 0.08 || (state.act === "act2" && !state.resolved) || (state.act === "ending" && state.choice === "silent" && state.t < 9000) || (state.act === "act2" && state.resolved && state.t - state.resolveTime < 700)) {
+      var i;
+      for (i = 0; i < 3; i++) {
+        var off = arcOffset(i);
+        var hot = 1 - Math.min(1, Math.abs(off) / 0.7);
+        var selected = state.selectedFrag === i && state.act === "act2" && !state.resolved;
+        ctx.strokeStyle = "rgba(255, 220, 190, " + ((0.28 + hot * 0.4) * alpha) + ")";
+        ctx.lineWidth = (selected ? 12 : 9) + hot * 2;
+        traceRing(cx, cy, r, BASE[i] + off - 0.5, BASE[i] + off + 0.5);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255, 168, 110, " + ((0.8 + hot * 0.2) * alpha) + ")";
+        ctx.lineWidth = selected ? 2.8 : 2.1;
+        traceRing(cx, cy, r, BASE[i] + off - 0.46, BASE[i] + off + 0.46);
+        ctx.stroke();
+        var bead = ringPoint(cx, cy, r, BASE[i] + off);
+        ctx.fillStyle = selected ? "#ffe1c4" : "#e08a55";
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.arc(bead[0], bead[1], selected ? 4.5 : 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    if (state.act === "ending" && state.choice === "answer" && state.t > 8000) {
+      var u = ease(clamp((state.t - 8000) / 8000, 0, 1));
+      var ox = cx + (1 - u) * 48;
+      var oy = cy - (1 - u) * 36;
+      ctx.strokeStyle = "rgba(183, 196, 164, " + (0.25 + u * 0.75) + ")";
+      ctx.lineWidth = Math.max(1.5, r * 0.01);
+      traceRing(ox, oy, r * (0.78 + u * 0.22), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  function drawDesk(L) {
+    var y = L.floorY - L.unit * 0.045;
+    var x0 = Math.min(L.op.x, L.jar.x) - L.unit * 0.08;
+    var x1 = Math.max(L.op.x, L.jar.x) + L.unit * 0.12;
+    ctx.fillStyle = "#241c16";
+    ctx.fillRect(x0, y, x1 - x0, L.unit * 0.028);
+    ctx.fillStyle = "#1a1410";
+    ctx.fillRect(x0, y, x1 - x0, 3);
+  }
+
+  function render() {
+    if (!ctx || !state || !world) return;
+    resize();
+    var L = layout();
+    lastLayout = L;
+    var cam = camera();
+    lastCam = cam;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#08090d";
+    ctx.fillRect(0, 0, cssW, cssH);
+    ctx.translate(cssW / 2, cssH / 2);
+    ctx.scale(cam.z, cam.z);
+    ctx.translate(-cssW / 2 + cam.x, -cssH / 2 + cam.y);
+
+    var coh = coherence();
+    var g = glowAmt();
+    var mode = pose();
+    var fig = L.narrow ? L.unit / 780 : L.unit / 700;
+    drawStorm(L, coh);
+    drawMast(L, g);
+    drawShell(L);
+    drawWindow(L, coh);
+    drawDesk(L);
+    var lampLevel = clamp(0.74 + g * 0.18 + (reduced() ? 0 : Math.sin(state.worldT * 0.011) * (0.04 + (1 - coh) * 0.07)), 0.35, 1);
+    drawLamp(L.lamp.x, L.floorY - L.unit * 0.03, lampLevel);
+    drawOperator(L.op.x, L.op.y, fig, mode);
+    drawReceiver(L.jar.x, L.jar.y, fig * 0.92, g, mode);
+    drawMotif(L, g, coh);
+
+    var d;
+    ctx.fillStyle = "rgba(228, 220, 203, 0.45)";
+    for (d = 0; d < world.dust.length; d++) {
+      var speck = world.dust[d];
+      var dx = ((speck.x + state.worldT * 0.000008 * (1 - coh)) % 1) * L.w;
+      var dy = speck.y * L.h;
+      ctx.globalAlpha = speck.a * (0.25 + (1 - coh) * 0.4);
+      ctx.fillRect(dx, dy, speck.r, speck.r);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var vg = ctx.createRadialGradient(cssW / 2, cssH / 2, Math.min(cssW, cssH) * 0.28, cssW / 2, cssH / 2, Math.max(cssW, cssH) * 0.72);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,0,0,0.48)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, cssW, cssH);
+    if (grain) {
+      ctx.globalAlpha = 0.055;
+      ctx.fillStyle = grain;
+      ctx.fillRect(0, 0, cssW, cssH);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  canvas.addEventListener("pointerdown", function (e) {
+    if (!state || state.act !== "act2" || state.resolved) return;
+    var p = screenToWorld(e.clientX, e.clientY);
+    var i = pickArc(p.x, p.y);
+    if (i < 0) return;
+    drag = i;
+    state.selectedFrag = i;
+    takeOver();
+    applyAngle(i, p.x, p.y);
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+    sync();
+  });
+
+  canvas.addEventListener("pointermove", function (e) {
+    if (drag < 0 || !state) return;
+    var p = screenToWorld(e.clientX, e.clientY);
+    applyAngle(drag, p.x, p.y);
+    e.preventDefault();
+    sync();
+  });
+
+  function endDrag() { drag = -1; }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+
+  window.addEventListener("keydown", function (e) {
+    if (!state) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var tag = e.target && e.target.tagName;
+    if (choiceAvailable() && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      (e.key === "ArrowLeft" || e.key === "ArrowUp" ? btnSilent : btnAnswer).focus();
+      e.preventDefault();
+      return;
+    }
+    if (choiceAvailable() && (e.key === "a" || e.key === "A")) {
+      takeOver();
+      choose("answer");
+      e.preventDefault();
+      sync();
+      return;
+    }
+    if (choiceAvailable() && (e.key === "s" || e.key === "S")) {
+      takeOver();
+      choose("silent");
+      e.preventDefault();
+      sync();
+      return;
+    }
+    if (tag === "BUTTON") return;
+    if (state.act === "act2" && !state.resolved && (e.key === "1" || e.key === "2" || e.key === "3")) {
+      state.selectedFrag = Number(e.key) - 1;
+      e.preventDefault();
+      sync();
+      return;
+    }
+    if (state.act === "act2" && !state.resolved && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      takeOver();
+      var dir = (e.key === "ArrowUp" || e.key === "ArrowRight") ? 1 : -1;
+      var step = e.shiftKey ? 0.08 : 0.03;
+      var cur = state.locked[state.selectedFrag] ? state.frag[state.selectedFrag] : displayValue(state.selectedFrag);
+      alignFragment(state.selectedFrag, cur + dir * step);
+      e.preventDefault();
+      sync();
+    }
+  });
+
+  btnAnswer.addEventListener("click", function () {
+    takeOver();
+    choose("answer");
+    sync();
+  });
+  btnSilent.addEventListener("click", function () {
+    takeOver();
+    choose("silent");
+    sync();
+  });
+  replayEl.addEventListener("click", function () {
+    reset(217);
+    setAutoplay(false);
+    sync();
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    lastTick = 0;
+    acc = 0;
+  });
+
+  window.addEventListener("resize", function () {
+    cssW = 0;
+    sync();
+  });
+
+  function loop(now) {
+    requestAnimationFrame(loop);
+    if (testing) {
+      lastTick = now;
+      return;
+    }
+    if (!lastTick) {
+      lastTick = now;
+      sync();
+      return;
+    }
+    if (document.hidden) {
+      lastTick = now;
+      acc = 0;
+      return;
+    }
+    var delta = now - lastTick;
+    lastTick = now;
+    if (delta < 0) delta = 0;
+    if (delta > 100) delta = MAX_FRAME;
+    acc += delta;
+    var guard = 0;
+    while (acc >= STEP && guard++ < 6) {
+      step(STEP);
+      acc -= STEP;
+    }
+    sync();
+  }
+
+  var MAX_FRAME = 100;
+
+  window.__LAST_SIGNAL__ = Object.freeze({
+    reset: reset,
+    setAutoplay: setAutoplay,
+    seek: seek,
+    alignFragment: alignFragment,
+    choose: choose,
+    snapshot: snapshot,
+    runSelfTest: runSelfTest
+  });
+
+  reset(BOOT.seed);
+  setAutoplay(true, BOOT.ending);
+  BOOT.applied = true;
+  sync();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Haiku 5.5</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,sans-serif;color:#eef}
+#c{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+#brand{position:fixed;top:12px;left:16px;font-weight:700;font-size:15px;text-shadow:0 1px 4px #000;pointer-events:none}
+#bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;padding:8px 10px;background:rgba(12,14,18,.74);backdrop-filter:blur(6px);border-radius:12px;border:1px solid rgba(255,255,255,.12);font-size:13px;white-space:nowrap;user-select:none;max-width:calc(100vw - 20px);overflow-x:auto}
+#bar button,#panel button{background:rgba(255,255,255,.08);color:#eef;border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+#bar button:hover,#panel button:hover{background:rgba(255,255,255,.18)}
+#bar button.on{background:#e8452c;border-color:#e8452c;color:#fff}
+.seg{display:flex;gap:2px}
+.seg button{border-radius:6px}
+#stat{opacity:.8;font-variant-numeric:tabular-nums;padding-left:6px}
+#panel{position:fixed;top:0;right:0;bottom:0;width:300px;overflow:auto;padding:14px 16px 20px;box-sizing:border-box;background:rgba(10,12,16,.88);backdrop-filter:blur(8px);border-left:1px solid rgba(255,255,255,.12);font-size:13px}
+#panel[hidden]{display:none}
+#panel h3{margin:4px 0 6px;font-size:15px}
+#panel .grp{margin:14px 0 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.6}
+#panel label{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:5px 0}
+#panel input{width:104px;background:#0b0d11;color:#eef;border:1px solid rgba(255,255,255,.22);border-radius:6px;padding:5px 7px;font:inherit}
+#panel .row{display:flex;gap:8px;margin-top:16px}
+#panel .row button{flex:1}
+#panel .pri,#bar .pri{background:#e8452c;border-color:#e8452c;color:#fff}
+#panel p{opacity:.6;font-size:12px;line-height:1.4;margin:6px 0 0}
+</style>
+<script type="importmap">
+{"imports":{
+"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+"cannon-es":"https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+}}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="brand">Claude Haiku 5.5</div>
+<div id="bar">
+  <button id="btnPlay" class="pri" title="Space">Pause</button>
+  <div class="seg" id="speeds">
+    <button data-speed="0.25">0.25×</button><button data-speed="0.5">0.5×</button><button data-speed="1" class="on">1×</button><button data-speed="2">2×</button>
+  </div>
+  <button id="btnReplay">Replay</button>
+  <div class="seg" id="views">
+    <button data-view="impact" class="on">Impact</button><button data-view="follow">Follow</button><button data-view="top">Top</button><button data-view="orbit">Orbit</button>
+  </div>
+  <button id="btnSettings">Settings</button>
+  <span id="stat"></span>
+</div>
+<div id="panel" hidden>
+  <h3>Experiment settings</h3>
+  <p>Changes take effect on Apply, which rebuilds the run.</p>
+  <div class="grp">Car</div>
+  <label>Impact speed (m/s)<input type="number" step="any" data-k="speed"></label>
+  <label>Car mass (kg)<input type="number" step="any" data-k="carMass"></label>
+  <label>Car length (m)<input type="number" step="any" data-k="carLen"></label>
+  <label>Car width (m)<input type="number" step="any" data-k="carWid"></label>
+  <label>Car height (m)<input type="number" step="any" data-k="carHgt"></label>
+  <div class="grp">Wall</div>
+  <label>Columns<input type="number" step="1" data-k="wallCols"></label>
+  <label>Rows<input type="number" step="1" data-k="wallRows"></label>
+  <label>Depth (bricks)<input type="number" step="1" data-k="wallDepth"></label>
+  <label>Brick mass (kg)<input type="number" step="any" data-k="brickMass"></label>
+  <label>Brick width (m)<input type="number" step="any" data-k="brickW"></label>
+  <label>Brick height (m)<input type="number" step="any" data-k="brickH"></label>
+  <label>Brick depth (m)<input type="number" step="any" data-k="brickD"></label>
+  <div class="grp">Physics</div>
+  <label>Gravity (m/s²)<input type="number" step="any" data-k="gravity"></label>
+  <label>Brick friction<input type="number" step="any" data-k="brickFriction"></label>
+  <label>Brick restitution<input type="number" step="any" data-k="brickRest"></label>
+  <label>Ground friction<input type="number" step="any" data-k="groundFriction"></label>
+  <div class="grp">Track</div>
+  <label>Track length (m)<input type="number" step="any" data-k="trackLen"></label>
+  <div class="row">
+    <button id="btnApply" class="pri">Apply</button>
+    <button id="btnDefaults">Defaults</button>
+  </div>
+  <p>Apply and Replay both rebuild a fresh run. Speed and camera selections are kept.</p>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as CANNON from 'cannon-es';
+
+// ---------- experiment defaults (mandatory first-load values) ----------
+const DEFAULTS = {
+  speed: 22, carMass: 1250, carLen: 4.2, carWid: 1.8, carHgt: 1.45,
+  wallCols: 12, wallRows: 8, wallDepth: 2, brickMass: 2.5,
+  brickW: 0.5, brickH: 0.24, brickD: 0.2,
+  gravity: 9.81, brickFriction: 0.72, brickRest: 0.18, groundFriction: 0.85,
+  trackLen: 40,
+};
+const settings = { ...DEFAULTS };
+const state = { timeScale: 1, paused: false, view: 'impact', runCount: 0 };
+
+const PHYS_DT = 1 / 240;   // fixed physics step
+const MAX_STEPS = 8;       // cap per rendered frame
+const TRACK_W = 9;         // asphalt width (m)
+const WALL_SETBACK = 6;    // wall front face sits this far before the track end
+const START_PAD = 2;       // rear bumper starts this far past the track start
+
+// collision bits: ground=0, bricks=1, each car part gets its own bit, debris high bit
+const BIT_GROUND = 1, BIT_BRICK = 2, BIT_DEBRIS = 1 << 30, ALL_BITS = -1;
+const carBit = (i) => 1 << (2 + i);
+
+// seeded PRNG: used only for layout/visual jitter, never for a physical decision
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const RUN_SEED = 20261009;
+//@@CONFIG@@
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight, false);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fb8cc);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 800);
+camera.position.set(2, 6, 14);
+camera.lookAt(9, 1, 0);
+
+// key light: sun from behind-left, shadows fall down-track toward the wall
+const sun = new THREE.DirectionalLight(0xfff1dd, 2.6);
+sun.position.set(-10, 26, 14);
+sun.target.position.set(6, 0, 0);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.025;
+sun.shadow.radius = 3;
+Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 14, bottom: -14, near: 1, far: 120 });
+sun.shadow.camera.updateProjectionMatrix();
+scene.add(sun, sun.target);
+scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x4a3d30, 0.55));
+
+// sky dome with a horizon gradient, plus aerial fog so the track fades into distance
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(450, 32, 16),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {
+      top: { value: new THREE.Color(0x3f74b8) },
+      horizon: { value: new THREE.Color(0xe3ecf4) },
+      bottom: { value: new THREE.Color(0x6d8756) },
+    },
+    vertexShader: `varying vec3 vDir;
+      void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 bottom; varying vec3 vDir;
+      void main() {
+        float h = vDir.y;
+        vec3 c = h > 0.0 ? mix(horizon, top, smoothstep(0.0, 0.45, h)) : mix(horizon, bottom, smoothstep(0.0, 0.2, -h));
+        gl_FragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+      }`,
+  })
+);
+scene.add(sky);
+scene.fog = new THREE.Fog(0xc9d9e8, 160, 420);
+
+// ---------- shared procedural textures (built once, no external files) ----------
+function makeTexture(w, h, draw, rx = 1, ry = 1) {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  draw(cv.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+function speckle(g, w, h, rng, base, spread, count) {
+  g.fillStyle = base; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < count; i++) {
+    const v = (rng() * spread) | 0;
+    g.fillStyle = `rgba(${v},${v},${v},0.55)`;
+    g.fillRect(rng() * w, rng() * h, 1 + rng() * 2, 1 + rng() * 2);
+  }
+}
+const texRng = makeRng(7);
+const TEX = {
+  asphalt: makeTexture(512, 512, (g, w, h) => speckle(g, w, h, texRng, '#3a3d43', 90, 9000), 1, 1),
+  gravel: makeTexture(256, 256, (g, w, h) => speckle(g, w, h, texRng, '#9f947e', 120, 3000), 1, 1),
+  concrete: makeTexture(256, 256, (g, w, h) => speckle(g, w, h, texRng, '#b9b6ad', 90, 2000), 1, 1),
+  brick: makeTexture(256, 128, (g, w, h) => speckle(g, w, h, texRng, '#b4553a', 110, 2500), 1, 1),
+};
+
+// ---------- race straight: asphalt, paint, curbs, gravel, barriers, poles ----------
+function buildTrack(parent) {
+  const L = settings.trackLen, hw = TRACK_W / 2;
+  const put = (geo, mat, x, y, z, rx = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.x = rx;
+    m.receiveShadow = true;
+    parent.add(m);
+    return m;
+  };
+  const flat = -Math.PI / 2;
+
+  TEX.asphalt.repeat.set(L / 6, 1.2);
+  put(new THREE.PlaneGeometry(L, TRACK_W),
+    new THREE.MeshStandardMaterial({ map: TEX.asphalt, roughness: 0.92, metalness: 0 }),
+    0, 0.002, 0, flat);
+
+  // paint (raised a hair above asphalt to avoid z-fight)
+  const paint = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -2 });
+  for (const s of [-1, 1]) put(new THREE.PlaneGeometry(L, 0.14), paint, 0, 0.004, s * (hw - 0.45), flat);
+  for (let x = -L / 2 + 4; x < L / 2 - 3; x += 6) put(new THREE.PlaneGeometry(3, 0.14), paint, x, 0.004, 0, flat);
+  put(new THREE.PlaneGeometry(0.4, TRACK_W - 0.9), paint, -L / 2 + 1.6, 0.004, 0, flat);
+
+  // red/white curbs
+  const curbTex = makeTexture(64, 16, (g, w, h) => {
+    g.fillStyle = '#b8222a'; g.fillRect(0, 0, w / 2, h);
+    g.fillStyle = '#f2f2f2'; g.fillRect(w / 2, 0, w / 2, h);
+  }, L, 1);
+  const curbMat = new THREE.MeshStandardMaterial({ map: curbTex, roughness: 0.7 });
+  for (const s of [-1, 1]) {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(L, 0.06, 0.5), curbMat);
+    c.position.set(0, 0.03, s * (hw + 0.25));
+    c.receiveShadow = true;
+    parent.add(c);
+  }
+
+  // gravel run-off on both sides
+  TEX.gravel.repeat.set(L / 3, 1);
+  const gravelMat = new THREE.MeshStandardMaterial({ map: TEX.gravel, roughness: 1 });
+  for (const s of [-1, 1]) put(new THREE.PlaneGeometry(L, 3), gravelMat, 0, 0.001, s * (hw + 2), flat);
+
+  // concrete barriers
+  TEX.concrete.repeat.set(L / 4, 1);
+  const concMat = new THREE.MeshStandardMaterial({ map: TEX.concrete, roughness: 0.85 });
+  for (const s of [-1, 1]) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(L, 0.9, 0.5), concMat);
+    b.position.set(0, 0.45, s * (hw + 4.4));
+    b.receiveShadow = true;
+    parent.add(b);
+  }
+
+  // light poles
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x59606a, metalness: 0.8, roughness: 0.4 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff3d6, emissive: 0xffe9b0, emissiveIntensity: 2.2 });
+  for (let x = -L / 2 + 5; x <= L / 2 - 5; x += 10) {
+    for (const s of [-1, 1]) {
+      const z = s * (hw + 6.5);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 10, 10), poleMat);
+      pole.position.set(x, 5, z);
+      parent.add(pole);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 0.4), lampMat);
+      head.position.set(x, 9.9, z - s * 0.4);
+      parent.add(head);
+    }
+  }
+}
+// ---------- physics: cannon-es world, materials, fixed-step driver ----------
+let world = null, mats = null;
+let accum = 0, simTime = 0;
+
+function makeWorld() {
+  const w = new CANNON.World({ gravity: new CANNON.Vec3(0, -settings.gravity, 0) });
+  w.broadphase = new CANNON.SAPBroadphase(w);
+  w.solver.iterations = 12;
+  w.allowSleep = true;
+  w.defaultContactMaterial.friction = 0.5;
+  w.defaultContactMaterial.restitution = 0.1;
+
+  const m = {
+    ground: new CANNON.Material('ground'),
+    brick: new CANNON.Material('brick'),
+    car: new CANNON.Material('car'),
+  };
+  const pair = (a, b, friction, restitution) =>
+    w.addContactMaterial(new CANNON.ContactMaterial(a, b, { friction, restitution }));
+  pair(m.brick, m.brick, settings.brickFriction, settings.brickRest);
+  pair(m.brick, m.ground, settings.groundFriction, settings.brickRest);
+  pair(m.brick, m.car, settings.brickFriction, 0.15);
+  pair(m.car, m.ground, settings.groundFriction, 0.1);
+  pair(m.car, m.car, 0.4, 0.1);
+
+  const g = new CANNON.Body({
+    type: CANNON.Body.STATIC, mass: 0, material: m.ground, shape: new CANNON.Plane(),
+    collisionFilterGroup: BIT_GROUND, collisionFilterMask: ALL_BITS,
+  });
+  g.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  w.addBody(g);
+  return { w, m };
+}
+
+// per-step hooks (filled in by the car and wall systems)
+// ---------- drive: constant push on every part until the bumper reaches the wall ----------
+const ZERO = new CANNON.Vec3();
+function preStep(dt) {
+  if (!run || !run.car) return;
+  const car = run.car;
+  const cabin = car.parts[1];                        // cabin is the reference body
+  const carX = cabin.body.position.x + 0.1 * car.sx; // car centre estimate
+  if (car.driving && carX >= car.originImpact - 0.02) car.driving = false;
+
+  if (car.driving) {
+    for (const p of car.parts) {
+      if (p.alive) p.body.applyForce(new CANNON.Vec3(car.accel * p.mass, 0, 0), ZERO);
+    }
+  }
+
+  if (!car.impacted) {
+    const front = car.parts.find((p) => p.name === 'bumperF');
+    if (front.body.position.x + 0.07 * car.sx >= wallFaceX() - 0.02) {
+      car.impacted = true;
+      car.impactTime = simTime;
+      car.impactSpeed = cabin.body.velocity.x;
+      onImpact(car);
+    }
+  }
+}
+
+function stepPhysics(dt) {
+  if (state.paused || !world) return;
+  accum += dt * state.timeScale;
+  let n = 0;
+  while (accum >= PHYS_DT && n < MAX_STEPS) {
+    preStep(PHYS_DT);
+    world.step(PHYS_DT);
+    postStep(PHYS_DT);
+    accum -= PHYS_DT;
+    simTime += PHYS_DT;
+    n++;
+  }
+  if (n === MAX_STEPS) accum = 0; // hitch: drop backlog instead of spiralling
+}
+// ---------- brick wall: staggered running bond, every brick is a rigid body ----------
+const MORTAR = 0.012;   // visual gap only; physics bricks touch exactly
+const wallFaceX = () => settings.trackLen / 2 - WALL_SETBACK;
+let run = null;         // per-run container: group, wall, car, shards, fx
+
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3();
+const _one = new THREE.Vector3(1, 1, 1);
+function syncInstanced(mesh, bodies) {
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i];
+    _p.set(b.position.x, b.position.y, b.position.z);
+    _q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+    mesh.setMatrixAt(i, _m4.compose(_p, _q, _one));
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+}
+
+function buildWall(parent) {
+  const s = settings;
+  const bw = s.brickW, bh = s.brickH, bd = s.brickD;
+  const faceX = wallFaceX();
+  const rng = makeRng(RUN_SEED ^ 0x9e37);
+  const bodies = [];
+
+  for (let r = 0; r < s.wallRows; r++) {
+    for (let d = 0; d < s.wallDepth; d++) {
+      for (let c = 0; c < s.wallCols; c++) {
+        const b = new CANNON.Body({
+          mass: s.brickMass, material: mats.brick,
+          shape: new CANNON.Box(new CANNON.Vec3(bw / 2, bh / 2, bd / 2)),
+          collisionFilterGroup: BIT_BRICK, collisionFilterMask: ALL_BITS,
+          linearDamping: 0.01, angularDamping: 0.02,
+        });
+        // running bond: odd courses shifted half a brick
+        const z = -s.wallCols * bw / 2 + bw * (c + 0.5) + (r % 2 ? bw / 2 : 0);
+        b.position.set(faceX + bd * (d + 0.5), bh * (r + 0.5), z);
+        world.addBody(b);
+        bodies.push(b);
+      }
+    }
+  }
+
+  const mesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(bw - MORTAR, bh - MORTAR, bd - MORTAR),
+    new THREE.MeshStandardMaterial({ map: TEX.brick, roughness: 0.9, metalness: 0 }),
+    bodies.length
+  );
+  const col = new THREE.Color();
+  for (let i = 0; i < bodies.length; i++) {
+    const v = 0.8 + rng() * 0.32;
+    mesh.setColorAt(i, col.setRGB(v, v * (0.9 + rng() * 0.1), v * 0.86));
+  }
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  parent.add(mesh);
+  run.wall = { bodies, mesh };
+  syncInstanced(mesh, bodies);
+}
+// ---------- car: separate rigid parts, base layout in metres at 4.2 x 1.8 x 1.45 ----------
+// c = centre, h = half extents (x forward, y up, z lateral). Scaled per axis by settings.
+const CAR_PARTS = [
+  { n: 'rearClip', c: [-1.4, 0.625, 0], h: [0.7, 0.325, 0.75], w: 160 },
+  { n: 'cabin', c: [-0.1, 0.875, 0], h: [0.6, 0.575, 0.6], w: 330 },
+  { n: 'fc0', c: [0.775, 0.6, 0], h: [0.275, 0.3, 0.75], w: 60 },
+  { n: 'fc1', c: [1.3, 0.6, 0], h: [0.25, 0.3, 0.75], w: 55 },
+  { n: 'fc2', c: [1.825, 0.6, 0], h: [0.275, 0.3, 0.75], w: 50 },
+  { n: 'hood', c: [1.5, 0.94, 0], h: [0.5, 0.04, 0.8], w: 35 },
+  { n: 'trunk', c: [-1.55, 0.95, 0], h: [0.5, 0.04, 0.72], w: 30 },
+  { n: 'doorFL', c: [0.15, 0.71, 0.63], h: [0.3, 0.29, 0.03], w: 30 },
+  { n: 'doorFR', c: [0.15, 0.71, -0.63], h: [0.3, 0.29, 0.03], w: 30 },
+  { n: 'doorRL', c: [-0.43, 0.71, 0.63], h: [0.25, 0.29, 0.03], w: 30 },
+  { n: 'doorRR', c: [-0.43, 0.71, -0.63], h: [0.25, 0.29, 0.03], w: 30 },
+  { n: 'bumperF', c: [2.16, 0.5, 0], h: [0.07, 0.15, 0.8], w: 25, bumper: true },
+  { n: 'bumperR', c: [-2.16, 0.5, 0], h: [0.07, 0.15, 0.8], w: 25, bumper: true },
+  { n: 'windshield', wind: [[0.5, 1.45], [1.05, 0.95]], wz: 0.58, glass: true, w: 10 },
+  { n: 'winFL', c: [0.16, 1.19, 0.63], h: [0.26, 0.19, 0.012], glass: true, w: 4 },
+  { n: 'winFR', c: [0.16, 1.19, -0.63], h: [0.26, 0.19, 0.012], glass: true, w: 4 },
+  { n: 'winRL', c: [-0.4, 1.19, 0.63], h: [0.22, 0.19, 0.012], glass: true, w: 4 },
+  { n: 'winRR', c: [-0.4, 1.19, -0.63], h: [0.22, 0.19, 0.012], glass: true, w: 4 },
+  { n: 'wFL', c: [1.4, 0.33, 0.77], wheel: true, w: 22 },
+  { n: 'wFR', c: [1.4, 0.33, -0.77], wheel: true, w: 22 },
+  { n: 'wRL', c: [-1.4, 0.33, 0.77], wheel: true, w: 22 },
+  { n: 'wRR', c: [-1.4, 0.33, -0.77], wheel: true, w: 22 },
+];
+const CAR_MAT = {
+  paint: new THREE.MeshPhysicalMaterial({ color: 0xb3121b, metalness: 0.55, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.06 }),
+  glass: new THREE.MeshPhysicalMaterial({ color: 0xcfeaf5, roughness: 0.04, transparent: true, opacity: 0.3, clearcoat: 1, envMapIntensity: 1.6, depthWrite: false }),
+  trim: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.55 }),
+  tire: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.88 }),
+  rim: new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 1, roughness: 0.22 }),
+  head: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff6dd, emissiveIntensity: 1.5 }),
+  tail: new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff1a1a, emissiveIntensity: 1.2 }),
+};
+
+function buildCar(parent) {
+  const s = settings;
+  const sx = s.carLen / 4.2, sy = s.carHgt / 1.45, sz = s.carWid / 1.8;
+  const R = 0.33 * sy;
+  const originStart = -s.trackLen / 2 + START_PAD + 2.23 * sx;   // car centre at rest
+  const originImpact = wallFaceX() - 2.23 * sx;                  // car centre when bumper meets wall
+  const dist = originImpact - originStart;
+  const sumW = CAR_PARTS.reduce((a, p) => a + p.w, 0);
+  const car = {
+    parts: [], bonds: [], sx, sy, sz, R, originStart, originImpact,
+    accel: (s.speed * s.speed) / (2 * dist), driving: true,
+  };
+
+  CAR_PARTS.forEach((p, i) => {
+    const mass = (s.carMass * p.w) / sumW;
+    const quat = new CANNON.Quaternion();
+    let shape, pos, dims, obj;
+
+    if (p.wheel) {
+      dims = [R, R, R];
+      shape = new CANNON.Sphere(R);
+      pos = new CANNON.Vec3(originStart + p.c[0] * sx, p.c[1] * sy, p.c[2] * sz);
+    } else if (p.wind) {
+      const [[x0, y0], [x1, y1]] = p.wind;
+      const dx = (x1 - x0) * sx, dy = (y1 - y0) * sy;
+      const len = Math.hypot(dx, dy);
+      dims = [len / 2, 0.012, p.wz * sz];
+      shape = new CANNON.Box(new CANNON.Vec3(...dims));
+      pos = new CANNON.Vec3(originStart + ((x0 + x1) / 2) * sx, ((y0 + y1) / 2) * sy, 0);
+      quat.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), Math.atan2(dy, dx));
+    } else {
+      dims = [p.h[0] * sx, p.h[1] * sy, p.h[2] * sz];
+      shape = new CANNON.Box(new CANNON.Vec3(...dims));
+      pos = new CANNON.Vec3(originStart + p.c[0] * sx, p.c[1] * sy, p.c[2] * sz);
+    }
+
+    if (p.wheel) {
+      obj = new THREE.Group();
+      const tireW = 0.26 * sz;
+      const tg = new THREE.CylinderGeometry(R, R, tireW, 28); tg.rotateX(Math.PI / 2);
+      const rg = new THREE.CylinderGeometry(R * 0.62, R * 0.62, tireW + 0.02, 20); rg.rotateX(Math.PI / 2);
+      obj.add(new THREE.Mesh(tg, CAR_MAT.tire), new THREE.Mesh(rg, CAR_MAT.rim));
+    } else {
+      const mat = p.glass ? CAR_MAT.glass : p.bumper ? CAR_MAT.trim : CAR_MAT.paint;
+      obj = new THREE.Mesh(new THREE.BoxGeometry(2 * dims[0], 2 * dims[1], 2 * dims[2]), mat);
+      const hx = dims[0];
+      if (p.n === 'bumperF') {   // headlights + grille ride on the front bumper
+        for (const z of [-0.55, 0.55]) {
+          const h = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1 * sy, 0.22 * sz), CAR_MAT.head);
+          h.position.set(hx + 0.004, 0.1 * sy, z * sz);
+          obj.add(h);
+        }
+        const g = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1 * sy, 0.9 * sz), CAR_MAT.trim);
+        g.position.set(hx + 0.003, -0.05 * sy, 0);
+        obj.add(g);
+      }
+      if (p.n === 'bumperR') {
+        for (const z of [-0.55, 0.55]) {
+          const t = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1 * sy, 0.25 * sz), CAR_MAT.tail);
+          t.position.set(-hx - 0.004, 0.1 * sy, z * sz);
+          obj.add(t);
+        }
+      }
+    }
+
+    const body = new CANNON.Body({
+      mass, material: mats.car, shape, position: pos, quaternion: quat,
+      collisionFilterGroup: carBit(i), collisionFilterMask: ALL_BITS,
+      linearDamping: 0.01, angularDamping: 0.05,
+    });
+    world.addBody(body);
+    obj.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    parent.add(obj);
+    car.parts.push({ name: p.n, idx: i, body, obj, mass, dims, wheel: !!p.wheel, glass: !!p.glass, alive: true });
+  });
+
+  run.car = car;
+  linkCar(car);
+  return car;
+}
+
+// copy physics poses onto the car meshes
+function syncCar() {
+  if (!run || !run.car) return;
+  for (const p of run.car.parts) {
+    if (!p.alive) continue;
+    const b = p.body;
+    p.obj.position.set(b.position.x, b.position.y, b.position.z);
+    p.obj.quaternion.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+  }
+}
+// ---------- breakable joints: each bond is a point-to-point constraint with a break force ----------
+// [partA, partB, pivots (base coords), break force in N, kind]
+const BOND_SPEC = [
+  ['rearClip', 'cabin', [[-0.7, 0.5, -0.6], [-0.7, 0.5, 0.6]], 40000],
+  ['cabin', 'fc0', [[0.5, 0.5, -0.6], [0.5, 0.5, 0.6]], 30000],
+  ['fc0', 'fc1', [[1.05, 0.5, -0.6], [1.05, 0.5, 0.6]], 14000],
+  ['fc1', 'fc2', [[1.55, 0.5, -0.6], [1.55, 0.5, 0.6]], 9000],
+  ['fc2', 'bumperF', [[2.1, 0.5, -0.5], [2.1, 0.5, 0.5]], 3500],
+  ['rearClip', 'bumperR', [[-2.1, 0.5, -0.5], [-2.1, 0.5, 0.5]], 3500],
+  ['fc0', 'hood', [[1.0, 0.9, -0.7], [1.0, 0.9, 0.7]], 2500],
+  ['rearClip', 'trunk', [[-1.05, 0.91, -0.6], [-1.05, 0.91, 0.6]], 3000],
+  ['cabin', 'doorFL', [[0.45, 0.45, 0.63], [0.45, 0.98, 0.63]], 3000],
+  ['cabin', 'doorFR', [[0.45, 0.45, -0.63], [0.45, 0.98, -0.63]], 3000],
+  ['cabin', 'doorRL', [[-0.18, 0.45, 0.63], [-0.18, 0.98, 0.63]], 3000],
+  ['cabin', 'doorRR', [[-0.18, 0.45, -0.63], [-0.18, 0.98, -0.63]], 3000],
+  ['cabin', 'windshield', [[0.5, 1.45, -0.5], [0.5, 1.45, 0.5]], 1200, 'glass'],
+  ['cabin', 'winFL', [[-0.05, 1.0, 0.63], [0.35, 1.0, 0.63]], 900, 'glass'],
+  ['cabin', 'winFR', [[-0.05, 1.0, -0.63], [0.35, 1.0, -0.63]], 900, 'glass'],
+  ['cabin', 'winRL', [[-0.55, 1.0, 0.63], [-0.25, 1.0, 0.63]], 900, 'glass'],
+  ['cabin', 'winRR', [[-0.55, 1.0, -0.63], [-0.25, 1.0, -0.63]], 900, 'glass'],
+  ['fc1', 'wFL', [[1.4, 0.33, 0.77]], 9000, 'wheel'],
+  ['fc1', 'wFR', [[1.4, 0.33, -0.77]], 9000, 'wheel'],
+  ['rearClip', 'wRL', [[-1.4, 0.33, 0.77]], 9000, 'wheel'],
+  ['rearClip', 'wRR', [[-1.4, 0.33, -0.77]], 9000, 'wheel'],
+];
+
+const pairKey = (i, j) => (i < j ? i * 64 + j : j * 64 + i);
+
+// pivot given in world space -> body-local frame
+function localPivot(body, wp) {
+  const q = body.quaternion;
+  const d = new CANNON.Vec3(wp.x - body.position.x, wp.y - body.position.y, wp.z - body.position.z);
+  const out = new CANNON.Vec3();
+  new CANNON.Quaternion(-q.x, -q.y, -q.z, q.w).vmult(d, out);
+  return out;
+}
+
+// parts that overlap at spawn (or are bonded) must not collide, otherwise the car explodes on frame 1
+function halfAABB(p) {
+  const d = p.dims, q = p.body.quaternion;
+  if (p.wheel) return [d[0], d[1], d[2]];
+  const ang = 2 * Math.atan2(q.z, q.w);     // only the windshield is rotated (about z)
+  const c = Math.abs(Math.cos(ang)), s = Math.abs(Math.sin(ang));
+  return [c * d[0] + s * d[1], s * d[0] + c * d[1], d[2]];
+}
+function overlapAtRest(p, q) {
+  const a = halfAABB(p), b = halfAABB(q), e = 0.002;
+  const pa = p.body.position, pb = q.body.position;
+  return Math.abs(pa.x - pb.x) < a[0] + b[0] - e &&
+         Math.abs(pa.y - pb.y) < a[1] + b[1] - e &&
+         Math.abs(pa.z - pb.z) < a[2] + b[2] - e;
+}
+
+function linkCar(car) {
+  const byName = {};
+  for (const p of car.parts) byName[p.name] = p;
+  const P = (x, y, z) => new CANNON.Vec3(car.originStart + x * car.sx, y * car.sy, z * car.sz);
+  car.bondCount = new Map();
+  car.permIgnore = new Set();
+
+  for (const [an, bn, pts, limit, kind] of BOND_SPEC) {
+    const A = byName[an], B = byName[bn];
+    const k = pairKey(A.idx, B.idx);
+    for (const pt of pts) {
+      const wp = P(pt[0], pt[1], pt[2]);
+      const con = new CANNON.PointToPointConstraint(
+        A.body, localPivot(A.body, wp), B.body, localPivot(B.body, wp), 1e8);
+      world.addConstraint(con);
+      car.bonds.push({
+        a: A.idx, b: B.idx, con, limit, alive: true,
+        kind: kind || 'joint', glassPart: kind === 'glass' ? B : null,
+      });
+      car.bondCount.set(k, (car.bondCount.get(k) || 0) + 1);
+    }
+  }
+  for (let i = 0; i < car.parts.length; i++) {
+    for (let j = i + 1; j < car.parts.length; j++) {
+      if (overlapAtRest(car.parts[i], car.parts[j])) car.permIgnore.add(pairKey(i, j));
+    }
+  }
+  refreshMasks(car);
+}
+
+// a pair ignores collisions while bonded or while it was interpenetrating at rest
+function refreshMasks(car) {
+  for (const p of car.parts) {
+    if (!p.alive) continue;
+    let ignore = 0;
+    for (const q of car.parts) {
+      if (q === p || !q.alive) continue;
+      const k = pairKey(p.idx, q.idx);
+      if (car.permIgnore.has(k) || (car.bondCount.get(k) || 0) > 0) ignore |= carBit(q.idx);
+    }
+    p.body.collisionFilterMask = ALL_BITS & ~ignore;
+  }
+}
+
+// constraint force in N: solver multiplier (impulse per step) / dt, with a separation fallback
+function bondForce(bond, h) {
+  const eqs = bond.con.equations;
+  if (eqs.length && typeof eqs[0].multiplier === 'number') {
+    let s = 0;
+    for (const e of eqs) s += e.multiplier * e.multiplier;
+    return Math.sqrt(s) / h;
+  }
+  const pa = bond.con.bodyA.pointToWorldFrame(bond.con.pivotA);
+  const pb = bond.con.bodyB.pointToWorldFrame(bond.con.pivotB);
+  const k = eqs.length && eqs[0].stiffness ? eqs[0].stiffness : 1e6;
+  return pa.distanceTo(pb) * k;   // soft-constraint spring: F = k * error
+}
+
+function breakBond(car, bond) {
+  bond.alive = false;
+  world.removeConstraint(bond.con);
+  const k = pairKey(bond.a, bond.b);
+  car.bondCount.set(k, car.bondCount.get(k) - 1);
+  refreshMasks(car);
+  car.breakCount = (car.breakCount || 0) + 1;
+  if (bond.kind === 'glass') shatterGlass(car, bond.glassPart);
+}
+
+// remove every bond that still holds a part (used when a part is torn off or shatters)
+function releasePart(car, part) {
+  for (const b of car.bonds) {
+    if (b.alive && (b.a === part.idx || b.b === part.idx)) breakBond(car, b);
+  }
+}
+
+function postStep(dt) {
+  if (!run || !run.car) return;
+  const car = run.car;
+  for (const bond of car.bonds) {
+    if (!bond.alive) continue;
+    if (bondForce(bond, dt) > bond.limit) breakBond(car, bond);
+  }
+}
+// ---------- glass: a broken pane is replaced by a grid of rigid shards ----------
+const SHARD_CELL = 0.2;
+
+function shatterGlass(car, part) {
+  if (!part || !part.alive) return;
+  part.alive = false;
+  releasePart(car, part);
+  world.removeBody(part.body);
+  part.obj.removeFromParent();
+
+  const d = part.dims, q = part.body.quaternion, c = part.body.position;
+  const k = d.indexOf(Math.min(...d));              // thin axis = pane normal
+  const ua = (k + 1) % 3, ub = (k + 2) % 3;
+  const na = Math.max(2, Math.round((2 * d[ua]) / SHARD_CELL));
+  const nb = Math.max(2, Math.round((2 * d[ub]) / SHARD_CELL));
+  const ca = (2 * d[ua]) / na, cb = (2 * d[ub]) / nb;
+  const thick = 0.008;
+  const mass = part.mass / (na * nb);
+  const toWorld = (v) => q.vmult(v, new CANNON.Vec3());
+  const axis = [new CANNON.Vec3(1, 0, 0), new CANNON.Vec3(0, 1, 0), new CANNON.Vec3(0, 0, 1)];
+  const n = toWorld(axis[k]);                       // pane normal in world space
+  // outward sign: away from the cabin centre
+  const cab = car.parts[1].body.position;
+  const outward = ((c.x - cab.x) * n.x + (c.y - cab.y) * n.y + (c.z - cab.z) * n.z) >= 0 ? 1 : -1;
+  const rng = run.rng;
+
+  for (let i = 0; i < na; i++) {
+    for (let j = 0; j < nb; j++) {
+      const half = [0, 0, 0];
+      half[ua] = ca * 0.45; half[ub] = cb * 0.45; half[k] = thick;
+      const off = [0, 0, 0];
+      off[ua] = -d[ua] + ca * (i + 0.5);
+      off[ub] = -d[ub] + cb * (j + 0.5);
+      const wo = toWorld(new CANNON.Vec3(off[0], off[1], off[2]));
+      const pos = new CANNON.Vec3(c.x + wo.x + n.x * 0.03 * outward, c.y + wo.y + n.y * 0.03 * outward, c.z + wo.z + n.z * 0.03 * outward);
+      const sp = 2 + rng() * 2.5;
+      const tan = (rng() - 0.5) * 1.5;
+      const vel = new CANNON.Vec3(
+        part.body.velocity.x + n.x * sp * outward + tan,
+        part.body.velocity.y + n.y * sp * outward + rng() * 0.8,
+        part.body.velocity.z + n.z * sp * outward - tan);
+      const sb = new CANNON.Body({
+        mass, material: mats.car, quaternion: q.clone(), position: pos,
+        shape: new CANNON.Box(new CANNON.Vec3(half[0], half[1], half[2])),
+        collisionFilterGroup: BIT_DEBRIS, collisionFilterMask: ALL_BITS,
+        linearDamping: 0.02, angularDamping: 0.05,
+      });
+      sb.velocity.copy(vel);
+      sb.angularVelocity.set((rng() - 0.5) * 12, (rng() - 0.5) * 12, (rng() - 0.5) * 12);
+      world.addBody(sb);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(2 * half[0], 2 * half[1], 2 * half[2]), CAR_MAT.glass);
+      mesh.castShadow = true;
+      run.group.add(mesh);
+      run.shards.push({ body: sb, mesh });
+    }
+  }
+}
+
+function syncShards() {
+  for (const s of run.shards) {
+    const b = s.body;
+    s.mesh.position.set(b.position.x, b.position.y, b.position.z);
+    s.mesh.quaternion.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+  }
+}
+//@@JOINTS@@
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(400, 400),
+  new THREE.MeshStandardMaterial({ color: 0x4d7a3a, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min((now - lastT) / 1000, 0.05);
+  lastT = now;
+  stepPhysics(dt);
+  if (run && run.wall) syncInstanced(run.wall.mesh, run.wall.bodies);
+  syncCar();
+  if (run) syncShards();
+  updateFx(dt);
+  updateCamera(dt);
+  if (state.view === 'orbit') orbit.update();
+  updateHud(dt);
+  //@@FRAME@@
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+// ---------- FX: dust, sparks, skid marks, contact blobs (visual only, sim-time driven) ----------
+const fxTex = {
+  dust: makeTexture(64, 64, (g, w, h) => {
+    const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  }),
+  blob: makeTexture(64, 64, (g, w, h) => {
+    const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    gr.addColorStop(0, 'rgba(0,0,0,0.8)'); gr.addColorStop(0.5, 'rgba(0,0,0,0.4)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  }),
+};
+const SKID_MAX = 600, BLOB_CAP = 512;
+let fx = null;
+
+function makeParticles(n, material, drag, g) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 3);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+  const obj = new THREE.Points(geo, material);
+  obj.frustumCulled = false;
+  return { obj, pos, vel: new Float32Array(n * 3), life: new Float32Array(n), n, head: 0, drag, g };
+}
+function emit(ps, x, y, z, vx, vy, vz, life) {
+  const i = ps.head;
+  ps.head = (ps.head + 1) % ps.n;
+  ps.pos.set([x, y, z], i * 3);
+  ps.vel.set([vx, vy, vz], i * 3);
+  ps.life[i] = life;
+}
+function stepParticles(ps, sdt) {
+  for (let i = 0; i < ps.n; i++) {
+    if (ps.life[i] <= 0) continue;
+    const o = i * 3;
+    ps.life[i] -= sdt;
+    if (ps.life[i] <= 0) { ps.pos[o + 1] = -1000; continue; }
+    const damp = Math.exp(-ps.drag * sdt);
+    ps.vel[o] *= damp;
+    ps.vel[o + 1] = ps.vel[o + 1] * damp - ps.g * sdt;
+    ps.vel[o + 2] *= damp;
+    ps.pos[o] += ps.vel[o] * sdt;
+    ps.pos[o + 1] += ps.vel[o + 1] * sdt;
+    ps.pos[o + 2] += ps.vel[o + 2] * sdt;
+    if (ps.pos[o + 1] < 0.03) { ps.pos[o + 1] = 0.03; ps.vel[o + 1] = 0; }
+  }
+  ps.obj.geometry.attributes.position.needsUpdate = true;
+}
+
+function resetFx() {
+  const dustMat = new THREE.PointsMaterial({ map: fxTex.dust, color: 0xd6c6a2, size: 1.7, transparent: true, opacity: 0.6, depthWrite: false });
+  const sparkMat = new THREE.PointsMaterial({ color: 0xffb450, size: 0.07, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const skidGeo = new THREE.BufferGeometry();
+  skidGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SKID_MAX * 18), 3).setUsage(THREE.DynamicDrawUsage));
+  skidGeo.setDrawRange(0, 0);
+  const skid = new THREE.Mesh(skidGeo, new THREE.MeshBasicMaterial({ color: 0x080808, transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+  skid.frustumCulled = false;
+  const blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ map: fxTex.blob, transparent: true, depthWrite: false }), BLOB_CAP);
+  blobs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  blobs.frustumCulled = false;
+  fx = {
+    dust: makeParticles(400, dustMat, 1.4, -0.4),
+    sparks: makeParticles(160, sparkMat, 0.5, 9.8),
+    skid, skidCount: 0, skidHead: 0, skidPrev: new Array(CAR_PARTS.length).fill(null),
+    blobs, lastSim: 0, impactSim: -1, rng: makeRng(RUN_SEED + 77),
+  };
+  run.group.add(fx.dust.obj, fx.sparks.obj, skid, blobs);
+  shakeAmp = 0;
+}
+
+const _bq = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+const _bm = new THREE.Matrix4(), _bp = new THREE.Vector3(), _bs = new THREE.Vector3();
+function syncBlobs() {
+  let k = 0;
+  const put = (b) => {
+    if (k >= BLOB_CAP) return;
+    const lift = Math.max(0, 1 - b.position.y / 1.6);
+    const r = Math.max(0.12, b.boundingRadius * 0.9) * lift;
+    _bp.set(b.position.x, 0.006, b.position.z);
+    _bs.set(2 * r, 2 * r, 1);
+    fx.blobs.setMatrixAt(k++, _bm.compose(_bp, _bq, _bs));
+  };
+  if (run.wall) for (const b of run.wall.bodies) put(b);
+  for (const p of run.car.parts) if (p.alive) put(p.body);
+  for (const s of run.shards) put(s.body);
+  fx.blobs.count = k;
+  fx.blobs.instanceMatrix.needsUpdate = true;
+}
+
+// one skid quad per frame per sliding wheel, laid on the ground
+function addSkid(x0, z0, x1, z1) {
+  const dx = x1 - x0, dz = z1 - z0;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-4) return;
+  const hw = 0.11, px = (-dz / len) * hw, pz = (dx / len) * hw, y = 0.007;
+  const v = [
+    x0 + px, y, z0 + pz, x0 - px, y, z0 - pz, x1 + px, y, z1 + pz,
+    x0 - px, y, z0 - pz, x1 - px, y, z1 - pz, x1 + px, y, z1 + pz,
+  ];
+  const arr = fx.skid.geometry.attributes.position.array;
+  arr.set(v, fx.skidHead * 18);
+  fx.skidHead = (fx.skidHead + 1) % SKID_MAX;
+  fx.skidCount = Math.min(SKID_MAX, fx.skidCount + 1);
+  fx.skid.geometry.setDrawRange(0, fx.skidCount * 6);
+  fx.skid.geometry.attributes.position.needsUpdate = true;
+}
+
+function onImpact(car) {
+  shakeAmp = 0.5;
+  fx.impactSim = simTime;
+  const b = car.parts.find((p) => p.name === 'bumperF').body.position;
+  for (let i = 0; i < 160; i++) {
+    const r = fx.rng();
+    emit(fx.dust, b.x + 0.1, 0.2 + r * 0.6, b.z + (r - 0.5) * 4, -(2 + r * 5), 1 + r * 4, (r - 0.5) * 6, 1.5 + r * 2);
+  }
+  for (let i = 0; i < 90; i++) {
+    const r = fx.rng();
+    emit(fx.sparks, b.x, 0.5 + r * 0.4, b.z + (r - 0.5) * 1.2, -(r * 7), 2 + r * 8, (r - 0.5) * 8, 0.35 + r * 0.6);
+  }
+}
+
+function updateFx(dt) {
+  if (!fx || !run || !run.car) return;
+  const sdt = simTime - fx.lastSim;   // sim clock, so pause and slow-motion stay consistent
+  fx.lastSim = simTime;
+  if (sdt > 0) {
+    stepParticles(fx.dust, sdt);
+    stepParticles(fx.sparks, sdt);
+    const car = run.car;
+    if (car.impacted) {
+      // sustained dust while the wreck grinds and settles
+      if (simTime - fx.impactSim < 2.5) {
+        for (let i = 0; i < 3; i++) {
+          const b = car.parts[Math.floor(fx.rng() * car.parts.length)].body;
+          if (b.position.y < 0.9) emit(fx.dust, b.position.x, 0.2, b.position.z, (i - 1) * 1.2, 1.2, 0.8, 1.6);
+        }
+      }
+      // skid marks: sliding wheels that touch the ground
+      car.parts.forEach((p, idx) => {
+        if (!p.wheel || !p.alive) { return; }
+        const b = p.body;
+        const slip = b.velocity.x + b.angularVelocity.z * car.R;
+        const onGround = b.position.y < car.R + 0.03;
+        if (onGround && Math.abs(slip) > 1.2) {
+          const prev = fx.skidPrev[idx];
+          if (prev) addSkid(prev.x, prev.z, b.position.x, b.position.z);
+          fx.skidPrev[idx] = { x: b.position.x, z: b.position.z };
+        } else fx.skidPrev[idx] = null;
+      });
+    }
+  }
+  syncBlobs();
+}
+
+// ---------- cameras: Impact, Follow, Top, Orbit (a switch is an immediate cut) ----------
+const orbit = new OrbitControls(camera, canvas);
+orbit.enableDamping = true;
+orbit.enabled = false;
+const impactPos = () => new THREE.Vector3(wallFaceX() - 11, 4.6, 12.5);
+const camBase = new THREE.Vector3(), camLook = new THREE.Vector3(), shakeOff = new THREE.Vector3();
+const _focus = new THREE.Vector3(), _want = new THREE.Vector3(), _look = new THREE.Vector3();
+const camRng = makeRng(4242);   // visual shake only
+let shakeAmp = 0;
+
+// centroid of the live car parts: the thing the cameras care about
+function wreckCenter(out) {
+  let x = 0, y = 0, z = 0, n = 0;
+  if (run && run.car) {
+    for (const p of run.car.parts) {
+      if (!p.alive) continue;
+      x += p.body.position.x; y += p.body.position.y; z += p.body.position.z; n++;
+    }
+  }
+  return n ? out.set(x / n, y / n, z / n) : out.set(0, 1, 0);
+}
+
+function applyView() {
+  const wf = wallFaceX();
+  orbit.enabled = state.view === 'orbit';
+  camera.up.set(0, 1, 0);
+  if (state.view === 'top') {
+    camera.up.set(1, 0, 0);
+    camera.position.set(0, 60, 0.01);
+    camera.lookAt(0, 0, 0);
+  } else if (state.view === 'orbit') {
+    orbit.target.set(wf - 4, 1, 0);
+    camera.position.copy(impactPos());
+    camera.lookAt(orbit.target);
+    orbit.update();
+  } else if (state.view === 'follow') {
+    wreckCenter(_focus);
+    camBase.set(_focus.x - 10, 3.2, 4.2);
+    camLook.set(_focus.x + 4, 1.0, 0);
+  } else {
+    camBase.copy(impactPos());
+    camLook.set(wf - 2.5, 1.0, 0);
+  }
+}
+
+function setView(v) {
+  state.view = v;
+  applyView();
+}
+
+function updateCamera(dt) {
+  const wf = wallFaceX();
+  const k = 1 - Math.exp(-dt * 5);
+  shakeAmp *= Math.exp(-dt * 2.2);
+  if (state.view === 'impact') {
+    wreckCenter(_focus);
+    const impacted = !!(run && run.car && run.car.impacted);
+    _want.set(wf - 2.5, 1.0, 0);
+    if (impacted) _want.lerp(_focus, 0.35);   // drift onto the wreck after contact
+    camLook.lerp(_want, k);
+    camBase.copy(impactPos());
+  } else if (state.view === 'follow') {
+    wreckCenter(_focus);
+    _want.set(_focus.x - 10, 3.2, 4.2);
+    camBase.lerp(_want, k);
+    _look.set(_focus.x + 4, 1.0, 0);
+    camLook.lerp(_look, k);
+  } else {
+    return;   // top and orbit are static / user driven
+  }
+  shakeOff.set(camRng() - 0.5, (camRng() - 0.5) * 0.5, camRng() - 0.5).multiplyScalar(shakeAmp);
+  camera.position.copy(camBase).add(shakeOff);
+  camera.lookAt(camLook);
+}
+
+// ---------- run lifecycle: Replay and Apply rebuild the whole run from current settings ----------
+function buildRun() {
+  if (run) {
+    scene.remove(run.group);
+    run.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+  }
+  const made = makeWorld();
+  world = made.w;
+  mats = made.m;
+  accum = 0;
+  simTime = 0;
+  run = { group: new THREE.Group(), rng: makeRng(RUN_SEED), shards: [], wall: null, car: null };
+  scene.add(run.group);
+  buildTrack(run.group);
+  buildWall(run.group);
+  buildCar(run.group);
+  resetFx();
+  state.runCount++;
+}
+
+buildRun();
+applyView();
+
+// ---------- UI: control bar, settings panel, keyboard ----------
+const $ = (id) => document.getElementById(id);
+const fields = [...document.querySelectorAll('#panel input[data-k]')];
+const LIMITS = {
+  speed: [1, 60], carMass: [100, 10000], carLen: [2.5, 8], carWid: [1, 3], carHgt: [0.6, 3],
+  wallCols: [1, 30], wallRows: [1, 20], wallDepth: [1, 4], brickMass: [0.1, 50],
+  brickW: [0.1, 1.5], brickH: [0.05, 1], brickD: [0.05, 1],
+  gravity: [0, 30], brickFriction: [0, 2], brickRest: [0, 1], groundFriction: [0, 2], trackLen: [24, 80],
+};
+const INTS = new Set(['wallCols', 'wallRows', 'wallDepth']);
+
+function fillPanel() {
+  for (const el of fields) el.value = settings[el.dataset.k];
+}
+// every field is clamped and written into settings; nothing on screen is decorative
+function readPanel() {
+  for (const el of fields) {
+    const k = el.dataset.k;
+    let v = parseFloat(el.value);
+    if (!Number.isFinite(v)) v = settings[k];
+    v = Math.min(LIMITS[k][1], Math.max(LIMITS[k][0], v));
+    if (INTS.has(k)) v = Math.round(v);
+    settings[k] = v;
+    el.value = v;
+  }
+}
+function updatePlayBtn() {
+  $('btnPlay').textContent = state.paused ? 'Play' : 'Pause';
+}
+function togglePause() {
+  state.paused = !state.paused;
+  updatePlayBtn();
+}
+function replay() {
+  buildRun();
+  state.paused = false;
+  updatePlayBtn();
+  applyView();
+  highlight();
+}
+function highlight() {
+  document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.speed === state.timeScale));
+  document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('on', b.dataset.view === state.view));
+}
+
+document.querySelectorAll('#speeds button').forEach((b) =>
+  b.addEventListener('click', () => { state.timeScale = +b.dataset.speed; highlight(); }));
+document.querySelectorAll('#views button').forEach((b) =>
+  b.addEventListener('click', () => { setView(b.dataset.view); highlight(); }));
+$('btnPlay').addEventListener('click', togglePause);
+$('btnReplay').addEventListener('click', replay);
+$('btnSettings').addEventListener('click', () => { $('panel').hidden = !$('panel').hidden; });
+$('btnApply').addEventListener('click', () => { readPanel(); replay(); });
+$('btnDefaults').addEventListener('click', () => { Object.assign(settings, DEFAULTS); fillPanel(); replay(); });
+document.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => b.blur()));
+
+addEventListener('keydown', (e) => {
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) togglePause(); }
+  const views = ['impact', 'follow', 'top', 'orbit'];
+  if (e.key >= '1' && e.key <= '4') { setView(views[+e.key - 1]); highlight(); }
+});
+
+let hudTimer = 0;
+function updateHud(dt) {
+  hudTimer -= dt;
+  if (hudTimer > 0 || !run || !run.car) return;
+  hudTimer = 0.15;
+  const car = run.car;
+  const parts = [`t ${simTime.toFixed(2)} s`, `${state.paused ? 'paused' : state.timeScale + '×'}`];
+  parts.push(`${car.breakCount || 0} bonds broken`, `${run.shards.length} shards`);
+  if (car.impacted) parts.push(`impact ${car.impactSpeed.toFixed(1)} m/s`);
+  $('stat').textContent = parts.join(' · ');
+}
+
+fillPanel();
+highlight();
+updatePlayBtn();
+//@@END@@
+
+</script>
+</body>
+</html>

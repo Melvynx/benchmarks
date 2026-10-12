@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Claude Haiku 5.5</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #050403; color: #eadbc4;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  h1 { position: fixed; top: 22px; left: 26px; margin: 0; font-size: 12px; font-weight: 500;
+    letter-spacing: .34em; text-transform: uppercase; color: rgba(234,219,196,.6); pointer-events: none; }
+  #panel { position: fixed; right: 22px; bottom: 22px; width: 236px; padding: 16px; box-sizing: border-box;
+    background: rgba(16,13,11,.66); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,214,160,.12); border-radius: 14px; font-size: 11px; letter-spacing: .03em; user-select: none; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .lbl { color: rgba(234,219,196,.7); text-transform: uppercase; letter-spacing: .2em; font-size: 10px; }
+  #power { width: 44px; height: 24px; border-radius: 12px; border: 1px solid rgba(255,214,160,.25);
+    background: #2a211b; position: relative; padding: 0; cursor: pointer; transition: background .3s; }
+  #power::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+    background: #cbb89c; transition: transform .3s, background .3s; }
+  #power.on { background: #7a4a1a; }
+  #power.on::after { transform: translateX(20px); background: #ffd9a0; }
+  .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .preset { height: 34px; border-radius: 9px; border: 1px solid rgba(255,255,255,.12); padding: 0; cursor: pointer; }
+  .preset.active { outline: 1px solid rgba(255,220,170,.85); outline-offset: 2px; }
+  label.s { display: block; margin-bottom: 12px; }
+  label.s .lbl { display: flex; justify-content: space-between; }
+  input[type=range] { width: 100%; accent-color: #e9a25a; margin: 6px 0 0; }
+  .chk { display: flex; align-items: center; gap: 8px; color: rgba(234,219,196,.75); cursor: pointer; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<h1 id="title">Claude Haiku 5.5</h1>
+<div id="panel">
+  <div class="row"><span class="lbl">Power</span><button id="power" class="on" aria-label="Power"></button></div>
+  <div class="presets" id="presets"></div>
+  <label class="s"><span class="lbl">Heat / flow</span><input id="flow" type="range" min="0.3" max="2" step="0.01" value="1"></label>
+  <label class="s"><span class="lbl">Wax amount</span><input id="amount" type="range" min="0.3" max="1" step="0.01" value="0.75"></label>
+  <label class="s"><span class="lbl">Room light</span><input id="room" type="range" min="0" max="1" step="0.01" value="0.6"></label>
+  <label class="chk"><input id="orbit" type="checkbox"> Auto-orbit</label>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ---------- geometry constants (meters, lamp ~0.47 tall) ----------
+const YB = 0.085, YT = 0.40, YTOP = 0.43;     // vessel bottom, taper end, top
+const BULB = new THREE.Vector3(0, 0.088, 0);
+const BULB_R = 0.024;
+const RP = 0.058, POOL_A = Math.PI * RP * RP;   // pool radius & area
+const MAXB = 12;
+const FIXED = 1 / 120;
+
+const PRESETS = [
+  { name: 'Classic', wax: [0xff5a1f, 0xb3081c], liq: [0xffd33d, 0xf29a00] },
+  { name: 'Ocean',   wax: [0x7ffcff, 0x0a8fc0], liq: [0x2d4fd0, 0x0b0b3f] },
+  { name: 'Toxic',   wax: [0xd4ff3a, 0x35b000], liq: [0xff3fb4, 0x4a0a6b] },
+  { name: 'Ghost',   wax: [0xfff6e6, 0xd6c3a0], liq: [0x2a7fe0, 0x071f4d] },
+];
+
+const params = { flow: 1, amount: 0.75, room: 0.6 };
+
+const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
+const ss = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const rnd = (a, b) => a + Math.random() * (b - a);
+const volOf = r => 4 / 3 * Math.PI * r * r * r;
+const radOf = v => Math.cbrt(3 * v / (4 * Math.PI));
+
+// vessel outer radius (JS mirror of GLSL rOut)
+function rOutJ(y) {
+  if (y > YT) { const u = clamp((y - YT) / (YTOP - YT), 0, 1); return 0.036 * Math.sqrt(Math.max(1 - u * u, 0)); }
+  const t = clamp((y - YB) / (YT - YB), 0, 1);
+  return 0.066 - 0.030 * t;
+}
+const hotT = y => 0.05 + 0.95 * ss(0.30, 0.12, y);   // heat target by height
+
+// ---------- renderer / scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x030302);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.02, 20);
+camera.position.set(0.62, 0.36, 0.86);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.23, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.enablePan = false;
+controls.minDistance = 0.3;
+controls.maxDistance = 1.6;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.autoRotateSpeed = 0.5;
+
+// ---------- room ----------
+function woodTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 1024;
+  const g = c.getContext('2d');
+  const planks = 8, pw = 1024 / planks;
+  for (let i = 0; i < planks; i++) {
+    const base = 52 + Math.random() * 18;
+    g.fillStyle = `rgb(${base + 34},${base + 16},${base - 6})`;
+    g.fillRect(i * pw, 0, pw, 1024);
+    for (let k = 0; k < 60; k++) {
+      g.strokeStyle = `rgba(35,16,6,${Math.random() * 0.22})`;
+      g.lineWidth = Math.random() * 1.6;
+      g.beginPath();
+      const x0 = i * pw + Math.random() * pw;
+      g.moveTo(x0, 0);
+      for (let y = 0; y <= 1024; y += 32) g.lineTo(x0 + Math.sin(y * 0.01 + k) * 4 + (Math.random() - 0.5) * 1.5, y);
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(20,9,3,0.85)'; g.fillRect(i * pw, 0, 2, 1024);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(2.2, 2.2);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+function glowTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0, 'rgba(255,150,60,1)');
+  gr.addColorStop(0.25, 'rgba(255,110,40,0.35)');
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+const floor = new THREE.Mesh(new THREE.CircleGeometry(2.4, 96),
+  new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.5, metalness: 0, envMapIntensity: 0.3 }));
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const wall = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 1.8, 96, 1, true),
+  new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 0.95, side: THREE.DoubleSide, envMapIntensity: 0.1 }));
+wall.position.y = 0.9;
+wall.receiveShadow = true;
+scene.add(wall);
+
+const glowDecal = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9),
+  new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, opacity: 0.6,
+    blending: THREE.AdditiveBlending, depthWrite: false }));
+glowDecal.rotation.x = -Math.PI / 2;
+glowDecal.position.y = 0.002;
+scene.add(glowDecal);
+
+// props
+const bookCols = [[0.16, 0.035, 0.11, 0x2b4a6f], [0.14, 0.028, 0.10, 0x7a2e2a], [0.15, 0.04, 0.11, 0xc9b27c]];
+let by = 0;
+bookCols.forEach(([w, h, d, c], i) => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshStandardMaterial({ color: c, roughness: 0.7, envMapIntensity: 0.4 }));
+  m.position.set(-0.27, by + h / 2, -0.1);
+  m.rotation.y = 0.12 * i - 0.05;
+  m.castShadow = m.receiveShadow = true;
+  scene.add(m); by += h;
+});
+const bowlGeo = new THREE.LatheGeometry([[0, 0], [0.045, 0], [0.07, 0.035], [0.078, 0.058], [0.072, 0.062]]
+  .map(([x, y]) => new THREE.Vector2(x, y)), 64);
+const bowl = new THREE.Mesh(bowlGeo, new THREE.MeshStandardMaterial({ color: 0xd8cfc0, roughness: 0.35, envMapIntensity: 0.5, side: THREE.DoubleSide }));
+bowl.position.set(0.3, 0, 0.2);
+bowl.castShadow = bowl.receiveShadow = true;
+scene.add(bowl);
+
+// ---------- lamp hardware ----------
+const lamp = new THREE.Group();
+scene.add(lamp);
+
+const baseGeo = new THREE.LatheGeometry([[0, 0], [0.082, 0], [0.078, 0.01], [0.07, 0.07], [0.066, 0.085],
+  [0.044, 0.085], [0.044, 0.062], [0, 0.062]].map(([x, y]) => new THREE.Vector2(x, y)), 128);
+const metalMat = new THREE.MeshStandardMaterial({ color: 0xc2c6cc, metalness: 1, roughness: 0.24, side: THREE.DoubleSide, envMapIntensity: 1.0 });
+const base = new THREE.Mesh(baseGeo, metalMat);
+base.castShadow = base.receiveShadow = true;
+lamp.add(base);
+
+const capGeo = new THREE.LatheGeometry([[0, 0.41], [0.0365, 0.41], [0.0375, 0.418], [0.0365, 0.44],
+  [0.034, 0.455], [0.027, 0.463], [0, 0.466]].map(([x, y]) => new THREE.Vector2(x, y)), 128);
+const cap = new THREE.Mesh(capGeo, metalMat);
+cap.castShadow = true;
+lamp.add(cap);
+
+// switch on the base front
+const switchGroup = new THREE.Group();
+switchGroup.position.set(0, 0.03, 0.0775);
+const housing = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.016, 0.012),
+  new THREE.MeshStandardMaterial({ color: 0x1b1b1b, roughness: 0.4, metalness: 0.2 }));
+const lever = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.012, 0.006),
+  new THREE.MeshStandardMaterial({ color: 0xd9d9d9, metalness: 1, roughness: 0.2 }));
+lever.position.set(0, 0.006, 0.008);
+switchGroup.add(housing, lever);
+lamp.add(switchGroup);
+
+// power cord
+const cordCurve = new THREE.CatmullRomCurve3([
+  [0, 0.012, -0.08], [0, 0.02, -0.11], [0.03, 0.0035, -0.16], [0.12, 0.0035, -0.26],
+  [0.26, 0.0035, -0.42], [0.42, 0.0035, -0.62],
+].map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+const cord = new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 160, 0.0035, 10, false),
+  new THREE.MeshStandardMaterial({ color: 0x0d0d0d, roughness: 0.55 }));
+cord.castShadow = true;
+scene.add(cord);
+
+// glass vessel
+const vesselPts = [new THREE.Vector2(0, YB)];
+for (let i = 0; i <= 96; i++) { const y = YB + (YTOP - YB) * i / 96; vesselPts.push(new THREE.Vector2(rOutJ(y), y)); }
+const vesselGeo = new THREE.LatheGeometry(vesselPts, 160);
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff, metalness: 0, roughness: 0.04, transmission: 1, thickness: 0.02, ior: 1.5,
+  specularIntensity: 1, envMapIntensity: 1.1, attenuationDistance: 0.12, side: THREE.DoubleSide,
+});
+const glass = new THREE.Mesh(vesselGeo, glassMat);
+scene.add(glass);
+// invisible shadow caster for the glass body
+const casterMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+const caster = new THREE.Mesh(vesselGeo, casterMat);
+caster.castShadow = true;
+scene.add(caster);
+
+// ---------- wax uniforms + raymarch proxy ----------
+const vec4s = n => Array.from({ length: n }, () => new THREE.Vector4());
+const U = {
+  uBulb: { value: BULB.clone() },
+  uBulbR: { value: BULB_R },
+  uBulbI: { value: 1 },
+  uBulbCol: { value: new THREE.Vector3(1.0, 0.62, 0.28) },
+  uCount: { value: 0 },
+  uBlob: { value: vec4s(MAXB) },
+  uBlobS: { value: vec4s(MAXB) },
+  uPool: { value: new THREE.Vector4() },
+  uWaxA: { value: new THREE.Vector3(1, 0.3, 0.1) },
+  uWaxB: { value: new THREE.Vector3(0.7, 0.01, 0.01) },
+  uLiqA: { value: new THREE.Vector3(1, 0.7, 0.1) },
+  uLiqB: { value: new THREE.Vector3(0.9, 0.4, 0.01) },
+  uTime: { value: 0 },
+};
+
+const vertexShader = /* glsl */`
+varying vec3 vWorld;
+void main(){
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorld = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+
+const fragmentShader = /* glsl */`
+#define MAXB 12
+uniform vec3 uBulb; uniform float uBulbR; uniform float uBulbI; uniform vec3 uBulbCol;
+uniform int uCount; uniform vec4 uBlob[MAXB]; uniform vec4 uBlobS[MAXB]; uniform vec4 uPool;
+uniform vec3 uWaxA; uniform vec3 uWaxB; uniform vec3 uLiqA; uniform vec3 uLiqB; uniform float uTime;
+varying vec3 vWorld;
+
+const float YB = 0.085;
+const float YT = 0.40;
+const float YTOP = 0.43;
+const float YLO = 0.089;
+const float YHI = 0.427;
+
+float rOut(float y){
+  float t = clamp((y - YB) / (YT - YB), 0.0, 1.0);
+  float r = mix(0.066, 0.036, t);
+  float u = clamp((y - YT) / (YTOP - YT), 0.0, 1.0);
+  float dome = 0.036 * sqrt(max(1.0 - u*u, 0.0));
+  return y > YT ? dome : r;
+}
+
+// positive inside the vessel interior
+float wallD(vec3 p){
+  float rin = rOut(p.y) - 0.003;
+  return min(rin - length(p.xz), min(p.y - YLO, YHI - p.y));
+}
+
+float sdEll(vec3 p, vec3 r){
+  float k0 = length(p / r);
+  float k1 = length(p / (r * r));
+  return k0 * (k0 - 1.0) / max(k1, 1e-6);
+}
+
+float smin(float a, float b, float k){
+  float h = max(k - abs(a - b), 0.0) / k;
+  return min(a, b) - h*h*k*0.25;
+}
+
+// wax field: x = signed distance, y = temperature of closest lobe
+vec2 waxMap(vec3 p){
+  float vr = uPool.x * 0.5 + 0.01;
+  vec3 pc = vec3(0.0, YB + uPool.x - vr, 0.0);
+  float d = sdEll(p - pc, vec3(uPool.y, vr, uPool.y));
+  float temp = 1.0;
+  for (int i = 0; i < MAXB; i++){
+    if (i >= uCount) break;
+    vec4 b = uBlob[i];
+    vec4 s = uBlobS[i];
+    float di = sdEll(p - b.xyz, b.w * s.xyz);
+    if (di < d) temp = s.w;
+    d = smin(d, di, 0.035);
+  }
+  return vec2(d, temp);
+}
+
+float Ffun(vec3 p){ return max(waxMap(p).x, -wallD(p)); }
+
+void main(){
+  vec3 ro = cameraPosition;
+  vec3 rd = normalize(vWorld - ro);
+  float t = length(vWorld - ro);
+  float tEnter = -1.0;
+  float tHit = -1.0;
+  float tTemp = 1.0;
+  bool entered = false;
+
+  for (int i = 0; i < 110; i++){
+    vec3 p = ro + rd * t;
+    if (i > 0 && (p.y < 0.0625 || p.y > 0.4525 || abs(p.x) > 0.075 || abs(p.z) > 0.075)) break;
+    float wd = wallD(p);
+    if (!entered){
+      if (wd > 0.0){ entered = true; tEnter = t; }
+      else { t += max(-wd, 0.0015); continue; }
+    }
+    if (wd < 0.0) break;
+    vec2 m = waxMap(p);
+    float F = max(m.x, -wd);
+    if (F < 0.0006){ tHit = t; tTemp = m.y; break; }
+    t += clamp(min(F * 0.9, wd), 0.0008, 0.02);
+  }
+
+  if (!entered) discard;
+
+  // analytic bulb
+  vec3 oc = ro - uBulb;
+  float bb = dot(oc, rd);
+  float disc = bb*bb - (dot(oc, oc) - uBulbR*uBulbR);
+  float tb = -1.0;
+  if (disc > 0.0){ float s = -bb - sqrt(disc); if (s > 0.0) tb = s; }
+
+  vec3 col;
+  float depthT;
+
+  if (tb > 0.0 && (tHit < 0.0 || tb < tHit)){
+    vec3 bp = ro + rd * tb;
+    float fr = 1.0 - abs(dot(normalize(bp - uBulb), rd));
+    col = uBulbCol * (0.3 + 5.0 * uBulbI) * (0.8 + 0.4 * fr * fr);
+    depthT = tb;
+  } else if (tHit > 0.0){
+    vec3 hp = ro + rd * tHit;
+    vec2 k = vec2(1.0, -1.0);
+    float h = 0.0015;
+    vec3 n = normalize(k.xyy * Ffun(hp + k.xyy * h) + k.yyx * Ffun(hp + k.yyx * h)
+                     + k.yxy * Ffun(hp + k.yxy * h) + k.xxx * Ffun(hp + k.xxx * h));
+    vec3 V = -rd;
+    vec3 Lv = uBulb - hp;
+    float d2 = dot(Lv, Lv);
+    vec3 Ld = Lv * inversesqrt(d2);
+    float att = uBulbI * 0.02 / (d2 + 0.01);
+    float wrap = clamp((dot(n, Ld) + 0.5) / 1.5, 0.0, 1.0);
+    float spec = pow(max(dot(n, normalize(Ld + V)), 0.0), 48.0);
+    float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
+    float thick = 0.0;
+    vec3 q = hp;
+    for (int j = 0; j < 5; j++){ q += rd * 0.009; thick += step(waxMap(q).x, 0.0) * 0.009; }
+    vec3 base = mix(uWaxB, uWaxA, tTemp);
+    float trans = exp(-thick * 6.0);
+    vec3 lc = uBulbCol * att;
+    col = base * (0.04 + lc * wrap * 0.85);
+    col += base * lc * trans * 1.5;               // subsurface glow through thin wax
+    col += uBulbCol * spec * att * 0.5;
+    col += base * fres * 0.12;
+    depthT = tHit;
+  } else {
+    vec3 hp = ro + rd * tEnter;
+    float Rm = rOut(hp.y) - 0.003;
+    float dp = abs(ro.x * rd.z - ro.z * rd.x) / max(length(rd.xz), 1e-3);
+    float chord = 2.0 * sqrt(max(Rm*Rm - dp*dp, 0.0));
+    vec3 Lv = uBulb - hp;
+    float d2 = dot(Lv, Lv);
+    float att = uBulbI * 0.02 / (d2 + 0.01);
+    vec3 liq = mix(uLiqA, uLiqB, clamp(chord * 5.0, 0.0, 1.0));
+    float haze = 0.92 + 0.08 * sin(hp.y * 140.0 + hp.x * 90.0 + hp.z * 70.0 + uTime);
+    col = liq * (0.09 + att * uBulbCol * 0.5) * haze * mix(1.0, 0.65, clamp((hp.y - YB) / 0.32, 0.0, 1.0));
+    depthT = tEnter;
+  }
+
+  vec3 hd = ro + rd * depthT;
+  vec4 cp = projectionMatrix * viewMatrix * vec4(hd, 1.0);
+  gl_FragDepth = clamp(0.5 * (cp.z / cp.w) + 0.5, 0.0, 1.0);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.39, 0.15),
+  new THREE.ShaderMaterial({ uniforms: U, vertexShader, fragmentShader }));
+proxy.position.set(0, 0.2575, 0);
+scene.add(proxy);
+
+// ---------- lights ----------
+const bulbLight = new THREE.PointLight(0xff9a48, 0.0045, 2.5, 2);
+bulbLight.position.copy(BULB);
+scene.add(bulbLight);
+
+const key = new THREE.SpotLight(0xffe6c8, 2.4, 0, 0.55, 0.9, 2);
+key.position.set(0.7, 1.25, 0.8);
+key.target.position.set(0, 0.1, 0);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.bias = -0.0004;
+key.shadow.camera.near = 0.3;
+key.shadow.camera.far = 4;
+scene.add(key, key.target);
+
+const hemi = new THREE.HemisphereLight(0x4a4038, 0x0a0806, 0.25);
+scene.add(hemi);
+
+// ---------- post ----------
+const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.45, 0.8);
+composer.addPass(bloom);
+const FilmShader = {
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: 0.55 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform float uVig; varying vec2 vUv;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 d = vUv - 0.5;
+      c.rgb *= clamp(1.0 - dot(d, d) * uVig * 2.0, 0.0, 1.0);
+      c.rgb += (h(vUv * 1000.0 + uTime) - 0.5) * 0.02;
+      gl_FragColor = c;
+    }`,
+};
+const film = new ShaderPass(FilmShader);
+composer.addPass(film);
+composer.addPass(new OutputPass());
+
+// ---------- simulation ----------
+const S = {
+  blobs: [], poolH: 0.05, P: 1, Ptarget: 1, spawnIn: 1.5, swell: null,
+  time: 0, occl: 0, bulbI: 1,
+};
+
+function newBlob(x, y, z, r, T, vy = 0) {
+  const b = { p: new THREE.Vector3(x, y, z), v: new THREE.Vector3(0, vy, 0), r, T, sy: 1,
+    ph: Math.random() * 6.283, swell: false, sink: false, rT: r };
+  S.blobs.push(b);
+  return b;
+}
+
+function constrain(b) {
+  const sxz = 1 / Math.sqrt(b.sy);
+  const ry = b.r * b.sy, rx = b.r * sxz;
+  const rin = rOutJ(b.p.y) - 0.003 - rx - 0.001;
+  const rad = Math.hypot(b.p.x, b.p.z);
+  if (rad > rin) {
+    const k = Math.max(rin, 0) / Math.max(rad, 1e-6);
+    b.p.x *= k; b.p.z *= k;
+    b.v.x *= 0.3; b.v.z *= 0.3;
+  }
+  const lo = 0.089 + ry;
+  if (b.p.y < lo) { b.p.y = lo; if (b.v.y < 0) b.v.y *= -0.3; }
+  const hi = 0.427 - ry;
+  if (b.p.y > hi) { b.p.y = hi; if (b.v.y > 0) b.v.y *= -0.3; }
+}
+
+// seed a lively initial state
+newBlob(0.01, 0.2, -0.01, 0.026, 0.95, 0.02);
+newBlob(-0.012, 0.29, 0.01, 0.022, 0.7, 0.01);
+newBlob(0.01, 0.12, 0.02, 0.02, 0.9, 0.0);
+newBlob(0.02, 0.36, 0.0, 0.024, 0.15, -0.02);
+
+const camDir = new THREE.Vector3();
+const toB = new THREE.Vector3();
+
+function simStep(dt) {
+  S.time += dt;
+  const t = S.time, flow = params.flow, amt = params.amount;
+
+  // power ramp: warm up slowly, cool down slowly
+  S.P += (S.Ptarget - S.P) * (1 - Math.exp(-dt / (S.Ptarget > 0.5 ? 2.2 : 3.5)));
+  // pool drifts toward the wax amount target
+  S.poolH += (0.035 + 0.06 * amt - S.poolH) * dt * 0.05;
+
+  // heat + buoyancy + drift
+  for (const b of S.blobs) {
+    if (b.swell) continue;
+    const ttgt = S.P * hotT(b.p.y) + (1 - S.P) * 0.12;
+    b.T += (ttgt - b.T) * (1 - Math.exp(-dt * 0.8 * flow));
+    if (b.sink) b.v.y = Math.min(b.v.y, -0.02);
+    else b.v.y += ((b.T - 0.5) * 0.2 * flow - 3.3 * b.v.y) * dt;
+    b.v.x += (Math.sin(t * 0.6 + b.ph) * 0.01 - 1.2 * b.v.x - 0.02 * b.p.x) * dt;
+    b.v.z += (Math.cos(t * 0.5 + b.ph * 1.3) * 0.01 - 1.2 * b.v.z - 0.02 * b.p.z) * dt;
+    const stretchT = 1 + clamp(b.v.y * 15, -0.3, 0.8);
+    b.sy += (stretchT - b.sy) * (1 - Math.exp(-dt * 3));
+    b.p.addScaledVector(b.v, dt);
+    constrain(b);
+  }
+
+  // cold blobs reaching the pool sink into it
+  for (const b of S.blobs) {
+    if (b.swell) continue;
+    if (!b.sink && b.T < 0.45 && b.v.y < 0.005 && b.p.y - b.r * b.sy < YB + S.poolH + 0.012) b.sink = true;
+    if (b.sink) {
+      const v0 = volOf(b.r);
+      b.r = Math.max(b.r - dt * 0.03, 0);
+      S.poolH += (v0 - volOf(b.r)) / POOL_A;
+    }
+  }
+  S.blobs = S.blobs.filter(b => !(b.sink && b.r < 0.003));
+
+  // merge overlapping blobs (one per step)
+  outer: for (let i = 0; i < S.blobs.length; i++) {
+    for (let j = i + 1; j < S.blobs.length; j++) {
+      const a = S.blobs[i], c = S.blobs[j];
+      if (a.swell || c.swell || a.sink || c.sink) continue;
+      if (a.p.distanceTo(c.p) < 0.6 * (a.r + c.r)) {
+        const va = volOf(a.r), vc = volOf(c.r), vt = va + vc, rn = radOf(vt);
+        if (rn > 0.05) continue;
+        a.p.multiplyScalar(va / vt).addScaledVector(c.p, vc / vt);
+        a.v.multiplyScalar(va / vt).addScaledVector(c.v, vc / vt);
+        a.T = (a.T * va + c.T * vc) / vt;
+        a.r = rn;
+        S.blobs.splice(j, 1);
+        break outer;
+      }
+    }
+  }
+
+  // split (big blobs) and pinch off droplets (stretched blobs)
+  for (const b of S.blobs) {
+    if (S.blobs.length >= MAXB) break;
+    if (b.swell || b.sink) continue;
+    if (b.r > 0.034 && b.T > 0.4 && Math.random() < 0.3 * dt) {
+      const ang = Math.random() * 6.283, vTot = volOf(b.r), vc = vTot * 0.3, off = b.r * 0.55;
+      b.r = radOf(vTot - vc);
+      b.p.x -= Math.cos(ang) * off * 0.5; b.p.z -= Math.sin(ang) * off * 0.5;
+      const c = newBlob(b.p.x + Math.cos(ang) * off, b.p.y, b.p.z + Math.sin(ang) * off, radOf(vc), b.T);
+      c.v.set(Math.cos(ang) * 0.012, b.v.y, Math.sin(ang) * 0.012);
+      break;
+    }
+    if (b.sy > 1.55 && b.r > 0.017 && b.T > 0.5 && Math.random() < 0.5 * dt) {
+      const vTot = volOf(b.r), vc = vTot * 0.07;
+      b.r = radOf(vTot - vc);
+      newBlob(b.p.x, b.p.y + b.r * b.sy * 0.75, b.p.z, radOf(vc), b.T, b.v.y * 1.4 + 0.01);
+      break;
+    }
+  }
+
+  // swelling blob attached to the pool, then detaches
+  if (S.swell) {
+    const b = S.swell;
+    const vT = volOf(b.rT), vNow = volOf(b.r);
+    const vNew = Math.min(vNow + vT / 3.5 * dt, vT);
+    b.r = radOf(vNew);
+    S.poolH = Math.max(S.poolH - (vNew - vNow) / POOL_A, 0.004);
+    b.p.set(b.p.x, YB + S.poolH + b.r * 0.3, b.p.z);
+    b.v.set(0, 0, 0);
+    b.T = 1;
+    if (b.r >= b.rT * 0.97) {
+      b.swell = false; b.v.y = 0.012; b.sy = 1; S.swell = null;
+      S.spawnIn = rnd(1.5, 3) / flow;
+    }
+  } else {
+    S.spawnIn -= dt;
+    if (S.P > 0.85 && S.poolH > 0.02 && S.blobs.length < MAXB && S.spawnIn <= 0) {
+      const b = newBlob(rnd(-0.015, 0.015), YB + S.poolH, rnd(-0.015, 0.015), 0.008, 1);
+      b.swell = true;
+      b.rT = rnd(0.022, 0.03) * Math.cbrt(amt);
+      S.swell = b;
+    }
+  }
+
+  // bulb occlusion: wax between bulb and camera dims the glow
+  camDir.copy(camera.position).sub(BULB).normalize();
+  let occ = 0;
+  for (const b of S.blobs) {
+    toB.copy(b.p).sub(BULB);
+    const along = toB.dot(camDir);
+    if (along > 0) {
+      const perp = toB.clone().addScaledVector(camDir, -along).length();
+      if (perp < b.r + BULB_R) occ += clamp(1 - perp / (b.r + BULB_R), 0, 1) * 0.5;
+    }
+  }
+  S.occl += (clamp(occ, 0, 0.8) - S.occl) * (1 - Math.exp(-dt * 20));
+  S.bulbI = S.P * (0.93 + 0.04 * Math.sin(t * 5.3) + 0.03 * Math.sin(t * 11.7 + 1.2) + 0.02 * Math.sin(t * 23.1))
+    * (1 - 0.6 * S.occl);
+}
+
+function syncUniforms() {
+  const n = Math.min(S.blobs.length, MAXB);
+  U.uCount.value = n;
+  for (let i = 0; i < n; i++) {
+    const b = S.blobs[i];
+    const sxz = 1 / Math.sqrt(b.sy);
+    U.uBlob.value[i].set(b.p.x, b.p.y, b.p.z, b.r);
+    U.uBlobS.value[i].set(sxz, b.sy, sxz, b.T);
+  }
+  U.uPool.value.set(S.poolH, RP, 0, 0);
+  U.uBulbI.value = S.bulbI;
+  U.uTime.value = S.time;
+
+  bulbLight.intensity = 0.0045 * S.bulbI + 0.0002;
+  glowDecal.material.opacity = 0.65 * S.bulbI;
+  key.intensity = 2.4 * params.room;
+  hemi.intensity = 0.1 + 0.2 * params.room;
+}
+
+// ---------- presets ----------
+const setV = (v, hex) => { const c = new THREE.Color(hex); v.set(c.r, c.g, c.b); };
+const presetsEl = document.getElementById('presets');
+let activePreset = 0;
+function applyPreset(i) {
+  activePreset = i;
+  const p = PRESETS[i];
+  setV(U.uWaxA.value, p.wax[0]); setV(U.uWaxB.value, p.wax[1]);
+  setV(U.uLiqA.value, p.liq[0]); setV(U.uLiqB.value, p.liq[1]);
+  glassMat.attenuationColor.setHex(p.liq[1]);
+  [...presetsEl.children].forEach((el, k) => el.classList.toggle('active', k === i));
+}
+PRESETS.forEach((p, i) => {
+  const btn = document.createElement('button');
+  btn.className = 'preset';
+  btn.title = p.name;
+  btn.style.background = `linear-gradient(120deg, #${p.wax[0].toString(16).padStart(6, '0')} 0 50%, #${p.liq[0].toString(16).padStart(6, '0')} 50% 100%)`;
+  btn.addEventListener('click', () => applyPreset(i));
+  presetsEl.appendChild(btn);
+});
+applyPreset(0);
+
+// ---------- power ----------
+const powerBtn = document.getElementById('power');
+function setPower(on) {
+  S.Ptarget = on ? 1 : 0;
+  powerBtn.classList.toggle('on', on);
+}
+powerBtn.addEventListener('click', () => setPower(S.Ptarget < 0.5));
+powerBtn.classList.add('on');
+
+const raycaster = new THREE.Raycaster();
+renderer.domElement.addEventListener('pointerdown', e => {
+  const r = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  if (raycaster.intersectObject(housing).length) setPower(S.Ptarget < 0.5);
+});
+
+// ---------- UI ----------
+document.getElementById('flow').addEventListener('input', e => params.flow = +e.target.value);
+document.getElementById('amount').addEventListener('input', e => params.amount = +e.target.value);
+document.getElementById('room').addEventListener('input', e => params.room = +e.target.value);
+document.getElementById('orbit').addEventListener('change', e => controls.autoRotate = e.target.checked);
+
+// ---------- resize + adaptive resolution ----------
+let quality = 1;
+function setQuality(q) {
+  const pr = Math.min(devicePixelRatio, 1.5) * q;
+  renderer.setPixelRatio(pr);
+  composer.setPixelRatio(pr);
+}
+function onResize() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+}
+window.addEventListener('resize', onResize);
+setQuality(quality);
+onResize();
+
+let fAvg = 16.7, lastQ = 0;
+function adapt(now, dtMs) {
+  fAvg = fAvg * 0.9 + dtMs * 0.1;
+  if (now - lastQ > 1200) {
+    lastQ = now;
+    let q = quality;
+    if (fAvg > 21 && q > 0.5) q -= 0.1;
+    else if (fAvg < 15 && q < 1) q += 0.05;
+    q = Math.round(q * 100) / 100;
+    if (q !== quality) { quality = q; setQuality(q); onResize(); }
+  }
+}
+
+// ---------- loop ----------
+let acc = 0, prev = performance.now();
+function frame(now) {
+  const dtMs = Math.min(now - prev, 100);
+  prev = now;
+  acc += dtMs / 1000;
+  let steps = 0;
+  while (acc >= FIXED && steps < 12) { simStep(FIXED); acc -= FIXED; steps++; }
+  if (steps >= 12) acc = 0;
+
+  // lever follows power state
+  const leverTarget = S.Ptarget > 0.5 ? -0.4 : 0.4;
+  lever.rotation.x += (leverTarget - lever.rotation.x) * 0.15;
+
+  controls.update();
+  syncUniforms();
+  film.uniforms.uTime.value = now * 0.001;
+  composer.render();
+  adapt(now, dtMs);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

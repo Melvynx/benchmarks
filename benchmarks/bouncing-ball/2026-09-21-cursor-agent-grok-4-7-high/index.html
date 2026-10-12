@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grok 4.7</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000000;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #000000;
+    }
+    h1 {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      margin: 0;
+      transform: translateX(-50%);
+      color: #ffffff;
+      font: 500 16px/1 sans-serif;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Grok 4.7</h1>
+  <canvas id="c"></canvas>
+  <script>
+    (() => {
+      const SIDES = 7;
+      const POLY_R = 250;
+      const BALL_R = 15;
+      const GRAVITY = 500;
+      const RESTITUTION = 0.8;
+      const FRICTION = 0.98;
+      const OMEGA = 0.5;
+      const MAX_DT = 1 / 30;
+      const SLOP = 1e-3;
+
+      const canvas = document.getElementById("c");
+      const ctx = canvas.getContext("2d");
+
+      // Fixed heptagon in the polygon frame. Collision runs here; drawing rotates it.
+      const local = Array.from({ length: SIDES }, (_, i) => {
+        const a = -Math.PI / 2 + (i * 2 * Math.PI) / SIDES;
+        return { x: POLY_R * Math.cos(a), y: POLY_R * Math.sin(a) };
+      });
+
+      const walls = local.map((start, i) => {
+        const end = local[(i + 1) % SIDES];
+        const ex = end.x - start.x;
+        const ey = end.y - start.y;
+        const len = Math.hypot(ex, ey);
+        let nx = ey / len;
+        let ny = -ex / len;
+        const mx = (start.x + end.x) * 0.5;
+        const my = (start.y + end.y) * 0.5;
+        if (nx * mx + ny * my < 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+        return { sx: start.x, sy: start.y, ex, ey, invLenSq: 1 / (len * len), nx, ny };
+      });
+
+      let width = 0;
+      let height = 0;
+      let cx = 0;
+      let cy = 0;
+      let angle = 0;
+      let prev = 0;
+      const ball = { x: 0, y: 0, vx: 0, vy: 0 };
+
+      function resize() {
+        const prevCx = cx;
+        const prevCy = cy;
+        width = window.innerWidth;
+        height = window.innerHeight;
+        cx = width * 0.5;
+        cy = height * 0.5;
+        if (prevCx || prevCy) {
+          ball.x += cx - prevCx;
+          ball.y += cy - prevCy;
+        } else {
+          ball.x = cx;
+          ball.y = cy;
+        }
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function worldToLocal(x, y) {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const rx = x - cx;
+        const ry = y - cy;
+        return {
+          cos,
+          sin,
+          x: cos * rx + sin * ry,
+          y: -sin * rx + cos * ry
+        };
+      }
+
+      function collide() {
+        const frame = worldToLocal(ball.x, ball.y);
+        const cos = frame.cos;
+        const sin = frame.sin;
+        let lx = frame.x;
+        let ly = frame.y;
+        let lvx = cos * ball.vx + sin * ball.vy;
+        let lvy = -sin * ball.vx + cos * ball.vy;
+
+        for (let pass = 0; pass < 16; pass++) {
+          let worst = 0;
+          let idx = -1;
+          for (let i = 0; i < SIDES; i++) {
+            const wall = walls[i];
+            const pen = (lx - wall.sx) * wall.nx + (ly - wall.sy) * wall.ny + BALL_R;
+            if (pen > worst) {
+              worst = pen;
+              idx = i;
+            }
+          }
+          if (idx < 0) break;
+
+          const wall = walls[idx];
+          const dx = lx - wall.sx;
+          const dy = ly - wall.sy;
+          lx -= wall.nx * (worst + SLOP);
+          ly -= wall.ny * (worst + SLOP);
+
+          const t = Math.max(0, Math.min(1, (dx * wall.ex + dy * wall.ey) * wall.invLenSq));
+          const px = wall.sx + wall.ex * t;
+          const py = wall.sy + wall.ey * t;
+          const wvx = -OMEGA * py;
+          const wvy = OMEGA * px;
+
+          let relx = lvx - wvx;
+          let rely = lvy - wvy;
+          const vn = relx * wall.nx + rely * wall.ny;
+          if (vn > 0) {
+            relx -= (1 + RESTITUTION) * vn * wall.nx;
+            rely -= (1 + RESTITUTION) * vn * wall.ny;
+            const nAfter = relx * wall.nx + rely * wall.ny;
+            const tx = (relx - nAfter * wall.nx) * FRICTION;
+            const ty = (rely - nAfter * wall.ny) * FRICTION;
+            lvx = tx + nAfter * wall.nx + wvx;
+            lvy = ty + nAfter * wall.ny + wvy;
+          }
+        }
+
+        ball.x = cx + cos * lx - sin * ly;
+        ball.y = cy + sin * lx + cos * ly;
+        ball.vx = cos * lvx - sin * lvy;
+        ball.vy = sin * lvx + cos * lvy;
+      }
+
+      function step(dt) {
+        const travel =
+          (Math.hypot(ball.vx, ball.vy) + Math.abs(OMEGA) * POLY_R) * dt +
+          0.5 * GRAVITY * dt * dt;
+        const n = Math.max(1, Math.min(240, Math.ceil(travel / (BALL_R * 0.25))));
+        const h = dt / n;
+        for (let i = 0; i < n; i++) {
+          angle += OMEGA * h;
+          ball.vy += GRAVITY * h;
+          ball.x += ball.vx * h;
+          ball.y += ball.vy * h;
+          collide();
+        }
+      }
+
+      function draw() {
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, width, height);
+
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        ctx.beginPath();
+        for (let i = 0; i < SIDES; i++) {
+          const v = local[i];
+          const x = cx + cos * v.x - sin * v.y;
+          const y = cy + sin * v.x + cos * v.y;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1;
+        ctx.lineJoin = "miter";
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+        ctx.fillStyle = "#FF0000";
+        ctx.fill();
+      }
+
+      function frame(now) {
+        if (!prev) prev = now;
+        const dt = Math.min((now - prev) / 1000, MAX_DT);
+        prev = now;
+        if (dt > 0) step(dt);
+        draw();
+        requestAnimationFrame(frame);
+      }
+
+      window.addEventListener("resize", resize);
+      resize();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

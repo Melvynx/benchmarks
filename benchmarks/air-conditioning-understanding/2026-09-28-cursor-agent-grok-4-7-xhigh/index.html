@@ -1,0 +1,1919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Grok 4.7</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --ink: #f4f0e8;
+    --muted: #c9c1b4;
+    --line: rgba(244, 236, 224, 0.16);
+    --glass: rgba(12, 13, 16, 0.72);
+    --heat: #ff7a2a;
+    --room: #e7b98a;
+    --out: #8fc6de;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #090b10;
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  #view { position: fixed; inset: 0; z-index: 0; }
+  #view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  #labels, #labels * { pointer-events: none !important; }
+  #vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      linear-gradient(to bottom, rgba(0,0,0,0.5), transparent 20%),
+      linear-gradient(to top, rgba(0,0,0,0.55), transparent 26%);
+  }
+  h1 {
+    position: fixed;
+    z-index: 4;
+    top: calc(14px + env(safe-area-inset-top));
+    left: calc(16px + env(safe-area-inset-left));
+    margin: 0;
+    font-size: 22px;
+    font-weight: 620;
+    letter-spacing: 0.01em;
+    text-shadow: 0 2px 16px rgba(0,0,0,0.45);
+  }
+  #hud { position: fixed; inset: 0; z-index: 3; pointer-events: none; visibility: hidden; }
+  body.ready #hud { visibility: visible; }
+  #hud button, #hud .panel { pointer-events: auto; }
+  button {
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.04);
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+  }
+  button:focus-visible { outline: 2px solid #e7a15a; outline-offset: 2px; }
+  button[aria-pressed="true"] {
+    background: #f3ecdf;
+    color: #1c1915;
+    border-color: transparent;
+  }
+  .panel {
+    background: var(--glass);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  #controls {
+    position: absolute;
+    top: calc(48px + env(safe-area-inset-top));
+    left: calc(16px + env(safe-area-inset-left));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    max-width: min(420px, calc(100vw - 32px));
+  }
+  .seg { display: flex; gap: 4px; }
+  .seg button { flex: 1; }
+  .row { display: flex; gap: 8px; }
+  .row button { flex: 1; }
+  #status {
+    position: absolute;
+    top: calc(14px + env(safe-area-inset-top));
+    right: calc(16px + env(safe-area-inset-right));
+    width: min(250px, calc(100vw - 32px));
+    padding: 12px 14px 13px;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  #status .sys {
+    font-size: 13px;
+    font-weight: 640;
+    margin-bottom: 8px;
+  }
+  #status .grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+  }
+  #status .grid span:nth-child(odd) { color: var(--muted); }
+  #status .flow {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    color: #f0c39a;
+  }
+  #legend {
+    position: absolute;
+    left: calc(16px + env(safe-area-inset-left));
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 10px 12px;
+    max-width: min(280px, calc(100vw - 32px));
+  }
+  .key { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink); }
+  .key i {
+    width: 12px;
+    height: 12px;
+    border-radius: 99px;
+    display: block;
+    flex: none;
+  }
+  .key i.room { background: var(--room); }
+  .key i.out { background: var(--out); }
+  .key i.ref { background: linear-gradient(90deg, #ff5ea8, #5c7cff); }
+  .key i.heat { background: var(--heat); box-shadow: 0 0 8px var(--heat); }
+  #tour {
+    position: absolute;
+    left: 312px;
+    right: calc(16px + env(safe-area-inset-right));
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    width: auto;
+    max-width: 640px;
+    padding: 10px 12px 12px;
+  }
+  #tour p {
+    margin: 0 0 8px;
+    font-size: 13.5px;
+    line-height: 1.35;
+    min-height: 2.7em;
+  }
+  .tour-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tour-row button { min-width: 44px; padding: 0 12px; }
+  #dots { display: flex; gap: 6px; flex: 1; justify-content: center; }
+  #dots button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 999px;
+    position: relative;
+  }
+  #dots button::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    border-radius: 99px;
+    transform: translate(-50%, -50%);
+    background: rgba(255,255,255,0.45);
+  }
+  #dots button[aria-current="step"] {
+    background: #f3ecdf;
+  }
+  #dots button[aria-current="step"]::after { background: #1c1915; }
+  #stepNum { color: var(--muted); font-size: 12px; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+  #fallback {
+    position: fixed;
+    z-index: 5;
+    left: 50%;
+    top: 46%;
+    transform: translate(-50%, -50%);
+    width: min(460px, calc(100% - 40px));
+    padding: 18px 18px 16px;
+  }
+  #fallback p { margin: 0; line-height: 1.45; color: var(--muted); }
+  .tag {
+    font-size: 11px;
+    line-height: 1.25;
+    color: #f7f4ef;
+    background: rgba(12, 13, 16, 0.8);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 8px;
+    padding: 4px 8px 5px;
+    white-space: nowrap;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.28);
+  }
+  .tag b { display: block; font-weight: 620; }
+  .tag span { display: block; color: #f0b27a; font-size: 10px; }
+  .tag.temp span { color: #d7ebf6; }
+  @media (max-width: 980px) {
+    #status {
+      top: auto;
+      bottom: calc(214px + env(safe-area-inset-bottom));
+      left: 10px;
+      right: 10px;
+      width: auto;
+    }
+    #legend {
+      left: 10px;
+      right: 10px;
+      bottom: calc(154px + env(safe-area-inset-bottom));
+      max-width: none;
+    }
+    #tour {
+      left: 10px;
+      right: 10px;
+      max-width: none;
+      bottom: calc(8px + env(safe-area-inset-bottom));
+    }
+    #controls { max-width: calc(100vw - 20px); }
+  }
+  @media (max-width: 520px) {
+    h1 { font-size: 18px; }
+    #tour p { font-size: 13px; min-height: 3.4em; }
+  }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="vignette"></div>
+<h1>Grok 4.7</h1>
+<div id="hud">
+  <div id="controls" class="panel">
+    <div class="seg" role="group" aria-label="System">
+      <button type="button" id="btnSplit" aria-pressed="true">Split System</button>
+      <button type="button" id="btnMono" aria-pressed="false">Monoblock</button>
+    </div>
+    <div class="seg" role="group" aria-label="Mode">
+      <button type="button" id="btnCool" aria-pressed="true">Cooling</button>
+      <button type="button" id="btnHeat" aria-pressed="false">Heating</button>
+    </div>
+    <div class="row">
+      <button type="button" id="btnPlay">Pause</button>
+      <button type="button" id="btnReset">Reset View</button>
+    </div>
+  </div>
+  <section id="status" class="panel" aria-live="polite">
+    <div class="sys" id="statSys">Split system · Cooling</div>
+    <div class="grid">
+      <span>Indoor</span><b id="statIn">25.6°C</b>
+      <span>Outdoor</span><b id="statOut">33.1°C</b>
+      <span>Supply air</span><b id="statSup">14.8°C</b>
+      <span>Exhaust air</span><b id="statEx">42.7°C</b>
+      <span>Absorbs</span><b id="statAbs">Indoor coil</b>
+      <span>Releases</span><b id="statRel">Outdoor coil</b>
+    </div>
+    <div class="flow" id="statFlow">Heat flow · room → outdoors</div>
+  </section>
+  <div id="legend" class="panel" aria-label="Legend">
+    <div class="key"><i class="room"></i><span>Room air</span></div>
+    <div class="key"><i class="out"></i><span>Outdoor air</span></div>
+    <div class="key"><i class="ref"></i><span>Refrigerant</span></div>
+    <div class="key"><i class="heat"></i><span>Heat</span></div>
+  </div>
+  <section id="tour" class="panel" aria-label="Guided explanation">
+    <p id="tourText"></p>
+    <div class="tour-row">
+      <button type="button" id="btnPrev" aria-label="Previous step">Prev</button>
+      <div id="dots"></div>
+      <button type="button" id="btnNext" aria-label="Next step">Next</button>
+      <button type="button" id="btnReplay">Replay</button>
+      <span id="stepNum">1 / 6</span>
+    </div>
+  </section>
+</div>
+<div id="fallback" class="panel" hidden>
+  <p>This exhibit needs WebGL. A reversible air conditioner moves heat: refrigerant circulates in a sealed loop, room air and outdoor air stay separate, and heating swaps the two heat exchangers.</p>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+const HOT = '#ff5ea8';
+const WARM = '#ff9a86';
+const LIQ = '#3ecfb8';
+const COLD = '#5c7cff';
+const VAP = '#c3b0ff';
+
+const CAMS = {
+  wide: { p: [3.05, 2.05, 5.75], t: [0.15, 1.08, 0.0] },
+  loop: { p: [2.15, 1.62, 4.15], t: [0.25, 1.25, 0.0] },
+  coils: { p: [1.35, 1.72, 3.35], t: [0.1, 1.35, 0.0] },
+  machine: { p: [1.72, 0.78, 2.05], t: [1.22, 0.46, 0.02] },
+  heat: { p: [2.45, 1.55, 4.35], t: [0.35, 1.15, 0.0] },
+  mono: { p: [1.25, 1.05, 3.05], t: [-0.28, 0.68, 0.0] },
+};
+
+const STEPS = [
+  { system: 'split', mode: 'cool', cam: 'wide', text: 'An air conditioner moves heat. It does not create cold.' },
+  { system: 'split', mode: 'cool', cam: 'loop', text: 'Refrigerant travels a sealed loop. Room air and outdoor air never mix.' },
+  { system: 'split', mode: 'cool', cam: 'coils', text: 'Cooling: the indoor coil absorbs heat and condenses moisture. The outdoor coil releases that heat.' },
+  { system: 'split', mode: 'cool', cam: 'machine', text: 'The compressor raises pressure and temperature. The expansion device drops both before the coil that absorbs heat.' },
+  { system: 'split', mode: 'heat', cam: 'heat', text: 'Heating: the reversing valve swaps the coils. Heat is taken from outdoor air and released indoors.' },
+  { system: 'mono', mode: 'cool', cam: 'mono', text: 'Monoblock: the whole circuit sits indoors. Outdoor air enters and leaves through separate wall ducts.' },
+];
+
+const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+let reduced = mq.matches;
+let system = 'split';
+let mode = 'cool';
+let playing = !reduced;
+let tourAuto = !reduced;
+let tourIndex = 0;
+let tourElapsed = 0;
+let viewMode = reduced ? 'home' : 'tour';
+let applying = false;
+let simTime = 0;
+let valveTarget = -0.022;
+let tween = null;
+let heatAcc = 0;
+
+const shown = { indoor: 25.6, outdoor: 33.1, supply: 14.8, exhaust: 42.7 };
+const goal = { ...shown };
+
+const _p = new THREE.Vector3();
+const _t = new THREE.Vector3();
+const _n1 = new THREE.Vector3();
+const _n2 = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _c = new THREE.Color();
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _cam = new THREE.Vector3();
+const _dummy = new THREE.Object3D();
+
+class PolylineCurve extends THREE.Curve {
+  constructor(points) {
+    super();
+    this.points = points.map((p) => p.clone());
+    this.lens = [0];
+    for (let i = 1; i < this.points.length; i++) {
+      const d = Math.max(1e-4, this.points[i].distanceTo(this.points[i - 1]));
+      this.lens.push(this.lens[i - 1] + d);
+    }
+    this.total = this.lens[this.lens.length - 1];
+    this.colors = this.points.map(() => new THREE.Color(0xffffff));
+    this.inletCount = 1;
+  }
+  getPoint(t, optionalTarget = new THREE.Vector3()) {
+    const d = THREE.MathUtils.clamp(t, 0, 1) * this.total;
+    let i = 1;
+    const n = this.lens.length;
+    while (i < n - 1 && this.lens[i] < d) i++;
+    const span = this.lens[i] - this.lens[i - 1];
+    const u = span > 0 ? (d - this.lens[i - 1]) / span : 0;
+    return optionalTarget.lerpVectors(this.points[i - 1], this.points[i], THREE.MathUtils.clamp(u, 0, 1));
+  }
+  tangentAt(t, target) {
+    const e = 0.015;
+    this.getPoint(Math.max(0, t - e), _a);
+    this.getPoint(Math.min(1, t + e), _b);
+    target.subVectors(_b, _a);
+    if (target.lengthSq() < 1e-8) target.set(0, 1, 0);
+    else target.normalize();
+    return target;
+  }
+  colorAt(t, target) {
+    const d = THREE.MathUtils.clamp(t, 0, 1) * this.total;
+    let i = 1;
+    const n = this.lens.length;
+    while (i < n - 1 && this.lens[i] < d) i++;
+    const span = this.lens[i] - this.lens[i - 1];
+    const u = span > 0 ? (d - this.lens[i - 1]) / span : 0;
+    return target.copy(this.colors[i - 1]).lerp(this.colors[i], THREE.MathUtils.clamp(u, 0, 1));
+  }
+}
+
+function smoothstep(t) {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * (3 - 2 * x);
+}
+
+function std(color, roughness, metalness, extra) {
+  return new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra });
+}
+
+function setText(el, text) {
+  if (el && el.textContent !== text) el.textContent = text;
+}
+
+function showFallback(msg) {
+  const hud = document.getElementById('hud');
+  if (hud) hud.hidden = true;
+  const f = document.getElementById('fallback');
+  f.hidden = false;
+  if (msg) f.querySelector('p').textContent = msg;
+  window.__AC_READY = true;
+}
+
+function hasWebGL() {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return !!gl;
+  } catch (e) {
+    return false;
+  }
+}
+
+function softCircle() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.4, 'rgba(255,255,255,0.55)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeSky() {
+  const geo = new THREE.SphereGeometry(42, 32, 20);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const zenith = new THREE.Color(0x10151f);
+  const horizon = new THREE.Color(0xc4896c);
+  const below = new THREE.Color(0x242a30);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) / 42;
+    if (y >= 0) tmp.copy(horizon).lerp(zenith, Math.min(1, y * 1.55));
+    else tmp.copy(horizon).lerp(below, Math.min(1, -y * 2.2));
+    colors[i * 3] = tmp.r;
+    colors[i * 3 + 1] = tmp.g;
+    colors[i * 3 + 2] = tmp.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false }));
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+function panel(parent, w, h, d, mat, x, y, z, cast = true) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  m.castShadow = cast;
+  m.receiveShadow = true;
+  parent.add(m);
+  return m;
+}
+
+function addTube(parent, points, radius, material) {
+  const curve = new PolylineCurve(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+  const geo = new THREE.TubeGeometry(curve, Math.max(12, points.length * 8), radius, 7, false);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function makePath(stops) {
+  const curve = new PolylineCurve(stops.map((s) => new THREE.Vector3(s[0], s[1], s[2])));
+  curve.colors = stops.map((s) => new THREE.Color(s[3]));
+  return curve;
+}
+
+function makeTag(title, temp) {
+  const div = document.createElement('div');
+  div.className = temp ? 'tag temp' : 'tag';
+  const b = document.createElement('b');
+  b.textContent = title;
+  const s = document.createElement('span');
+  div.append(b, s);
+  const obj = new CSS2DObject(div);
+  obj.center.set(0.5, 1.08);
+  obj.userData.span = s;
+  obj.userData.title = b;
+  return obj;
+}
+
+function makeCoil(parent, cx, cy, cz, finW, finH, count, span) {
+  const finGeo = new THREE.BoxGeometry(finW, finH, 0.007);
+  const fins = new THREE.InstancedMesh(finGeo, MAT.fin, count);
+  for (let i = 0; i < count; i++) {
+    const z = cz + (i / (count - 1) - 0.5) * span;
+    _dummy.position.set(cx, cy, z);
+    _dummy.rotation.set(0, 0, 0);
+    _dummy.scale.set(1, 1, 1);
+    _dummy.updateMatrix();
+    fins.setMatrixAt(i, _dummy.matrix);
+  }
+  fins.castShadow = false;
+  fins.receiveShadow = true;
+  parent.add(fins);
+  for (const dy of [-finH * 0.28, 0, finH * 0.28]) {
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, span + 0.05, 8), MAT.copper);
+    tube.rotation.x = Math.PI / 2;
+    tube.position.set(cx, cy + dy, cz);
+    tube.castShadow = true;
+    parent.add(tube);
+  }
+}
+
+function makeDrops(parent, cx, cy, cz) {
+  const N = 26;
+  const geo = new THREE.SphereGeometry(0.011, 8, 6);
+  const mat = std(0xd7eef8, 0.06, 0.02, { transparent: true, opacity: 0.82 });
+  const mesh = new THREE.InstancedMesh(geo, mat, N);
+  const phases = new Float32Array(N);
+  const base = [];
+  for (let i = 0; i < N; i++) {
+    base.push({
+      x: cx + (Math.random() - 0.5) * 0.1,
+      y: cy - 0.02 - Math.random() * 0.06,
+      z: cz + (Math.random() - 0.5) * 0.42,
+      s: 0.55 + Math.random() * 0.7,
+    });
+    phases[i] = Math.random();
+    _dummy.position.set(base[i].x, base[i].y, base[i].z);
+    _dummy.scale.setScalar(base[i].s);
+    _dummy.rotation.set(0, 0, 0);
+    _dummy.updateMatrix();
+    mesh.setMatrixAt(i, _dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  parent.add(mesh);
+  return { mesh, phases, base };
+}
+
+function makeFrost(parent, cx, cy, cz) {
+  const N = 34;
+  const geo = new THREE.IcosahedronGeometry(0.012, 0);
+  const mat = std(0xf4fbff, 0.28, 0.04, { emissive: 0xd7e9f6, emissiveIntensity: 0.3 });
+  const mesh = new THREE.InstancedMesh(geo, mat, N);
+  for (let i = 0; i < N; i++) {
+    _dummy.position.set(
+      cx + (Math.random() - 0.35) * 0.12,
+      cy + (Math.random() - 0.5) * 0.28,
+      cz + (Math.random() - 0.5) * 0.46
+    );
+    _dummy.rotation.set(Math.random(), Math.random(), Math.random());
+    _dummy.scale.setScalar(0.55 + Math.random() * 0.9);
+    _dummy.updateMatrix();
+    mesh.setMatrixAt(i, _dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function makeAxialFan(radius) {
+  const g = new THREE.Group();
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.18, radius * 0.22, 0.05, 16), MAT.dark);
+  hub.castShadow = true;
+  g.add(hub);
+  const rotor = new THREE.Group();
+  for (let i = 0; i < 5; i++) {
+    const pivot = new THREE.Group();
+    pivot.rotation.y = (i / 5) * Math.PI * 2;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.7, 0.012, radius * 0.22), MAT.blade);
+    blade.position.x = radius * 0.42;
+    blade.rotation.z = -0.5;
+    blade.castShadow = true;
+    pivot.add(blade);
+    rotor.add(pivot);
+  }
+  g.add(rotor);
+  g.userData.rotor = rotor;
+  g.userData.axis = 'y';
+  g.userData.rate = 12;
+  return g;
+}
+
+function makeCrossflow(length, radius) {
+  const g = new THREE.Group();
+  const rotor = new THREE.Group();
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.22, radius * 0.22, length, 12), MAT.dark);
+  hub.rotation.x = Math.PI / 2;
+  rotor.add(hub);
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.62, 0.008, length * 0.9), MAT.blade);
+    blade.position.set(Math.cos(a) * radius * 0.48, Math.sin(a) * radius * 0.48, 0);
+    blade.rotation.z = a;
+    rotor.add(blade);
+  }
+  g.add(rotor);
+  g.userData.rotor = rotor;
+  g.userData.axis = 'z';
+  g.userData.rate = 8;
+  return g;
+}
+
+function makeCompressor(parent, x, y, z) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.095, 0.2, 20), MAT.comp);
+  body.position.y = 0.1;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.085, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), MAT.comp);
+  dome.position.y = 0.2;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.098, 0.018, 20), MAT.copper);
+  band.position.y = 0.15;
+  const term = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.035, 0.028), MAT.dark);
+  term.position.set(0.07, 0.16, 0);
+  g.add(body, dome, band, term);
+  g.position.set(x, y, z);
+  g.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  parent.add(g);
+  return g;
+}
+
+function makeValve(parent, x, y, z) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.048, 0.07), MAT.brass);
+  body.castShadow = true;
+  const slider = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.02, 0.03), MAT.slide);
+  slider.position.y = 0.028;
+  slider.castShadow = true;
+  for (const [px, pz] of [[-0.045, 0.03], [0.045, 0.03], [-0.045, -0.03], [0.045, -0.03]]) {
+    const port = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.028, 8), MAT.copper);
+    port.rotation.x = Math.PI / 2;
+    port.position.set(px, 0, pz);
+    g.add(port);
+  }
+  g.add(body, slider);
+  g.position.set(x, y, z);
+  parent.add(g);
+  return slider;
+}
+
+function makeTXV(parent, x, y, z) {
+  const mat = MAT.brass.clone();
+  mat.emissive = new THREE.Color(0xff6a2a);
+  mat.emissiveIntensity = 0;
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.04, 0.04), mat);
+  const cap = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.0035, 6, 14), MAT.copper);
+  cap.rotation.y = Math.PI / 2;
+  g.add(body, cap);
+  g.position.set(x, y, z);
+  g.userData.mat = mat;
+  parent.add(g);
+  return g;
+}
+
+function makePulse(color) {
+  const mesh = new THREE.Mesh(
+    new THREE.RingGeometry(0.1, 0.128, 40),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false })
+  );
+  mesh.userData.phase = Math.random();
+  return mesh;
+}
+
+function buildArchitecture(scene) {
+  const floorMat = std(0x8a5a38, 0.78, 0.02);
+  const woods = [0x7a4e32, 0x8a5a38, 0x6e452c, 0x936244, 0x7f5436];
+  for (let i = 0; i < 12; i++) {
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(3.55, 0.05, 0.26), std(woods[i % woods.length], 0.74, 0.03));
+    plank.position.set(-1.95, 0.025, -1.55 + i * 0.28);
+    plank.receiveShadow = true;
+    scene.add(plank);
+  }
+  const ground = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.08, 6.2), std(0x8d9892, 0.92, 0.02));
+  ground.position.set(2.7, -0.04, -0.2);
+  ground.receiveShadow = true;
+  scene.add(ground);
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.04, 1.25), std(0x6e7774, 0.86, 0.04));
+  pad.position.set(1.32, 0.02, 0);
+  pad.receiveShadow = true;
+  pad.castShadow = true;
+  scene.add(pad);
+
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.62, 3.4), std(0xcfc6bb, 0.9, 0.02));
+  wall.position.set(0, 1.31, -0.5);
+  wall.castShadow = true;
+  wall.receiveShadow = true;
+  scene.add(wall);
+  panel(scene, 0.02, 2.62, 3.4, std(0xe6ddd2, 0.92, 0), -0.13, 1.31, -0.5, false);
+  panel(scene, 0.02, 2.62, 3.4, std(0xb7b1a8, 0.88, 0.02), 0.13, 1.31, -0.5, false);
+  const layers = [
+    [-0.09, 0.045, 0xe4dcd2],
+    [-0.035, 0.06, 0xd2bf6a],
+    [0.03, 0.07, 0x8a4d3c],
+    [0.09, 0.04, 0xb7b1a8],
+  ];
+  for (const [x, w, c] of layers) {
+    panel(scene, w, 2.62, 0.025, std(c, 0.86, 0.02), x, 1.31, 1.215, false);
+  }
+  panel(scene, 3.4, 0.1, 0.08, std(0xd8d0c6, 0.8, 0.02), -1.85, 0.08, -0.12, false);
+
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.06, 3.3), std(0xddd4c8, 0.9, 0));
+  ceiling.position.set(-1.85, 2.65, -0.55);
+  ceiling.receiveShadow = true;
+  scene.add(ceiling);
+  const recess = new THREE.Mesh(
+    new THREE.BoxGeometry(0.62, 0.02, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0xfff1dd, emissive: 0xffe1c4, emissiveIntensity: 0.9, roughness: 0.4 })
+  );
+  recess.position.set(-1.55, 2.61, 0.15);
+  scene.add(recess);
+
+  const back = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.62, 0.08), std(0xddd4c8, 0.92, 0));
+  back.position.set(-1.85, 1.31, -2.2);
+  back.receiveShadow = true;
+  back.castShadow = true;
+  scene.add(back);
+  const side = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.62, 3.3), std(0xe4dcd2, 0.92, 0));
+  side.position.set(-3.55, 1.31, -0.55);
+  side.receiveShadow = true;
+  side.castShadow = true;
+  scene.add(side);
+
+  const sofa = new THREE.Mesh(new RoundedBoxGeometry(1.35, 0.32, 0.62, 3, 0.04), std(0xc8b7a4, 0.9, 0));
+  sofa.position.set(-1.85, 0.28, -0.55);
+  sofa.castShadow = true;
+  sofa.receiveShadow = true;
+  scene.add(sofa);
+  const backrest = new THREE.Mesh(new RoundedBoxGeometry(1.35, 0.42, 0.16, 3, 0.04), std(0xb7a592, 0.9, 0));
+  backrest.position.set(-1.85, 0.58, -0.8);
+  backrest.castShadow = true;
+  scene.add(backrest);
+  const rug = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.012, 1.05), std(0x6e3b34, 0.95, 0));
+  rug.position.set(-1.85, 0.055, -0.35);
+  rug.receiveShadow = true;
+  scene.add(rug);
+
+  const lamp = new THREE.Group();
+  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 1.15, 10), MAT.dark);
+  stand.position.y = 0.58;
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.16, 16, 1, true), std(0xf3ecdf, 0.7, 0));
+  shade.material.side = THREE.DoubleSide;
+  shade.position.y = 1.22;
+  const bulb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.045, 12, 10),
+    new THREE.MeshStandardMaterial({ color: 0xfff2dd, emissive: 0xffc98a, emissiveIntensity: 2.2, roughness: 0.4 })
+  );
+  bulb.position.y = 1.16;
+  lamp.add(stand, shade, bulb);
+  lamp.position.set(-1.15, 0, 0.95);
+  lamp.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  scene.add(lamp);
+
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.12, 12), std(0x8c4636, 0.7, 0.1));
+  pot.position.set(-3.15, 0.11, 0.7);
+  pot.castShadow = true;
+  scene.add(pot);
+  for (const [dx, dy, dz, s] of [[0, 0.28, 0, 0.12], [0.08, 0.22, 0.04, 0.08], [-0.06, 0.24, -0.04, 0.09]]) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(s, 10, 8), std(0x3e6a45, 0.7, 0));
+    leaf.position.set(-3.15 + dx, dy, 0.7 + dz);
+    leaf.castShadow = true;
+    scene.add(leaf);
+  }
+
+  for (const [x, z, s] of [[2.4, -1.5, 0.28], [2.15, 1.35, 0.22]]) {
+    const shrub = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 1), std(0x2f5a40, 0.85, 0));
+    shrub.position.set(x, s * 0.7, z);
+    shrub.castShadow = true;
+    scene.add(shrub);
+  }
+
+  const winGeo = new THREE.BoxGeometry(0.08, 0.12, 0.02);
+  const winMat = new THREE.MeshStandardMaterial({ color: 0xffc089, emissive: 0xffb060, emissiveIntensity: 1.15, roughness: 0.35 });
+  const wins = new THREE.InstancedMesh(winGeo, winMat, 36);
+  let wi = 0;
+  for (let b = 0; b < 5; b++) {
+    const bx = 6.2 + (b % 2) * 0.8;
+    const bz = -2.2 + b * 0.95;
+    const bh = 1.4 + (b % 3) * 0.7;
+    const building = new THREE.Mesh(new THREE.BoxGeometry(0.55, bh, 0.7), std(0x242b36, 0.8, 0.15));
+    building.position.set(bx, bh / 2, bz);
+    building.castShadow = true;
+    scene.add(building);
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 2; c++) {
+        if (wi >= 36) break;
+        _dummy.position.set(bx - 0.28, 0.35 + r * 0.38, bz - 0.18 + c * 0.28);
+        _dummy.rotation.set(0, 0, 0);
+        _dummy.scale.set(1, 1, 1);
+        _dummy.updateMatrix();
+        wins.setMatrixAt(wi++, _dummy.matrix);
+      }
+    }
+  }
+  wins.count = wi;
+  scene.add(wins);
+
+  const moon = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: softCircle(),
+    color: 0xfff4e4,
+    transparent: true,
+    depthWrite: false,
+    opacity: 0.95,
+  }));
+  moon.position.set(-8, 16, -12);
+  moon.scale.set(2.4, 2.4, 1);
+  scene.add(moon);
+}
+
+const MAT = {};
+let splitGroup;
+let monoGroup;
+let splitSlider;
+let monoSlider;
+let splitDrops;
+let monoDrops;
+let splitFrost;
+let monoFrost;
+let splitWet;
+let monoWet;
+let splitLed;
+let monoLed;
+let txv = {};
+let pulses = [];
+let spinners = [];
+let louvers = [];
+let curves = {};
+let air = {};
+let refMesh;
+let refSeeds;
+let roomPts;
+let outPts;
+let heatPts;
+let heatLife;
+let heatPos;
+let heatVel;
+let chevrons = [];
+let glows = {};
+let tags = {};
+let fills = {};
+let labelRenderer;
+let renderer;
+let camera;
+let controls;
+let scene;
+
+const REF_N = 110;
+const AIR_N = 100;
+const HEAT_N = 90;
+
+function buildSplit() {
+  const g = new THREE.Group();
+  splitGroup = g;
+
+  const shell = MAT.housing;
+  panel(g, 0.28, 0.03, 0.92, shell, -0.36, 2.34, 0);
+  panel(g, 0.28, 0.025, 0.92, shell, -0.36, 1.98, 0);
+  panel(g, 0.03, 0.36, 0.92, shell, -0.22, 2.16, 0);
+  panel(g, 0.28, 0.36, 0.03, shell, -0.36, 2.16, -0.46);
+  panel(g, 0.04, 0.36, 0.03, MAT.brass, -0.36, 2.16, 0.455, false);
+  for (let i = 0; i < 5; i++) {
+    const lv = panel(g, 0.16, 0.012, 0.7, MAT.blade, -0.46, 2.0 - i * 0.012, 0, false);
+    lv.rotation.x = -0.55;
+    if (i === 2) louvers.push(lv);
+  }
+  makeCoil(g, -0.38, 2.18, -0.02, 0.16, 0.2, 24, 0.62);
+  const fan = makeCrossflow(0.62, 0.055);
+  fan.position.set(-0.4, 2.04, -0.02);
+  g.add(fan);
+  spinners.push(fan);
+  splitDrops = makeDrops(g, -0.46, 2.08, -0.02);
+  splitWet = panel(g, 0.18, 0.012, 0.62, std(0x9ec4d0, 0.12, 0.08, { transparent: true, opacity: 0.6 }), -0.4, 1.995, -0.02, false);
+
+  panel(g, 0.62, 0.045, 0.96, shell, 1.3, 0.045, -0.02);
+  panel(g, 0.62, 0.03, 0.78, shell, 1.3, 0.8, -0.12);
+  panel(g, 0.03, 0.74, 0.96, shell, 1.58, 0.42, -0.02);
+  panel(g, 0.5, 0.7, 0.03, shell, 1.22, 0.4, -0.48);
+  panel(g, 0.04, 0.74, 0.03, MAT.brass, 1.3, 0.42, 0.47, false);
+  const guard = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.008, 8, 28), MAT.dark);
+  guard.rotation.x = Math.PI / 2;
+  guard.position.set(1.28, 0.82, -0.06);
+  g.add(guard);
+  makeCoil(g, 1.5, 0.5, -0.02, 0.1, 0.42, 26, 0.7);
+  const topFan = makeAxialFan(0.2);
+  topFan.position.set(1.28, 0.84, -0.06);
+  g.add(topFan);
+  spinners.push(topFan);
+  splitFrost = makeFrost(g, 1.56, 0.5, -0.02);
+  makeCompressor(g, 1.18, 0.07, -0.14);
+  splitSlider = makeValve(g, 1.24, 0.5, 0.08);
+  txv.splitIn = makeTXV(g, -0.32, 2.05, 0.24);
+  txv.splitOut = makeTXV(g, 1.34, 0.34, 0.3);
+
+  addTube(g, [
+    [-0.38, 2.2, -0.16], [-0.16, 2.2, -0.16], [0.2, 2.2, -0.16],
+    [0.2, 0.62, -0.16], [0.34, 0.56, -0.12], [1.08, 0.56, -0.08], [1.2, 0.52, 0.02],
+  ], 0.02, MAT.insul);
+  addTube(g, [
+    [1.5, 0.32, 0.22], [1.2, 0.32, 0.3], [0.32, 0.32, 0.3],
+    [0.32, 2.0, 0.3], [-0.14, 2.0, 0.3], [-0.28, 2.04, 0.24],
+  ], 0.009, MAT.copper);
+
+  const holeMat = new THREE.MeshBasicMaterial({ color: 0x07080c });
+  for (const [y, z, r] of [[2.2, -0.16, 0.035], [2.0, 0.3, 0.028]]) {
+    for (const x of [-0.145, 0.145]) {
+      const hole = new THREE.Mesh(new THREE.CircleGeometry(r, 16), holeMat);
+      hole.position.set(x, y, z);
+      hole.rotation.y = x < 0 ? Math.PI / 2 : -Math.PI / 2;
+      g.add(hole);
+    }
+    const flange = new THREE.Mesh(new THREE.TorusGeometry(r + 0.01, 0.006, 6, 16), MAT.sleeve);
+    flange.rotation.y = Math.PI / 2;
+    flange.position.set(0.145, y, z);
+    g.add(flange);
+  }
+
+  splitLed = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x9fd0ff, emissive: 0x7ec8ff, emissiveIntensity: 1.4 })
+  );
+  splitLed.position.set(-0.46, 2.3, 0.32);
+  g.add(splitLed);
+
+  const pIn = makePulse(0xff8a3a);
+  pIn.position.set(-0.5, 2.18, 0.05);
+  g.add(pIn);
+  const pOut = makePulse(0xff8a3a);
+  pOut.position.set(1.62, 0.55, 0.05);
+  pOut.rotation.y = Math.PI / 2;
+  g.add(pOut);
+  pulses.push(pIn, pOut);
+
+  const fill = new THREE.PointLight(0xfff4e8, 18, 2.4, 2);
+  fill.position.set(-0.7, 2.16, 0.55);
+  g.add(fill);
+  const fill2 = new THREE.PointLight(0xe7eeff, 16, 2.2, 2);
+  fill2.position.set(1.05, 0.5, 0.62);
+  g.add(fill2);
+  fills.split = [fill, fill2];
+
+  scene.add(g);
+}
+
+function buildMono() {
+  const g = new THREE.Group();
+  monoGroup = g;
+  const shell = MAT.housing;
+  panel(g, 0.56, 0.04, 1.16, shell, -0.46, 0.04, 0);
+  panel(g, 0.56, 0.03, 1.16, shell, -0.46, 1.16, 0);
+  panel(g, 0.04, 1.12, 1.16, shell, -0.2, 0.58, 0);
+  panel(g, 0.5, 1.12, 0.03, shell, -0.46, 0.58, -0.58);
+  panel(g, 0.04, 1.12, 0.03, MAT.brass, -0.46, 0.58, 0.575, false);
+  panel(g, 0.02, 0.66, 1.05, std(0xb7c0c6, 0.4, 0.55), -0.44, 0.82, 0, false);
+
+  makeCoil(g, -0.58, 0.8, 0, 0.12, 0.36, 22, 0.7);
+  makeCoil(g, -0.3, 0.8, 0, 0.1, 0.36, 22, 0.7);
+  const roomFan = makeCrossflow(0.55, 0.05);
+  roomFan.position.set(-0.64, 0.52, 0);
+  g.add(roomFan);
+  spinners.push(roomFan);
+  const ductFan = makeAxialFan(0.11);
+  ductFan.position.set(-0.3, 1.05, 0.18);
+  g.add(ductFan);
+  spinners.push(ductFan);
+
+  for (let i = 0; i < 4; i++) {
+    panel(g, 0.02, 0.012, 0.7, MAT.blade, -0.72, 0.42 - i * 0.016, 0.05, false);
+  }
+
+  monoDrops = makeDrops(g, -0.64, 0.68, 0);
+  monoWet = panel(g, 0.16, 0.01, 0.6, std(0x9ec4d0, 0.12, 0.08, { transparent: true, opacity: 0.6 }), -0.6, 0.5, 0, false);
+  monoFrost = makeFrost(g, -0.26, 0.8, 0);
+
+  makeCompressor(g, -0.5, 0.08, -0.28);
+  monoSlider = makeValve(g, -0.48, 0.42, -0.02);
+  txv.monoRoom = makeTXV(g, -0.52, 0.6, 0.24);
+  txv.monoDuct = makeTXV(g, -0.34, 0.6, 0.24);
+
+  addTube(g, [
+    [-0.5, 0.36, -0.28], [-0.48, 0.48, -0.08], [-0.3, 0.96, -0.2], [-0.3, 0.96, 0.2], [-0.3, 0.62, 0.22],
+  ], 0.01, MAT.copper);
+  addTube(g, [
+    [-0.58, 0.96, -0.2], [-0.58, 0.66, 0.2], [-0.52, 0.6, 0.24],
+  ], 0.01, MAT.copper);
+
+  const ductMat = std(0xc5ccd1, 0.42, 0.45);
+  ductMat.side = THREE.DoubleSide;
+  const holeMat = new THREE.MeshBasicMaterial({ color: 0x07080c });
+  const ducts = [
+    { y: 0.4, z: -0.32, lenIn: 0.28, lenOut: 0.22 },
+    { y: 0.92, z: 0.24, lenIn: 0.22, lenOut: 0.24 },
+  ];
+  for (const d of ducts) {
+    const inner = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, d.lenIn, 18, 1, true), ductMat);
+    inner.rotation.z = Math.PI / 2;
+    inner.position.set(-0.34, d.y, d.z);
+    g.add(inner);
+    const outer = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.08, d.lenOut, 18, 1, true), ductMat);
+    outer.rotation.z = Math.PI / 2;
+    outer.position.set(0.26, d.y, d.z);
+    g.add(outer);
+    for (const x of [-0.145, 0.145]) {
+      const hole = new THREE.Mesh(new THREE.CircleGeometry(0.078, 20), holeMat);
+      hole.position.set(x, d.y, d.z);
+      hole.rotation.y = x < 0 ? Math.PI / 2 : -Math.PI / 2;
+      g.add(hole);
+    }
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.2), shell);
+    hood.position.set(0.34, d.y + 0.02, d.z);
+    hood.castShadow = true;
+    g.add(hood);
+  }
+
+  monoLed = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x9fd0ff, emissive: 0x7ec8ff, emissiveIntensity: 1.4 })
+  );
+  monoLed.position.set(-0.7, 1.08, 0.42);
+  g.add(monoLed);
+
+  const pR = makePulse(0xff8a3a);
+  pR.position.set(-0.72, 0.8, 0.05);
+  g.add(pR);
+  const pD = makePulse(0xff8a3a);
+  pD.position.set(-0.22, 0.84, 0.05);
+  pD.rotation.y = Math.PI / 2;
+  g.add(pD);
+  pulses.push(pR, pD);
+
+  const fill = new THREE.PointLight(0xfff4e8, 16, 2.2, 2);
+  fill.position.set(-0.85, 0.7, 0.7);
+  g.add(fill);
+  fills.mono = [fill];
+  scene.add(g);
+}
+
+function buildPaths() {
+  curves.splitCool = makePath([
+    [1.18, 0.32, -0.14, HOT],
+    [1.22, 0.52, 0.02, HOT],
+    [1.5, 0.68, -0.24, HOT],
+    [1.5, 0.68, 0.2, WARM],
+    [1.5, 0.32, 0.22, LIQ],
+    [0.32, 0.32, 0.3, LIQ],
+    [0.32, 2.0, 0.3, LIQ],
+    [-0.28, 2.04, 0.24, LIQ],
+    [-0.32, 2.05, 0.24, COLD],
+    [-0.38, 2.18, 0.2, COLD],
+    [-0.38, 2.2, -0.28, VAP],
+    [-0.16, 2.2, -0.16, VAP],
+    [0.2, 2.2, -0.16, VAP],
+    [0.2, 0.56, -0.12, VAP],
+    [1.18, 0.48, 0.0, VAP],
+    [1.18, 0.32, -0.14, VAP],
+  ]);
+  curves.splitHeat = makePath([
+    [1.18, 0.32, -0.14, HOT],
+    [1.22, 0.52, -0.02, HOT],
+    [0.2, 0.56, -0.12, HOT],
+    [0.2, 2.2, -0.16, HOT],
+    [-0.16, 2.2, -0.16, HOT],
+    [-0.38, 2.2, -0.28, HOT],
+    [-0.38, 2.18, 0.2, WARM],
+    [-0.32, 2.05, 0.24, LIQ],
+    [0.32, 2.0, 0.3, LIQ],
+    [0.32, 0.32, 0.3, LIQ],
+    [1.34, 0.34, 0.3, LIQ],
+    [1.44, 0.4, 0.26, COLD],
+    [1.5, 0.32, 0.22, COLD],
+    [1.5, 0.68, 0.2, VAP],
+    [1.5, 0.68, -0.24, VAP],
+    [1.22, 0.5, 0.04, VAP],
+    [1.18, 0.32, -0.14, VAP],
+  ]);
+  curves.monoCool = makePath([
+    [-0.5, 0.32, -0.28, HOT],
+    [-0.48, 0.46, -0.02, HOT],
+    [-0.3, 0.96, -0.22, HOT],
+    [-0.3, 0.96, 0.22, WARM],
+    [-0.3, 0.62, 0.22, LIQ],
+    [-0.42, 0.58, 0.24, LIQ],
+    [-0.52, 0.6, 0.24, COLD],
+    [-0.58, 0.68, 0.22, COLD],
+    [-0.58, 0.96, -0.22, VAP],
+    [-0.5, 0.46, -0.12, VAP],
+    [-0.5, 0.32, -0.28, VAP],
+  ]);
+  curves.monoHeat = makePath([
+    [-0.5, 0.32, -0.28, HOT],
+    [-0.48, 0.46, -0.08, HOT],
+    [-0.58, 0.96, -0.22, HOT],
+    [-0.58, 0.68, 0.22, WARM],
+    [-0.52, 0.6, 0.24, LIQ],
+    [-0.42, 0.58, 0.24, LIQ],
+    [-0.34, 0.6, 0.24, COLD],
+    [-0.3, 0.62, 0.22, COLD],
+    [-0.3, 0.96, 0.22, VAP],
+    [-0.3, 0.96, -0.22, VAP],
+    [-0.48, 0.46, -0.02, VAP],
+    [-0.5, 0.32, -0.28, VAP],
+  ]);
+
+  air.splitRoom = new PolylineCurve([
+    [-1.15, 2.3, 0.18], [-0.7, 2.32, 0.04], [-0.42, 2.3, 0],
+    [-0.38, 2.16, 0], [-0.5, 1.96, 0.04], [-0.9, 1.68, 0.12], [-1.25, 1.5, 0.02],
+  ].map((p) => new THREE.Vector3(...p)));
+  air.splitRoom.inletCount = 2;
+  air.splitOut = new PolylineCurve([
+    [2.05, 0.42, 0.22], [1.75, 0.5, 0.06], [1.52, 0.52, 0],
+    [1.36, 0.78, 0.02], [1.28, 1.18, 0.04], [1.5, 1.58, 0.22],
+  ].map((p) => new THREE.Vector3(...p)));
+  air.splitOut.inletCount = 2;
+  air.monoRoom = new PolylineCurve([
+    [-1.25, 1.02, 0.12], [-0.9, 1.02, 0.04], [-0.66, 0.86, 0],
+    [-0.64, 0.58, 0.02], [-0.95, 0.38, 0.1], [-1.3, 0.55, 0.16],
+  ].map((p) => new THREE.Vector3(...p)));
+  air.monoRoom.inletCount = 2;
+  air.monoOut = new PolylineCurve([
+    [0.9, 0.36, -0.48], [0.4, 0.4, -0.34], [0.02, 0.4, -0.32],
+    [-0.28, 0.58, -0.1], [-0.3, 0.9, 0.16], [0.05, 0.94, 0.26], [0.55, 1.05, 0.34], [0.9, 1.2, 0.42],
+  ].map((p) => new THREE.Vector3(...p)));
+  air.monoOut.inletCount = 3;
+
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xc9b0ff,
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false,
+  });
+  glowMat.polygonOffset = true;
+  glowMat.polygonOffsetFactor = -2;
+  for (const key of ['splitCool', 'splitHeat', 'monoCool', 'monoHeat']) {
+    const mesh = new THREE.Mesh(new THREE.TubeGeometry(curves[key], 140, 0.011, 6, false), glowMat);
+    mesh.renderOrder = 2;
+    (key.startsWith('split') ? splitGroup : monoGroup).add(mesh);
+    glows[key] = mesh;
+  }
+}
+
+function paintAir(curve, inletHex, outletHex) {
+  const a = new THREE.Color(inletHex);
+  const b = new THREE.Color(outletHex);
+  curve.colors = curve.points.map((_, i) => {
+    if (i < curve.inletCount) return a.clone();
+    if (i === curve.inletCount) return a.clone().lerp(b, 0.55);
+    return b.clone();
+  });
+}
+
+function buildParticles() {
+  const geo = new THREE.SphereGeometry(0.013, 8, 6);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  refMesh = new THREE.InstancedMesh(geo, mat, REF_N);
+  refMesh.frustumCulled = false;
+  refMesh.renderOrder = 3;
+  refSeeds = [];
+  for (let i = 0; i < REF_N; i++) {
+    refSeeds.push({ t: Math.random(), speed: 0.11 + Math.random() * 0.06, s: 0.75 + Math.random() * 0.5 });
+    refMesh.setColorAt(i, new THREE.Color(HOT));
+  }
+  scene.add(refMesh);
+
+  const sprite = softCircle();
+  function stream() {
+    const g = new THREE.BufferGeometry();
+    const positions = new Float32Array(AIR_N * 3);
+    const colors = new Float32Array(AIR_N * 3);
+    g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const m = new THREE.PointsMaterial({
+      size: 0.065,
+      map: sprite,
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.9,
+      sizeAttenuation: true,
+    });
+    const pts = new THREE.Points(g, m);
+    pts.frustumCulled = false;
+    pts.renderOrder = 4;
+    const seeds = Array.from({ length: AIR_N }, () => ({
+      t: Math.random(),
+      speed: 0.13 + Math.random() * 0.08,
+      ox: (Math.random() - 0.5) * 2,
+      oy: (Math.random() - 0.5) * 2,
+    }));
+    scene.add(pts);
+    return { pts, positions, colors, seeds, geo: g };
+  }
+  roomPts = stream();
+  outPts = stream();
+  outPts.pts.material = roomPts.pts.material.clone();
+  outPts.pts.material.size = 0.06;
+
+  const hg = new THREE.BufferGeometry();
+  const hp = new Float32Array(HEAT_N * 3);
+  const hc = new Float32Array(HEAT_N * 3);
+  hg.setAttribute('position', new THREE.BufferAttribute(hp, 3));
+  hg.setAttribute('color', new THREE.BufferAttribute(hc, 3));
+  heatPts = new THREE.Points(hg, new THREE.PointsMaterial({
+    size: 0.11,
+    map: sprite,
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0.95,
+    sizeAttenuation: true,
+  }));
+  heatPts.frustumCulled = false;
+  heatPts.renderOrder = 5;
+  heatLife = new Float32Array(HEAT_N);
+  heatPos = Array.from({ length: HEAT_N }, () => new THREE.Vector3(0, -20, 0));
+  heatVel = Array.from({ length: HEAT_N }, () => new THREE.Vector3());
+  scene.add(heatPts);
+
+  function makeChevrons(color) {
+    const matC = new THREE.MeshBasicMaterial({ color });
+    const arr = [];
+    for (let i = 0; i < 5; i++) {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.075, 8), matC);
+      cone.userData.t = i / 5;
+      cone.renderOrder = 4;
+      scene.add(cone);
+      arr.push(cone);
+    }
+    return arr;
+  }
+  chevrons = [
+    { items: makeChevrons(0xe7b98a), which: 'room' },
+    { items: makeChevrons(0x8fc6de), which: 'out' },
+  ];
+}
+
+function activeRef() {
+  if (system === 'split') return mode === 'cool' ? curves.splitCool : curves.splitHeat;
+  return mode === 'cool' ? curves.monoCool : curves.monoHeat;
+}
+function activeRoom() {
+  return system === 'split' ? air.splitRoom : air.monoRoom;
+}
+function activeOut() {
+  return system === 'split' ? air.splitOut : air.monoOut;
+}
+
+const HEAT_CFG = {
+  split: {
+    cool: [
+      { p: new THREE.Vector3(-0.58, 2.16, 0), v: new THREE.Vector3(0.42, -0.05, 0) },
+      { p: new THREE.Vector3(1.55, 0.66, 0), v: new THREE.Vector3(0.12, 0.55, 0.04) },
+    ],
+    heat: [
+      { p: new THREE.Vector3(1.78, 0.5, 0.08), v: new THREE.Vector3(-0.4, 0.05, 0) },
+      { p: new THREE.Vector3(-0.46, 2.02, 0.02), v: new THREE.Vector3(-0.4, -0.22, 0) },
+    ],
+  },
+  mono: {
+    cool: [
+      { p: new THREE.Vector3(-0.8, 0.82, 0), v: new THREE.Vector3(0.35, -0.05, 0) },
+      { p: new THREE.Vector3(-0.22, 0.9, 0.16), v: new THREE.Vector3(0.5, 0.18, 0.12) },
+    ],
+    heat: [
+      { p: new THREE.Vector3(0.12, 0.48, -0.3), v: new THREE.Vector3(-0.35, 0.12, 0.08) },
+      { p: new THREE.Vector3(-0.66, 0.7, 0.02), v: new THREE.Vector3(-0.42, -0.08, 0) },
+    ],
+  },
+};
+
+function names() {
+  const cool = mode === 'cool';
+  if (system === 'split') {
+    return {
+      sys: cool ? 'Split system · Cooling' : 'Split system · Heating',
+      abs: cool ? 'Indoor coil' : 'Outdoor coil',
+      rel: cool ? 'Outdoor coil' : 'Indoor coil',
+      flow: cool ? 'Heat flow · room → outdoors' : 'Heat flow · outdoors → room',
+    };
+  }
+  return {
+    sys: cool ? 'Monoblock · Cooling' : 'Monoblock · Heating',
+    abs: cool ? 'Room-side coil' : 'Duct-side coil',
+    rel: cool ? 'Duct-side coil' : 'Room-side coil',
+    flow: cool ? 'Heat flow · room → outdoors' : 'Heat flow · outdoors → room',
+  };
+}
+
+function contextual() {
+  const n = names();
+  if (system === 'split') {
+    return `${n.sys}. Refrigerant loops between the indoor and outdoor units. The ${n.abs.toLowerCase()} absorbs heat and the ${n.rel.toLowerCase()} releases it. The two air streams never mix.`;
+  }
+  return `${n.sys}. The full refrigeration circuit is inside the cabinet. Outdoor air uses the two wall ducts. The ${n.abs.toLowerCase()} absorbs heat and the ${n.rel.toLowerCase()} releases it.`;
+}
+
+function refresh() {
+  const cool = mode === 'cool';
+  splitGroup.visible = system === 'split';
+  monoGroup.visible = system === 'mono';
+  for (const l of fills.split) l.visible = system === 'split';
+  for (const l of fills.mono) l.visible = system === 'mono';
+
+  document.getElementById('btnSplit').setAttribute('aria-pressed', String(system === 'split'));
+  document.getElementById('btnMono').setAttribute('aria-pressed', String(system === 'mono'));
+  document.getElementById('btnCool').setAttribute('aria-pressed', String(cool));
+  document.getElementById('btnHeat').setAttribute('aria-pressed', String(!cool));
+
+  const temps = cool
+    ? { indoor: 25.6, outdoor: 33.1, supply: 14.8, exhaust: 42.7 }
+    : { indoor: 18.9, outdoor: 6.4, supply: 35.2, exhaust: 1.1 };
+  Object.assign(goal, temps);
+
+  const n = names();
+  setText(document.getElementById('statSys'), n.sys);
+  setText(document.getElementById('statAbs'), n.abs);
+  setText(document.getElementById('statRel'), n.rel);
+  setText(document.getElementById('statFlow'), n.flow);
+
+  tags.splitIn.userData.span.textContent = cool ? 'absorbs heat' : 'releases heat';
+  tags.splitOut.userData.span.textContent = cool ? 'releases heat' : 'absorbs heat';
+  tags.monoRoom.userData.span.textContent = cool ? 'absorbs heat' : 'releases heat';
+  tags.monoDuct.userData.span.textContent = cool ? 'releases heat' : 'absorbs heat';
+  tags.splitValve.userData.span.textContent = cool ? 'cooling path' : 'heating path';
+  tags.monoValve.userData.span.textContent = cool ? 'cooling path' : 'heating path';
+  tags.txv.userData.span.textContent = 'drops pressure';
+
+  const showSplit = system === 'split';
+  tags.splitIn.visible = showSplit;
+  tags.splitOut.visible = showSplit;
+  tags.splitComp.visible = showSplit;
+  tags.splitValve.visible = showSplit;
+  tags.monoRoom.visible = !showSplit;
+  tags.monoDuct.visible = !showSplit;
+  tags.monoComp.visible = !showSplit;
+  tags.monoValve.visible = !showSplit;
+  tags.monoSep.visible = !showSplit;
+  tags.intake.visible = !showSplit;
+  tags.txv.visible = true;
+  tags.supply.visible = true;
+  tags.exhaust.visible = true;
+
+  const txvPos = showSplit
+    ? (cool ? [-0.32, 2.16, 0.24] : [1.34, 0.48, 0.3])
+    : (cool ? [-0.52, 0.74, 0.24] : [-0.34, 0.74, 0.24]);
+  tags.txv.parent.position.set(txvPos[0], txvPos[1], txvPos[2]);
+
+  if (showSplit) {
+    tags.supply.parent.position.set(-0.95, 1.78, 0.18);
+    tags.exhaust.parent.position.set(1.42, 1.38, 0.16);
+  } else {
+    tags.supply.parent.position.set(-1.05, 0.48, 0.18);
+    tags.exhaust.parent.position.set(0.62, 1.18, 0.32);
+  }
+
+  const active = showSplit
+    ? (cool ? txv.splitIn : txv.splitOut)
+    : (cool ? txv.monoRoom : txv.monoDuct);
+  for (const key of Object.keys(txv)) {
+    txv[key].userData.mat.emissiveIntensity = txv[key] === active ? 0.9 : 0.02;
+  }
+
+  splitDrops.mesh.visible = cool;
+  monoDrops.mesh.visible = cool;
+  splitWet.visible = cool;
+  monoWet.visible = cool;
+  splitFrost.visible = !cool;
+  monoFrost.visible = !cool;
+
+  glows.splitCool.visible = cool;
+  glows.splitHeat.visible = !cool;
+  glows.monoCool.visible = cool;
+  glows.monoHeat.visible = !cool;
+
+  valveTarget = cool ? -0.022 : 0.022;
+
+  const roomIn = cool ? '#e7b98a' : '#d5dde6';
+  const roomOut = cool ? '#c5dff2' : '#ffc089';
+  const outIn = cool ? '#8fc6de' : '#b7d4e6';
+  const outOut = cool ? '#ffb07a' : '#e7f4fb';
+  for (const key of ['splitRoom', 'monoRoom']) paintAir(air[key], roomIn, roomOut);
+  for (const key of ['splitOut', 'monoOut']) paintAir(air[key], outIn, outOut);
+
+  const ledColor = cool ? 0x7ec8ff : 0xff9a4a;
+  for (const led of [splitLed, monoLed]) {
+    led.material.color.set(ledColor);
+    led.material.emissive.set(ledColor);
+  }
+}
+
+function setSystem(next) {
+  system = next;
+  refresh();
+}
+function setMode(next) {
+  mode = next;
+  refresh();
+}
+
+function updateDots() {
+  const buttons = document.querySelectorAll('#dots button');
+  buttons.forEach((b, i) => {
+    b.setAttribute('aria-current', tourAuto && i === tourIndex ? 'step' : 'false');
+  });
+}
+
+function applyStep(i, opts = {}) {
+  tourIndex = ((i % STEPS.length) + STEPS.length) % STEPS.length;
+  const step = STEPS[tourIndex];
+  applying = true;
+  setSystem(step.system);
+  setMode(step.mode);
+  applying = false;
+  setText(document.getElementById('tourText'), step.text);
+  setText(document.getElementById('stepNum'), `${tourIndex + 1} / ${STEPS.length}`);
+  updateDots();
+  if (viewMode === 'tour') goCam(CAMS[step.cam], opts.snap || reduced ? 0 : 1.15);
+}
+
+function goCam(preset, dur) {
+  const toP = new THREE.Vector3(preset.p[0], preset.p[1], preset.p[2]);
+  const toT = new THREE.Vector3(preset.t[0], preset.t[1], preset.t[2]);
+  if (!dur) {
+    camera.position.copy(toP);
+    controls.target.copy(toT);
+    tween = null;
+    return;
+  }
+  tween = {
+    u: 0,
+    dur,
+    fromP: camera.position.clone(),
+    toP,
+    fromT: controls.target.clone(),
+    toT,
+  };
+}
+
+function showContextual() {
+  tourAuto = false;
+  setText(document.getElementById('tourText'), contextual());
+  setText(document.getElementById('stepNum'), 'Live');
+  updateDots();
+}
+
+function updatePlayLabel() {
+  setText(document.getElementById('btnPlay'), playing ? 'Pause' : 'Play');
+}
+
+function basis(tangent) {
+  _up.set(0, 1, 0);
+  _n1.crossVectors(tangent, _up);
+  if (_n1.lengthSq() < 1e-6) {
+    _up.set(1, 0, 0);
+    _n1.crossVectors(tangent, _up);
+  }
+  _n1.normalize();
+  _n2.crossVectors(tangent, _n1).normalize();
+}
+
+function updateStream(stream, curve, motion, radius) {
+  const pos = stream.positions;
+  const col = stream.colors;
+  for (let i = 0; i < stream.seeds.length; i++) {
+    const s = stream.seeds[i];
+    s.t += s.speed * motion;
+    if (s.t > 1) s.t -= 1;
+    curve.getPoint(s.t, _p);
+    curve.tangentAt(s.t, _t);
+    basis(_t);
+    _p.addScaledVector(_n1, s.ox * radius);
+    _p.addScaledVector(_n2, s.oy * radius * 0.65);
+    pos[i * 3] = _p.x;
+    pos[i * 3 + 1] = _p.y;
+    pos[i * 3 + 2] = _p.z;
+    curve.colorAt(s.t, _c);
+    col[i * 3] = _c.r;
+    col[i * 3 + 1] = _c.g;
+    col[i * 3 + 2] = _c.b;
+  }
+  stream.geo.attributes.position.needsUpdate = true;
+  stream.geo.attributes.color.needsUpdate = true;
+}
+
+function spawnHeat(em) {
+  for (let i = 0; i < HEAT_N; i++) {
+    if (heatLife[i] > 0) continue;
+    heatLife[i] = 0.7 + Math.random() * 0.35;
+    heatPos[i].set(
+      em.p.x + (Math.random() - 0.5) * 0.1,
+      em.p.y + (Math.random() - 0.5) * 0.08,
+      em.p.z + (Math.random() - 0.5) * 0.1
+    );
+    heatVel[i].set(
+      em.v.x + (Math.random() - 0.5) * 0.08,
+      em.v.y + (Math.random() - 0.5) * 0.08,
+      em.v.z + (Math.random() - 0.5) * 0.08
+    );
+    return;
+  }
+}
+
+function updateDrips(pack, motion) {
+  if (!pack.mesh.visible) return;
+  let shown = pack.mesh.parent;
+  while (shown) {
+    if (!shown.visible) return;
+    shown = shown.parent;
+  }
+  for (let i = 0; i < pack.base.length; i++) {
+    pack.phases[i] += motion * (0.22 + (i % 4) * 0.03);
+    const u = pack.phases[i] % 1;
+    const b = pack.base[i];
+    _dummy.position.set(b.x, b.y - u * 0.1, b.z);
+    _dummy.rotation.set(0, 0, 0);
+    _dummy.scale.setScalar(b.s * (1 - u * 0.45));
+    _dummy.updateMatrix();
+    pack.mesh.setMatrixAt(i, _dummy.matrix);
+  }
+  pack.mesh.instanceMatrix.needsUpdate = true;
+}
+
+function bindUI() {
+  document.getElementById('btnSplit').addEventListener('click', () => {
+    if (system === 'split') return;
+    setSystem('split');
+    if (!applying) showContextual();
+  });
+  document.getElementById('btnMono').addEventListener('click', () => {
+    if (system === 'mono') return;
+    setSystem('mono');
+    if (!applying) showContextual();
+  });
+  document.getElementById('btnCool').addEventListener('click', () => {
+    if (mode === 'cool') return;
+    setMode('cool');
+    if (!applying) showContextual();
+  });
+  document.getElementById('btnHeat').addEventListener('click', () => {
+    if (mode === 'heat') return;
+    setMode('heat');
+    if (!applying) showContextual();
+  });
+  document.getElementById('btnPlay').addEventListener('click', () => {
+    playing = !playing;
+    updatePlayLabel();
+  });
+  document.getElementById('btnReset').addEventListener('click', () => {
+    viewMode = 'home';
+    goCam(CAMS.wide, reduced ? 0 : 0.9);
+  });
+  document.getElementById('btnReplay').addEventListener('click', () => {
+    tourElapsed = 0;
+    tourAuto = !reduced;
+    viewMode = 'tour';
+    if (!reduced) playing = true;
+    updatePlayLabel();
+    applyStep(0, { snap: reduced });
+  });
+  document.getElementById('btnPrev').addEventListener('click', () => {
+    tourAuto = false;
+    tourElapsed = 0;
+    applyStep(tourIndex - 1, { snap: reduced });
+  });
+  document.getElementById('btnNext').addEventListener('click', () => {
+    tourAuto = false;
+    tourElapsed = 0;
+    applyStep(tourIndex + 1, { snap: reduced });
+  });
+  const dots = document.getElementById('dots');
+  for (let i = 0; i < STEPS.length; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', `Guide step ${i + 1}`);
+    b.addEventListener('click', () => {
+      tourAuto = false;
+      tourElapsed = 0;
+      viewMode = viewMode === 'user' ? 'user' : 'tour';
+      applyStep(i, { snap: reduced });
+    });
+    dots.appendChild(b);
+  }
+}
+
+function resize() {
+  const w = window.innerWidth;
+  const h = Math.max(1, window.innerHeight);
+  camera.aspect = w / h;
+  camera.fov = w < h ? 50 : 38;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  labelRenderer.setSize(w, h);
+}
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, (now - last) / 1000) || 0;
+  last = now;
+  const motion = playing ? dt : 0;
+  simTime += motion;
+
+  if (tween) {
+    tween.u += dt / tween.dur;
+    const k = smoothstep(Math.min(1, tween.u));
+    camera.position.lerpVectors(tween.fromP, tween.toP, k);
+    controls.target.lerpVectors(tween.fromT, tween.toT, k);
+    if (tween.u >= 1) tween = null;
+  }
+  controls.update();
+
+  if (playing && tourAuto && !reduced) {
+    tourElapsed += dt;
+    if (tourElapsed > 8) {
+      tourElapsed = 0;
+      applyStep(tourIndex + 1);
+    }
+  }
+
+  const kTemp = 1 - Math.exp(-Math.max(dt, 0.001) * 2.4);
+  for (const key of Object.keys(shown)) shown[key] += (goal[key] - shown[key]) * kTemp;
+  const wobble = playing && !reduced ? Math.sin(simTime * 0.7) * 0.05 : 0;
+  setText(document.getElementById('statIn'), `${(shown.indoor + wobble).toFixed(1)}°C`);
+  setText(document.getElementById('statOut'), `${(shown.outdoor - wobble).toFixed(1)}°C`);
+  setText(document.getElementById('statSup'), `${shown.supply.toFixed(1)}°C`);
+  setText(document.getElementById('statEx'), `${shown.exhaust.toFixed(1)}°C`);
+  tags.supply.userData.span.textContent = `${shown.supply.toFixed(1)}°C`;
+  tags.exhaust.userData.span.textContent = `${shown.exhaust.toFixed(1)}°C`;
+
+  splitSlider.position.x = THREE.MathUtils.damp(splitSlider.position.x, valveTarget, 8, dt);
+  monoSlider.position.x = THREE.MathUtils.damp(monoSlider.position.x, valveTarget, 8, dt);
+
+  for (const fan of spinners) {
+    fan.userData.rotor.rotation[fan.userData.axis] += motion * fan.userData.rate;
+  }
+  for (const lv of louvers) lv.rotation.x = -0.55 + Math.sin(simTime * 1.6) * (playing && !reduced ? 0.08 : 0);
+
+  const ref = activeRef();
+  for (let i = 0; i < REF_N; i++) {
+    const s = refSeeds[i];
+    s.t += s.speed * motion;
+    if (s.t > 1) s.t -= 1;
+    ref.getPoint(s.t, _p);
+    _cam.copy(camera.position).sub(_p);
+    const len = _cam.length();
+    if (len > 0.001) _p.addScaledVector(_cam, 0.028 / len);
+    _dummy.position.copy(_p);
+    _dummy.rotation.set(0, 0, 0);
+    _dummy.scale.setScalar(s.s);
+    _dummy.updateMatrix();
+    refMesh.setMatrixAt(i, _dummy.matrix);
+    ref.colorAt(s.t, _c);
+    refMesh.setColorAt(i, _c);
+  }
+  refMesh.instanceMatrix.needsUpdate = true;
+  if (refMesh.instanceColor) refMesh.instanceColor.needsUpdate = true;
+
+  updateStream(roomPts, activeRoom(), motion, 0.055);
+  updateStream(outPts, activeOut(), motion, 0.06);
+
+  const emit = HEAT_CFG[system][mode];
+  if (motion > 0 && !reduced) {
+    heatAcc += motion;
+    while (heatAcc > 0.055) {
+      heatAcc -= 0.055;
+      spawnHeat(emit[0]);
+      spawnHeat(emit[1]);
+    }
+  }
+  const hp = heatPts.geometry.attributes.position.array;
+  const hc = heatPts.geometry.attributes.color.array;
+  for (let i = 0; i < HEAT_N; i++) {
+    if (heatLife[i] > 0) {
+      heatLife[i] -= motion;
+      heatPos[i].addScaledVector(heatVel[i], motion);
+    }
+    const alive = heatLife[i] > 0;
+    const life = alive ? heatLife[i] : 0;
+    hp[i * 3] = alive ? heatPos[i].x : 0;
+    hp[i * 3 + 1] = alive ? heatPos[i].y : -30;
+    hp[i * 3 + 2] = alive ? heatPos[i].z : 0;
+    hc[i * 3] = 1.0 * Math.min(1, life * 1.4);
+    hc[i * 3 + 1] = 0.42 * Math.min(1, life * 1.4);
+    hc[i * 3 + 2] = 0.12 * Math.min(1, life * 1.4);
+  }
+  heatPts.geometry.attributes.position.needsUpdate = true;
+  heatPts.geometry.attributes.color.needsUpdate = true;
+
+  for (const group of chevrons) {
+    const curve = group.which === 'room' ? activeRoom() : activeOut();
+    for (const cone of group.items) {
+      cone.userData.t += motion * 0.09;
+      if (cone.userData.t > 1) cone.userData.t -= 1;
+      curve.getPoint(cone.userData.t, _p);
+      curve.tangentAt(cone.userData.t, _t);
+      cone.position.copy(_p);
+      if (_t.lengthSq() > 0.5) cone.quaternion.setFromUnitVectors(_up.set(0, 1, 0), _t);
+    }
+  }
+
+  if (motion > 0) {
+    for (const pulse of pulses) {
+      pulse.userData.phase = (pulse.userData.phase + motion * 0.45) % 1;
+      const u = pulse.userData.phase;
+      pulse.scale.setScalar(0.65 + u * 1.15);
+      pulse.material.opacity = (1 - u) * 0.45;
+    }
+  }
+
+  updateDrips(splitDrops, motion);
+  updateDrips(monoDrops, motion);
+
+  const comp = system === 'split'
+    ? splitGroup.children.find((c) => c.position && c.position.x === 1.18)
+    : null;
+  if (comp && motion > 0) comp.position.y = 0.07 + Math.sin(simTime * 55) * 0.0012;
+
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+
+let last = performance.now();
+
+function main() {
+  if (!hasWebGL()) {
+    showFallback('This exhibit needs WebGL. A reversible air conditioner moves heat: refrigerant circulates in a sealed loop, room air and outdoor air stay separate, and heating swaps the two heat exchangers.');
+    return;
+  }
+
+  MAT.housing = std(0xe7e2da, 0.42, 0.08);
+  MAT.fin = std(0xd5dde3, 0.28, 0.86);
+  MAT.copper = std(0xb4683c, 0.32, 1);
+  MAT.insul = std(0x2a2d31, 0.82, 0.04);
+  MAT.dark = std(0x23262b, 0.45, 0.6);
+  MAT.blade = std(0xd5dbe2, 0.32, 0.62);
+  MAT.comp = std(0x1b1e22, 0.38, 0.72);
+  MAT.brass = std(0xc6a15a, 0.3, 0.82);
+  MAT.slide = std(0xffb25e, 0.28, 0.55, { emissive: 0xff7a2a, emissiveIntensity: 0.35 });
+  MAT.sleeve = std(0x8d9398, 0.4, 0.7);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x121722);
+  camera = new THREE.PerspectiveCamera(38, 1, 0.08, 90);
+  camera.position.set(CAMS.wide.p[0], CAMS.wide.p[1], CAMS.wide.p[2]);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.96;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.domElement.setAttribute('aria-label', 'Cutaway of a reversible air conditioner. Drag to orbit. Scroll or pinch to zoom.');
+  document.getElementById('view').appendChild(renderer.domElement);
+
+  if (!renderer.getContext()) {
+    showFallback('This exhibit needs WebGL. A reversible air conditioner moves heat: refrigerant circulates in a sealed loop, room air and outdoor air stay separate, and heating swaps the two heat exchangers.');
+    return;
+  }
+
+  labelRenderer = new CSS2DRenderer();
+  labelRenderer.setSize(window.innerWidth, window.innerHeight);
+  labelRenderer.domElement.id = 'labels';
+  labelRenderer.domElement.style.position = 'fixed';
+  labelRenderer.domElement.style.inset = '0';
+  labelRenderer.domElement.style.zIndex = '2';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  document.body.appendChild(labelRenderer.domElement);
+
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environmentIntensity = 0.55;
+    pmrem.dispose();
+  } catch (err) {
+    console.warn(err);
+  }
+
+  scene.add(makeSky());
+
+  const hemi = new THREE.HemisphereLight(0xc5d2e4, 0x3a2c24, 1.7);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xd5e2ff, 4.8);
+  sun.position.set(7.5, 8.5, 4.5);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 24;
+  sun.shadow.camera.left = -7;
+  sun.shadow.camera.right = 7;
+  sun.shadow.camera.top = 7;
+  sun.shadow.camera.bottom = -7;
+  sun.shadow.bias = -0.00035;
+  sun.shadow.normalBias = 0.03;
+  scene.add(sun);
+  const gallery = new THREE.DirectionalLight(0xeef2ff, 2.1);
+  gallery.position.set(2.5, 4.2, 7);
+  scene.add(gallery);
+  const spot = new THREE.SpotLight(0xffc7a1, 160, 8, 0.75, 0.55, 2);
+  spot.position.set(-1.45, 2.55, 0.35);
+  spot.target.position.set(-1.7, 0.4, 0.1);
+  scene.add(spot, spot.target);
+  const lampLight = new THREE.PointLight(0xffc9a0, 12, 3.2, 2);
+  lampLight.position.set(-1.15, 1.15, 0.95);
+  scene.add(lampLight);
+
+  buildArchitecture(scene);
+  buildSplit();
+  buildMono();
+  buildPaths();
+  buildParticles();
+
+  function mount(name, title, x, y, z, temp) {
+    const a = new THREE.Object3D();
+    a.position.set(x, y, z);
+    const tag = makeTag(title, temp);
+    a.add(tag);
+    scene.add(a);
+    tags[name] = tag;
+  }
+  mount('splitIn', 'Indoor coil', -0.55, 2.42, 0);
+  mount('splitOut', 'Outdoor coil', 1.72, 0.78, 0.15);
+  mount('splitComp', 'Compressor', 1.18, 0.48, -0.28);
+  mount('splitValve', 'Reversing valve', 1.24, 0.66, 0.2);
+  mount('monoRoom', 'Room-side coil', -0.75, 1.22, 0.1);
+  mount('monoDuct', 'Duct-side coil', -0.15, 1.28, 0.05);
+  mount('monoComp', 'Compressor', -0.62, 0.32, -0.28);
+  mount('monoValve', 'Reversing valve', -0.32, 0.48, -0.16);
+  mount('monoSep', 'Separate air streams', -0.44, 1.02, 0.42);
+  tags.monoSep.userData.span.textContent = 'room and outdoor';
+  mount('intake', 'Outdoor intake', 0.48, 0.28, -0.42);
+  tags.intake.userData.span.textContent = 'outdoor air in';
+  mount('txv', 'Expansion device', -0.32, 2.16, 0.24);
+  mount('supply', 'Supply air', -0.95, 1.78, 0.18, true);
+  mount('exhaust', 'Exhaust air', 1.42, 1.38, 0.16, true);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(CAMS.wide.t[0], CAMS.wide.t[1], CAMS.wide.t[2]);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enablePan = false;
+  controls.minDistance = 1.45;
+  controls.maxDistance = 12;
+  controls.minPolarAngle = 0.18;
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.zoomSpeed = 0.7;
+  controls.rotateSpeed = 0.85;
+  controls.addEventListener('start', () => {
+    viewMode = 'user';
+    tween = null;
+  });
+  controls.update();
+
+  bindUI();
+  applyStep(0, { snap: true });
+  if (reduced) {
+    playing = false;
+    tourAuto = false;
+    viewMode = 'home';
+    updateDots();
+  }
+  updatePlayLabel();
+
+  renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    showFallback('The graphics context was lost. Reload the page to restore the exhibit.');
+  });
+
+  window.addEventListener('resize', resize);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+  mq.addEventListener?.('change', (e) => { reduced = e.matches; });
+  resize();
+
+  document.body.classList.add('ready');
+  document.getElementById('fallback').hidden = true;
+  window.__AC_READY = true;
+  requestAnimationFrame(animate);
+}
+
+try {
+  main();
+} catch (err) {
+  console.error(err);
+  showFallback('This exhibit could not start. It needs WebGL and a network connection to load Three.js.');
+}
+</script>
+<script>
+  setTimeout(() => {
+    if (!window.__AC_READY) {
+      const f = document.getElementById('fallback');
+      f.hidden = false;
+      f.querySelector('p').textContent = 'This exhibit could not start. It needs WebGL and a network connection to load Three.js.';
+    }
+  }, 8000);
+</script>
+<noscript>
+  <div class="panel" style="position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);width:min(460px,calc(100% - 40px));padding:18px;z-index:6">
+    <p>Enable JavaScript to run this exhibit.</p>
+  </div>
+</noscript>
+</body>
+</html>

@@ -1,0 +1,1385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Claude Opus 5.5</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --bg:#06080b;--panel:rgba(13,17,23,.66);--panel-2:rgba(255,255,255,.04);--line:rgba(255,255,255,.085);
+  --text:#e8edf3;--muted:#8d99a7;--dim:#5f6b78;
+  --cool:#6cc6ff;--heat:#ff8f52;--accent:var(--cool);
+  --room:#5ef0d3;--outdoor:#c3a3ff;--energy:#ffd54a;--water:#9fd8ff;
+  --r:16px;--shadow:0 18px 50px -18px rgba(0,0,0,.7),0 2px 0 rgba(255,255,255,.03) inset;
+  font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+body[data-mode="heat"]{--accent:var(--heat)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block;width:100%;height:100%;touch-action:none;outline:none;cursor:grab}
+#stage canvas:active{cursor:grabbing}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% 45%,transparent 55%,rgba(0,0,0,.55) 100%)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);-webkit-backdrop-filter:blur(18px) saturate(1.3);backdrop-filter:blur(18px) saturate(1.3)}
+
+.brand{position:fixed;top:max(18px,env(safe-area-inset-top));left:max(22px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px;pointer-events:none}
+.brand::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 14px var(--accent);transition:background .6s,box-shadow .6s}
+.brand h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.015em;color:#f3f6f9}
+
+.status{position:fixed;top:max(16px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));width:292px;padding:14px 16px 14px}
+.state{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#cfd8e2}
+.state .pulse{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 var(--accent);animation:pulse 2.2s infinite}
+.state .sep{color:var(--dim)}
+.state .run{margin-left:auto;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.temps{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.t{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:9px 11px 8px}
+.t .k{display:block;font-size:11px;color:var(--muted)}
+.t .v{display:block;font-size:24px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:1px}
+.t .v small{font-size:13px;font-weight:500;color:var(--muted);margin-left:2px}
+.t .sub{display:block;font-size:11px;color:var(--dim);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11px;color:var(--muted)}
+.track{position:relative;flex:1;height:6px;border-radius:6px;background:rgba(255,213,74,.1);overflow:hidden}
+.track i{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 10px,rgba(255,213,74,.95) 10px 14px,transparent 14px 24px);animation:flow 1.1s linear infinite}
+body[data-mode="heat"] .track i{animation-direction:reverse}
+body.paused .track i,body.reduced .track i{animation:none}
+@keyframes flow{from{transform:translateX(-24px)}to{transform:translateX(0)}}
+.dir b{font-weight:600;color:var(--energy);font-size:11px}
+.flow{margin-top:10px;display:grid;gap:6px}
+.flow .row{display:grid;grid-template-columns:68px 1fr;gap:8px;font-size:12px;line-height:1.35;color:#d7dee6}
+.flow .row span:first-child{color:var(--muted);display:flex;align-items:center;gap:6px}
+.flow .row span:first-child::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--energy);box-shadow:0 0 8px var(--energy)}
+
+.legend{position:fixed;left:max(16px,env(safe-area-inset-left));bottom:max(16px,env(safe-area-inset-bottom));padding:12px 14px;display:grid;gap:8px;font-size:12px;color:#d5dce4;min-width:196px}
+.lg{display:flex;align-items:center;gap:10px}
+.sw{width:22px;height:8px;border-radius:8px;flex:none}
+.sw.room{background:var(--room);box-shadow:0 0 10px var(--room)}
+.sw.out{background:var(--outdoor);box-shadow:0 0 10px var(--outdoor)}
+.sw.ref{background:linear-gradient(90deg,#ff3a2a,#ff8c5f 45%,#7cc4ff 70%,#2f6bff)}
+.sw.heat{background:radial-gradient(circle,#fff3b0 0 25%,var(--energy) 60%,transparent 100%);height:12px;width:22px}
+.sw.drop{background:var(--water);width:8px;height:11px;border-radius:50% 50% 50% 50%/60% 60% 40% 40%;margin:0 7px}
+.lg em{font-style:normal;color:var(--dim);margin-left:auto;padding-left:8px}
+
+.tour{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(max(16px,env(safe-area-inset-bottom)) + 78px);width:min(460px,calc(100vw - 32px));padding:11px 14px 12px;transition:opacity .35s,transform .35s}
+.tour-top{display:flex;align-items:center;gap:10px;min-height:22px}
+.tour .step{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+.dots{display:flex;gap:4px}
+.dots i{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.18)}
+.dots i.on{background:var(--accent)}
+.tour-nav{margin-left:auto;display:flex;gap:4px}
+.tour-nav button{width:28px;height:26px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.04);cursor:pointer;display:grid;place-items:center;font-size:15px;line-height:1}
+.tour-nav button:hover{background:rgba(255,255,255,.1)}
+.tour p{margin:6px 0 0;font-size:13.5px;line-height:1.45;color:#e3e9ef;min-height:2.9em}
+.tour p b{color:#fff;font-weight:600}
+.prog{margin-top:9px;height:2px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden}
+.prog i{display:block;height:100%;width:0;background:var(--accent)}
+.tour:not(.guiding) .tour-nav,.tour:not(.guiding) .dots{display:none}
+
+.dock{position:fixed;left:50%;transform:translateX(-50%);bottom:max(16px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;padding:7px;max-width:calc(100vw - 24px)}
+.seg{display:flex;background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px}
+.seg button{height:40px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap;transition:background .25s,color .25s}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed="true"]{background:rgba(255,255,255,.1);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.08) inset}
+.seg.mode button[data-mode="cool"][aria-pressed="true"]{background:rgba(108,198,255,.16);color:#bfe6ff}
+.seg.mode button[data-mode="heat"][aria-pressed="true"]{background:rgba(255,143,82,.17);color:#ffd2b8}
+.seg svg,.tools svg{width:16px;height:16px;flex:none}
+.tools{display:flex;gap:4px}
+.icon,.pill{height:44px;min-width:44px;border-radius:11px;border:1px solid var(--line);background:rgba(255,255,255,.035);cursor:pointer;display:grid;place-items:center;color:#dfe6ee;transition:background .2s,border-color .2s}
+.pill{display:flex;gap:7px;padding:0 14px 0 12px;font-size:13px;font-weight:600;background:color-mix(in srgb,var(--accent) 20%,transparent);border-color:color-mix(in srgb,var(--accent) 40%,transparent);color:#fff}
+.icon:hover,.pill:hover{background:rgba(255,255,255,.1)}
+.icon[aria-pressed="false"]{color:var(--dim)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#tags{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.tag{position:absolute;left:0;top:0;display:flex;align-items:center;will-change:transform;transition:opacity .3s;white-space:nowrap}
+.tag .d{width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.14),0 0 12px rgba(255,255,255,.5);flex:none}
+.tag .ln{width:18px;height:1px;background:linear-gradient(90deg,rgba(255,255,255,.7),rgba(255,255,255,.25));flex:none}
+.tag .tx{padding:5px 9px 5px;border-radius:9px;background:rgba(10,13,18,.72);border:1px solid rgba(255,255,255,.1);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);line-height:1.2}
+.tag .tx b{display:block;font-size:12px;font-weight:600;color:#f4f7fa}
+.tag .tx span{display:block;font-size:10.5px;color:var(--muted);margin-top:1px}
+.tag.l{flex-direction:row-reverse}
+.tag.l .ln{background:linear-gradient(270deg,rgba(255,255,255,.7),rgba(255,255,255,.25))}
+.tag.u{flex-direction:column-reverse}
+.tag.u .ln{width:1px;height:16px;background:linear-gradient(0deg,rgba(255,255,255,.7),rgba(255,255,255,.25))}
+.tag.heat .d{background:var(--energy);box-shadow:0 0 0 3px rgba(255,213,74,.2),0 0 16px var(--energy)}
+.tag.heat .tx{border-color:rgba(255,213,74,.45);background:rgba(40,28,4,.72)}
+.tag.heat .tx b{color:#ffe38a}
+.tag.hl .tx{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+.tag.hl .d{background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 30%,transparent),0 0 18px var(--accent)}
+body.guiding .tag:not(.hl):not(.heat){opacity:.28}
+
+#loader{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);transition:opacity .8s;z-index:5}
+#loader.done{opacity:0;pointer-events:none}
+.spin{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.08);border-top-color:var(--cool);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.fallback{position:fixed;inset:0;display:grid;place-items:center;padding:24px;background:var(--bg);z-index:6;overflow:auto}
+.fallback[hidden]{display:none}
+.fb-card{max-width:560px;padding:22px 24px}
+.fb-card .lead{font-size:16px;font-weight:600;margin:0 0 6px}
+.fb-card p,.fb-card li{font-size:14px;line-height:1.55;color:#cdd6df}
+.fb-card svg{width:100%;height:auto;margin:10px 0 4px}
+
+@media (max-width:980px){
+  .legend{grid-template-columns:1fr 1fr;min-width:0;gap:6px 14px;padding:10px 12px}
+  .lg em{display:none}
+}
+@media (max-width:760px){
+  .brand{top:max(12px,env(safe-area-inset-top));left:14px}
+  .brand h1{font-size:14px}
+  .status{top:auto;right:auto;left:10px;width:auto;max-width:calc(100vw - 20px);top:calc(max(12px,env(safe-area-inset-top)) + 28px);padding:10px 12px;display:grid;grid-template-columns:auto auto;gap:6px 12px;align-items:center}
+  .state{grid-column:1/-1;font-size:11px}
+  .temps{margin:0;gap:6px}
+  .t{padding:6px 9px}
+  .t .v{font-size:18px}
+  .t .sub{display:none}
+  .flow{margin:0;gap:4px}
+  .flow .row{grid-template-columns:62px 1fr;font-size:11px}
+  .dir{display:none}
+  .legend{left:10px;right:10px;bottom:calc(max(10px,env(safe-area-inset-bottom)) + var(--dockH,104px) + var(--tourH,90px) + 16px);display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;padding:8px 10px}
+  .lg{gap:6px}.sw{width:14px}
+  .tour{bottom:calc(max(10px,env(safe-area-inset-bottom)) + var(--dockH,104px) + 8px);width:calc(100vw - 20px);padding:9px 12px 10px}
+  .tour p{font-size:12.5px;min-height:0}
+  .dock{left:10px;right:10px;transform:none;flex-wrap:wrap;justify-content:center;bottom:max(10px,env(safe-area-inset-bottom));max-width:none;gap:6px;padding:6px}
+  .seg{flex:1 1 44%}
+  .seg button{flex:1;justify-content:center;padding:0 8px;height:38px;font-size:12.5px}
+  .tools{flex:1 1 100%;justify-content:space-between}
+  .icon{flex:1;min-width:0;height:42px}
+  .pill{flex:1.6;justify-content:center}
+  .tag .tx span{display:none}
+  .tag .tx{padding:4px 7px}
+  .tag .tx b{font-size:11px}
+  .tag .ln{width:12px}
+}
+@media (max-width:420px){
+  .seg{flex:1 1 100%}
+}
+@media (prefers-reduced-motion:reduce){
+  .state .pulse,.track i{animation:none}
+  .tour,.tag,#loader{transition:none}
+}
+</style>
+<script>
+  window.__acFail = function (msg) {
+    var fb = document.getElementById('fallback');
+    if (!fb) return;
+    var m = document.getElementById('fbMsg');
+    if (m && msg) m.textContent = msg;
+    fb.hidden = false;
+    var l = document.getElementById('loader');
+    if (l) l.classList.add('done');
+  };
+  window.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () { if (!window.__acReady) window.__acFail('The 3D engine could not be loaded (network or browser restriction).'); }, 15000);
+  });
+</script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body data-mode="cool">
+<div id="stage"></div>
+<div class="vignette"></div>
+<div id="tags" aria-hidden="true"></div>
+
+<header class="brand"><h1>Claude Opus 5.5</h1></header>
+
+<section class="status panel" aria-live="polite">
+  <div class="state"><span class="pulse"></span><span id="stSystem">Split system</span><span class="sep">·</span><span id="stMode">Cooling</span><span class="run" id="stRun">Running</span></div>
+  <div class="temps">
+    <div class="t"><span class="k">Indoor</span><span class="v"><span id="tIn">27.0</span><small>°C</small></span><span class="sub" id="tInSub">Target 22 °C</span></div>
+    <div class="t"><span class="k">Outdoor</span><span class="v"><span id="tOut">35</span><small>°C</small></span><span class="sub" id="tOutSub">Summer afternoon</span></div>
+  </div>
+  <div class="dir"><span>Room</span><div class="track"><i></i></div><span>Outdoors</span></div>
+  <div class="flow">
+    <div class="row"><span>Absorbed</span><span id="absWhere">Indoor coil, from room air</span></div>
+    <div class="row"><span>Released</span><span id="relWhere">Outdoor coil, to outside air</span></div>
+  </div>
+</section>
+
+<aside class="legend panel" aria-label="Legend">
+  <div class="lg"><i class="sw room"></i>Room air</div>
+  <div class="lg"><i class="sw out"></i>Outdoor air</div>
+  <div class="lg"><i class="sw ref"></i>Refrigerant<em>hot → cold</em></div>
+  <div class="lg"><i class="sw heat"></i>Heat energy</div>
+  <div class="lg"><i class="sw drop"></i>Condensate</div>
+</aside>
+
+<div class="tour panel" id="tour" role="status" aria-live="polite">
+  <div class="tour-top">
+    <span class="step" id="tourStep">Now</span>
+    <div class="dots" id="tourDots"></div>
+    <div class="tour-nav">
+      <button id="tPrev" aria-label="Previous step">‹</button>
+      <button id="tNext" aria-label="Next step">›</button>
+      <button id="tClose" aria-label="End guide">×</button>
+    </div>
+  </div>
+  <p id="tourText">Preparing the scene…</p>
+  <div class="prog"><i id="tourProg"></i></div>
+</div>
+
+<nav class="dock panel" aria-label="Controls">
+  <div class="seg" role="group" aria-label="System type">
+    <button data-system="split" aria-pressed="true">Split system</button>
+    <button data-system="mono" aria-pressed="false">Monoblock</button>
+  </div>
+  <div class="seg mode" role="group" aria-label="Operating mode">
+    <button data-mode="cool" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2v20M4.5 6.5l15 11M19.5 6.5l-15 11M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/></svg>Cooling</button>
+    <button data-mode="heat" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>Heating</button>
+  </div>
+  <div class="tools">
+    <button class="icon" id="bPlay" aria-label="Pause" title="Pause"><svg id="icPause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg><svg id="icPlay" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5.2v13.6c0 .8.9 1.3 1.6.8l10.2-6.8c.6-.4.6-1.2 0-1.6L8.6 4.4C7.9 3.9 7 4.4 7 5.2z"/></svg></button>
+    <button class="icon" id="bZoomOut" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
+    <button class="icon" id="bZoomIn" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 12h12M12 6v12"/></svg></button>
+    <button class="icon" id="bReset" aria-label="Reset view" title="Reset view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4.5V9h4.5"/></svg></button>
+    <button class="icon" id="bLabels" aria-label="Show labels" aria-pressed="true" title="Labels"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.2V5a1.5 1.5 0 0 1 1.5-1.5h7.2l8.3 8.3a1.5 1.5 0 0 1 0 2.1l-7.1 7.1a1.5 1.5 0 0 1-2.1 0z"/><circle cx="8" cy="8" r="1.4"/></svg></button>
+    <button class="pill" id="bGuide"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13c0 .8.9 1.2 1.5.8l9.6-6.5c.6-.4.6-1.2 0-1.6L9.5 4.7C8.9 4.3 8 4.7 8 5.5z"/></svg><span id="bGuideTx">Guide</span></button>
+  </div>
+</nav>
+
+<div id="loader"><div class="spin"></div></div>
+
+<div id="fallback" class="fallback" hidden>
+  <div class="fb-card panel">
+    <p class="lead" id="fbMsg">WebGL is not available on this device.</p>
+    <p>The interactive 3D exhibit needs WebGL. Here is the idea it shows:</p>
+    <svg viewBox="0 0 520 170" fill="none" stroke-width="3" aria-hidden="true">
+      <rect x="10" y="30" width="170" height="110" rx="12" stroke="#2c3a48"/><rect x="340" y="30" width="170" height="110" rx="12" stroke="#2c3a48"/>
+      <rect x="255" y="10" width="10" height="150" fill="#2c3a48" stroke="none"/>
+      <path d="M150 60 H370" stroke="#ff4a33"/><path d="M370 110 H150" stroke="#3f7bff"/>
+      <circle cx="120" cy="85" r="26" stroke="#7cc4ff"/><circle cx="400" cy="85" r="26" stroke="#ff8c5f"/>
+      <text x="95" y="160" fill="#8d99a7" stroke="none" font-size="13" font-family="sans-serif">Indoor coil</text>
+      <text x="368" y="160" fill="#8d99a7" stroke="none" font-size="13" font-family="sans-serif">Outdoor coil</text>
+    </svg>
+    <ol>
+      <li>Air conditioning moves heat; it does not create cold.</li>
+      <li>Refrigerant circulates in a sealed loop between two heat exchangers. It absorbs heat where it evaporates and releases it where it condenses.</li>
+      <li>The compressor raises pressure and temperature; the expansion valve drops them.</li>
+      <li>Indoor air and outdoor air never mix. A split system uses two units joined by refrigerant lines; a monoblock keeps the whole circuit indoors and ducts outdoor air through the wall.</li>
+      <li>In Heating mode the reversing valve swaps the roles of the two coils, so heat is pulled from outdoor air and released indoors.</li>
+    </ol>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const { clamp, lerp } = THREE.MathUtils;
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const $ = (id) => document.getElementById(id);
+
+const S = { system: 'split', mode: 'cool', playing: true, labels: true, mix: 0, simT: 0, guide: -1, guideT: 0 };
+const mqReduce = matchMedia('(prefers-reduced-motion: reduce)');
+let reduced = mqReduce.matches;
+document.body.classList.toggle('reduced', reduced);
+mqReduce.addEventListener?.('change', (e) => { reduced = e.matches; document.body.classList.toggle('reduced', reduced); });
+
+function hasWebGL() {
+  try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; }
+}
+if (!hasWebGL()) { window.__acFail('WebGL is not available on this device or browser.'); throw new Error('no-webgl'); }
+
+const stage = $('stage');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+} catch (e) { window.__acFail('WebGL could not be started on this device.'); throw e; }
+const isSmall = () => Math.min(innerWidth, innerHeight) < 700;
+const pixelRatio = () => Math.min(window.devicePixelRatio || 1, isSmall() ? 1.75 : 2);
+renderer.setPixelRatio(pixelRatio());
+renderer.setSize(stage.clientWidth, stage.clientHeight, false);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+stage.appendChild(renderer.domElement);
+renderer.domElement.setAttribute('aria-label', 'Interactive 3D cutaway of an air conditioning system');
+renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); window.__acFail('The graphics context was lost. Reload the page to restart the exhibit.'); });
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x06080b);
+scene.fog = new THREE.Fog(0x06080b, 22, 48);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.42;
+
+const camera = new THREE.PerspectiveCamera(36, stage.clientWidth / stage.clientHeight, 0.03, 140);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.minDistance = 0.6;
+controls.maxDistance = 24;
+controls.maxPolarAngle = 1.5;
+controls.minAzimuthAngle = -1.3;
+controls.maxAzimuthAngle = 1.3;
+controls.screenSpacePanning = true;
+controls.zoomSpeed = 0.9;
+controls.rotateSpeed = 0.7;
+
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.55, 0.92);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ---------- lights ---------- */
+const hemi = new THREE.HemisphereLight(0xd8e8ff, 0x3a3026, 0.5);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff0da, 2.4);
+sun.position.set(5.5, 9.5, 7.5);
+sun.target.position.set(0.3, 0.6, -1.4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(isSmall() ? 1024 : 2048, isSmall() ? 1024 : 2048);
+Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 7, bottom: -5, near: 1, far: 30 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.02;
+scene.add(sun, sun.target);
+const fill = new THREE.DirectionalLight(0xbcd4ff, 0.55);
+fill.position.set(-7, 4, 8);
+scene.add(fill);
+const roomSpot = new THREE.SpotLight(0xfff0de, 14, 9, 1.05, 1, 2);
+roomSpot.position.set(-2.3, 2.95, -1.0);
+roomSpot.target.position.set(-2.1, 0, -1.4);
+scene.add(roomSpot, roomSpot.target);
+const unitSpot = new THREE.SpotLight(0xf4f7ff, 5, 5, 0.6, 0.9, 2);
+unitSpot.position.set(-1.6, 2.9, 1.2);
+unitSpot.target.position.set(-0.3, 1.4, -0.5);
+scene.add(unitSpot, unitSpot.target);
+
+/* ---------- materials ---------- */
+const std = (color, roughness = 0.8, metalness = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra });
+const M = {
+  plaster: std(0xebe6de, 0.92), block: std(0x8e8780, 0.96), insul: std(0xe0c56a, 1), render: std(0xd2c8ba, 0.9),
+  slab: std(0x8a8782, 0.95), screed: std(0x6f6c68, 0.95), backwall: std(0xd6cfc4, 0.93), skirting: std(0xf1eee8, 0.6),
+  plinth: std(0x10141a, 0.42, 0.35), plinthEdge: new THREE.MeshBasicMaterial({ color: 0x2a3644 }),
+  soil: std(0x4f3d2e, 1), soilDeep: std(0x3b2e24, 1), grass: std(0x5a7736, 0.96), gravel: std(0x8f8a82, 1), concrete: std(0xa8a39b, 0.88),
+  hedge: std(0x3d5a2a, 0.9), fence: std(0x6b5645, 0.85),
+  ghost: new THREE.MeshPhysicalMaterial({ color: 0xf2f5f8, roughness: 0.25, metalness: 0, clearcoat: 0.6, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide }),
+  edge: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.32 }),
+  casing: std(0xeceff1, 0.45, 0.1), steel: std(0xb7bec5, 0.36, 0.85), darkSteel: std(0x3a4047, 0.5, 0.7),
+  fin: std(0xc8d1d9, 0.3, 0.9), finFrost: null,
+  darkPlastic: std(0x1b1e22, 0.55), fanBlade: std(0x2b3035, 0.5, 0, { side: THREE.DoubleSide }), crossBlade: std(0xaeb7c0, 0.45, 0.1),
+  comp: new THREE.MeshPhysicalMaterial({ color: 0x272c32, roughness: 0.38, metalness: 0.55, clearcoat: 0.7, clearcoatRoughness: 0.3 }),
+  brass: std(0xc39b4c, 0.28, 1), copper: std(0xc4764a, 0.3, 1), rubber: std(0x151719, 0.9),
+  pipe: new THREE.MeshPhysicalMaterial({ color: 0xd08a5e, roughness: 0.25, metalness: 0.35, transparent: true, opacity: 0.5, depthWrite: false }),
+  sleeve: new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.95, transparent: true, opacity: 0.55, depthWrite: false }),
+  hose: std(0xe7e9ea, 0.6), duct: std(0xd9dde0, 0.5, 0.2, { side: THREE.DoubleSide }),
+  foam: std(0x2a2d31, 0.95), hole: new THREE.MeshBasicMaterial({ color: 0x050607 }),
+  wood: null, rug: null, sofa: std(0x44536a, 0.95), cushion: std(0x55657d, 0.95), lampShade: std(0xf3e6cf, 0.8, 0, { emissive: 0xffc98f, emissiveIntensity: 0.9, side: THREE.DoubleSide }),
+  pot: std(0xb56a48, 0.8), leaf: std(0x3f6b35, 0.75, 0, { side: THREE.DoubleSide }), frame: std(0x2a2522, 0.6),
+  led: new THREE.MeshBasicMaterial({ color: 0x6cc6ff, toneMapped: false }),
+};
+M.finFrost = M.fin.clone();
+
+function canvasTex(w, h, draw, repeat = [1, 1]) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat);
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return t;
+}
+function rnd(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+M.wood = std(0xffffff, 0.62, 0, {
+  map: canvasTex(1024, 1024, (g, w, h) => {
+    const r = rnd(7); const rows = 8; const ph = h / rows;
+    for (let i = 0; i < rows; i++) {
+      let x = -r() * 400;
+      while (x < w) {
+        const len = 260 + r() * 360; const l = 44 + r() * 12; const hue = 28 + r() * 6;
+        g.fillStyle = `hsl(${hue},${34 + r() * 10}%,${l}%)`; g.fillRect(x, i * ph, len, ph);
+        g.globalAlpha = 0.18;
+        for (let k = 0; k < 16; k++) { g.strokeStyle = r() > 0.5 ? '#3b2616' : '#e6c9a0'; g.lineWidth = 0.6 + r() * 1.4; const yy = i * ph + r() * ph; g.beginPath(); g.moveTo(x, yy); g.bezierCurveTo(x + len * 0.3, yy + (r() - 0.5) * 8, x + len * 0.7, yy + (r() - 0.5) * 8, x + len, yy + (r() - 0.5) * 6); g.stroke(); }
+        g.globalAlpha = 1; g.fillStyle = 'rgba(30,18,10,.55)'; g.fillRect(x, i * ph, 2, ph);
+        x += len;
+      }
+      g.fillStyle = 'rgba(30,18,10,.5)'; g.fillRect(0, i * ph, w, 2);
+    }
+  }, [2.2, 1.6]),
+});
+M.rug = std(0xffffff, 1, 0, {
+  map: canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#c9c0b3'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#8b7f70'; g.lineWidth = 10; g.strokeRect(24, 24, w - 48, h - 48);
+    g.strokeStyle = '#a79a89'; g.lineWidth = 3; g.strokeRect(46, 46, w - 92, h - 92);
+    const r = rnd(3); g.globalAlpha = 0.07;
+    for (let i = 0; i < 9000; i++) { g.fillStyle = r() > 0.5 ? '#000' : '#fff'; g.fillRect(r() * w, r() * h, 2, 2); }
+  }),
+});
+const art = canvasTex(512, 384, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#20364d'); gr.addColorStop(0.55, '#b8764f'); gr.addColorStop(1, '#e7c9a0');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  g.fillStyle = 'rgba(255,240,220,.85)'; g.beginPath(); g.arc(w * 0.68, h * 0.38, 46, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(18,24,32,.8)'; g.beginPath(); g.moveTo(0, h); g.lineTo(0, h * 0.72); g.bezierCurveTo(w * 0.3, h * 0.55, w * 0.5, h * 0.8, w, h * 0.62); g.lineTo(w, h); g.fill();
+});
+
+/* ---------- geometry helpers ---------- */
+const BOX = new THREE.BoxGeometry(1, 1, 1);
+function box(w, h, d, mat, x = 0, y = 0, z = 0, parent) {
+  const m = new THREE.Mesh(BOX, mat); m.scale.set(w, h, d); m.position.set(x, y, z);
+  m.castShadow = true; m.receiveShadow = true; if (parent) parent.add(m); return m;
+}
+function rbox(w, h, d, r, mat, x = 0, y = 0, z = 0, parent) {
+  const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, r), mat); m.position.set(x, y, z);
+  m.castShadow = true; m.receiveShadow = true; if (parent) parent.add(m); return m;
+}
+function cyl(rt, rb, h, mat, seg = 24, parent) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat); m.castShadow = true; m.receiveShadow = true; if (parent) parent.add(m); return m;
+}
+function ghostify(mesh, edgeAngle = 25) {
+  const e = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, edgeAngle), M.edge);
+  e.position.copy(mesh.position); e.rotation.copy(mesh.rotation); e.scale.copy(mesh.scale);
+  mesh.castShadow = false; mesh.renderOrder = 2; return e;
+}
+
+class PolyCurve extends THREE.Curve {
+  constructor(pts) {
+    super(); this.pts = pts; this.cum = [0];
+    for (let i = 1; i < pts.length; i++) this.cum.push(this.cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
+    this.len = this.cum[this.cum.length - 1] || 1e-6; this.arcLengthDivisions = 400;
+  }
+  getPoint(t, target = new THREE.Vector3()) {
+    const d = clamp(t, 0, 1) * this.len, c = this.cum; let lo = 0, hi = c.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (c[m] < d) lo = m; else hi = m; }
+    const seg = c[hi] - c[lo] || 1; return target.copy(this.pts[lo]).lerp(this.pts[hi], (d - c[lo]) / seg);
+  }
+  getUtoTmapping(u) { return u; }
+}
+const N = (p, o = {}) => ({ p, ...o });
+function roundPath(nodes, R = 0.04) {
+  const out = []; const push = (p, n) => out.push({ p, coil: n.coil || null, exv: !!n.exv });
+  push(nodes[0].p.clone(), nodes[0]);
+  for (let i = 1; i < nodes.length - 1; i++) {
+    const A = nodes[i - 1].p, B = nodes[i].p, C = nodes[i + 1].p;
+    const ab = A.distanceTo(B), bc = B.distanceTo(C);
+    if (ab < 1e-5 || bc < 1e-5) continue;
+    const r = Math.min(nodes[i].r ?? R, ab * 0.5, bc * 0.5);
+    const d1 = A.clone().sub(B).normalize(), d2 = C.clone().sub(B).normalize();
+    if (r < 1e-4 || d1.dot(d2) < -0.9995) { push(B.clone(), nodes[i]); continue; }
+    const P1 = B.clone().addScaledVector(d1, r), P2 = B.clone().addScaledVector(d2, r);
+    for (let k = 0; k <= 6; k++) {
+      const t = k / 6; const q = P1.clone().multiplyScalar((1 - t) * (1 - t)).addScaledVector(B, 2 * t * (1 - t)).addScaledVector(P2, t * t);
+      push(q, nodes[i]);
+    }
+  }
+  push(nodes[nodes.length - 1].p.clone(), nodes[nodes.length - 1]);
+  return out;
+}
+function tube(pts, radius, mat, parent, radial = 8) {
+  const curve = new PolyCurve(pts);
+  const g = new THREE.TubeGeometry(curve, clamp(Math.ceil(curve.len / 0.012), 8, 1400), radius, radial, false);
+  const m = new THREE.Mesh(g, mat); m.castShadow = mat !== M.pipe && mat !== M.sleeve; if (parent) parent.add(m); return m;
+}
+const basisOf = (u, v, w) => new THREE.Matrix4().makeBasis(u, v, w);
+
+/* Finned-tube heat exchanger: tubes run along u, rows stack along v, air crosses along w. */
+function makeCoil({ c, u, v, L, H, D, passes, step = 0.011, parent }) {
+  const w = new THREE.Vector3().crossVectors(u, v).normalize();
+  const n = Math.max(2, Math.round(L / step));
+  const fins = new THREE.InstancedMesh(BOX, M.fin, n);
+  const B = basisOf(u, v, w), T = new THREE.Matrix4(), Sc = new THREE.Matrix4().makeScale(0.0013, H, D), m = new THREE.Matrix4();
+  for (let i = 0; i < n; i++) {
+    const o = -L / 2 + L * (i + 0.5) / n;
+    T.makeTranslation(c.x + u.x * o, c.y + u.y * o, c.z + u.z * o);
+    fins.setMatrixAt(i, m.multiplyMatrices(T, B).multiply(Sc));
+  }
+  fins.castShadow = true; fins.receiveShadow = true; parent.add(fins);
+  for (const sg of [-1, 1]) {
+    const sh = new THREE.Mesh(BOX, M.steel); sh.matrixAutoUpdate = false;
+    const o = sg * (L / 2 + 0.005);
+    T.makeTranslation(c.x + u.x * o, c.y + u.y * o, c.z + u.z * o);
+    sh.matrix.multiplyMatrices(T, B).multiply(new THREE.Matrix4().makeScale(0.004, H * 1.04, D * 1.15));
+    sh.castShadow = true; parent.add(sh);
+  }
+  const nodes = []; const e = L / 2 + 0.02; const rr = (H / passes) * 0.49;
+  for (let i = 0; i < passes; i++) {
+    const vo = -H / 2 + (H * (i + 0.5)) / passes; const a = i % 2 === 0 ? -e : e;
+    nodes.push(N(c.clone().addScaledVector(v, vo).addScaledVector(u, a), { coil: true, r: rr }));
+    nodes.push(N(c.clone().addScaledVector(v, vo).addScaledVector(u, -a), { coil: true, r: rr }));
+  }
+  return { fins, nodes, c: c.clone(), u, v, w, L, H, D };
+}
+function makeAxialFan(R) {
+  const g = new THREE.Group();
+  const hub = cyl(R * 0.19, R * 0.23, R * 0.32, M.darkPlastic, 28, g); hub.rotation.x = Math.PI / 2;
+  const sh = new THREE.Shape();
+  sh.moveTo(R * 0.17, -R * 0.13);
+  sh.bezierCurveTo(R * 0.45, -R * 0.36, R * 0.9, -R * 0.34, R * 0.97, -R * 0.02);
+  sh.bezierCurveTo(R * 0.99, R * 0.26, R * 0.55, R * 0.36, R * 0.17, R * 0.13);
+  sh.closePath();
+  const bg = new THREE.ExtrudeGeometry(sh, { depth: 0.003, bevelEnabled: false, curveSegments: 16 });
+  for (let i = 0; i < 3; i++) {
+    const p = new THREE.Group(); p.rotation.z = (i * Math.PI * 2) / 3;
+    const b = new THREE.Mesh(bg, M.fanBlade); b.rotation.x = 0.45; b.castShadow = true; p.add(b); g.add(p);
+  }
+  return g;
+}
+function makeCrossFan(r, len, blades = 30) {
+  const g = new THREE.Group();
+  const inst = new THREE.InstancedMesh(BOX, M.crossBlade, blades);
+  const o = new THREE.Object3D();
+  for (let i = 0; i < blades; i++) {
+    const a = (i / blades) * Math.PI * 2;
+    o.position.set(Math.cos(a) * r * 0.8, Math.sin(a) * r * 0.8, 0); o.rotation.set(0, 0, a + 0.55);
+    o.scale.set(r * 0.36, 0.0022, len); o.updateMatrix(); inst.setMatrixAt(i, o.matrix);
+  }
+  g.add(inst);
+  for (let k = 0; k <= 5; k++) { const d = cyl(r, r, 0.004, M.crossBlade, 28, g); d.rotation.x = Math.PI / 2; d.position.z = -len / 2 + (len * k) / 5; }
+  const shaft = cyl(0.004, 0.004, len + 0.04, M.steel, 8, g); shaft.rotation.x = Math.PI / 2;
+  return g;
+}
+function makeCompressor(r, h, parent, pos) {
+  const g = new THREE.Group(); g.position.copy(pos);
+  const shell = cyl(r, r, h, M.comp, 40, g); shell.position.y = h / 2;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 40, 14, 0, Math.PI * 2, 0, Math.PI / 2), M.comp); dome.scale.y = 0.5; dome.position.y = h; dome.castShadow = true; g.add(dome);
+  const weld = cyl(r * 1.02, r * 1.02, 0.006, M.darkSteel, 40, g); weld.position.y = h * 0.82;
+  const term = rbox(r * 0.7, r * 0.55, r * 0.5, 0.006, M.darkPlastic, 0, h * 0.62, r * 0.95, g);
+  for (let i = 0; i < 3; i++) { const f = rbox(0.03, 0.012, 0.03, 0.004, M.rubber, Math.cos(i * 2.1) * r * 0.9, 0.006, Math.sin(i * 2.1) * r * 0.9, g); f.castShadow = false; }
+  parent.add(g); return g;
+}
+function makeRV(parent, pos, axis = 'x') {
+  const g = new THREE.Group(); g.position.copy(pos);
+  const body = cyl(0.014, 0.014, 0.09, M.brass, 20, g); body.rotation.z = Math.PI / 2;
+  for (const s of [-1, 1]) { const cap = cyl(0.016, 0.016, 0.008, M.brass, 20, g); cap.rotation.z = Math.PI / 2; cap.position.x = s * 0.047; }
+  const coil = rbox(0.03, 0.028, 0.028, 0.004, M.darkPlastic, 0.0, 0.032, -0.018, g);
+  if (axis === 'z') g.rotation.y = Math.PI / 2;
+  parent.add(g); return g;
+}
+function makeEXV(parent, pos) {
+  const g = new THREE.Group(); g.position.copy(pos);
+  cyl(0.011, 0.011, 0.034, M.brass, 18, g);
+  const coil = cyl(0.017, 0.017, 0.032, M.darkPlastic, 22, g); coil.position.y = 0.034;
+  const cap = cyl(0.012, 0.017, 0.006, M.darkPlastic, 22, g); cap.position.y = 0.053;
+  parent.add(g); return g;
+}
+/* ---------- diorama: plinth, room, sectioned wall, exterior ---------- */
+const world = new THREE.Group(); scene.add(world);
+const studio = new THREE.Mesh(new THREE.CircleGeometry(60, 64), std(0x0a0d11, 0.85));
+studio.rotation.x = -Math.PI / 2; studio.position.y = -0.8; studio.receiveShadow = true; world.add(studio);
+box(13.5, 0.45, 3.9, M.plinth, 0.85, -0.575, -1.65, world);
+box(13.5, 0.012, 0.012, M.plinthEdge, 0.85, -0.352, 0.3, world).castShadow = false;
+box(13.5, 0.012, 0.012, M.plinthEdge, 0.85, -0.795, 0.3, world).castShadow = false;
+
+// interior slab and floor
+box(5.44, 0.31, 3.32, M.slab, -2.88, -0.195, -1.66, world);
+box(5.44, 0.022, 3.32, M.screed, -2.88, -0.029, -1.66, world);
+const floor = box(5.44, 0.018, 3.32, M.wood, -2.88, -0.009, -1.66, world);
+M.wood.map.repeat.set(2.6, 2.2);
+box(0.32, 0.35, 3.32, M.concrete, 0, -0.175, -1.66, world);
+// ceiling slab (section)
+const ceil = box(6.05, 0.22, 3.32, M.slab, -2.575, 3.11, -1.66, world); ceil.castShadow = false;
+box(6.05, 0.012, 3.32, M.plaster, -2.575, 2.994, -1.66, world).castShadow = false;
+// back wall + skirting + art
+box(5.44, 3.0, 0.12, M.backwall, -2.88, 1.5, -3.26, world);
+box(5.44, 0.09, 0.015, M.skirting, -2.88, 0.045, -3.193, world);
+box(0.015, 0.09, 3.2, M.skirting, -0.1525, 0.045, -1.6, world);
+const artFrame = box(1.12, 0.84, 0.035, M.frame, -2.7, 1.72, -3.18, world);
+const artMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.02, 0.74), std(0xffffff, 0.7, 0, { map: art })); artMesh.position.set(-2.7, 1.72, -3.16); world.add(artMesh);
+
+// wall with section notches
+const wallLayers = [
+  { mat: M.plaster, x1: -0.145, x0: -0.16 }, { mat: M.block, x1: 0.06, x0: -0.145 },
+  { mat: M.insul, x1: 0.145, x0: 0.06 }, { mat: M.render, x1: 0.16, x0: 0.145 },
+];
+let wallGroup = null;
+function buildWall(notches) {
+  if (wallGroup) { world.remove(wallGroup); wallGroup.traverse((o) => o.geometry && o.geometry !== BOX && o.geometry.dispose()); }
+  wallGroup = new THREE.Group();
+  const sh = new THREE.Shape(); sh.moveTo(-3.2, 0); sh.lineTo(0, 0);
+  for (const n of [...notches].sort((a, b) => a.y - b.y)) {
+    const h = Math.sqrt(Math.max(1e-6, n.r * n.r - n.zc * n.zc));
+    const t1 = Math.atan2(-h, -n.zc), t2 = Math.atan2(h, -n.zc) - Math.PI * 2;
+    sh.lineTo(0, n.y - h);
+    for (let k = 1; k <= 28; k++) { const a = t1 + ((t2 - t1) * k) / 28; sh.lineTo(n.zc + Math.cos(a) * n.r, n.y + Math.sin(a) * n.r); }
+  }
+  sh.lineTo(0, 3.0); sh.lineTo(-3.2, 3.0); sh.closePath();
+  for (const L of wallLayers) {
+    const g = new THREE.ExtrudeGeometry(sh, { depth: L.x1 - L.x0, bevelEnabled: false, curveSegments: 4 });
+    g.rotateY(-Math.PI / 2);
+    const m = new THREE.Mesh(g, L.mat); m.position.x = L.x1; m.castShadow = true; m.receiveShadow = true; wallGroup.add(m);
+  }
+  world.add(wallGroup);
+}
+
+// exterior ground in section
+box(7.44, 0.2, 3.32, M.soilDeep, 3.88, -0.25, -1.66, world);
+box(7.44, 0.1, 3.32, M.soil, 3.88, -0.1, -1.66, world);
+const grass = box(7.44, 0.05, 3.32, M.grass, 3.88, -0.025, -1.66, world);
+box(0.5, 0.02, 3.32, M.gravel, 0.41, 0.004, -1.66, world);
+for (const [x, z, s] of [[2.6, -0.35, 0.34], [3.25, -0.95, 0.3], [3.9, -1.6, 0.32]]) rbox(s, 0.03, s * 0.7, 0.01, M.concrete, x, 0.008, z, world);
+// fence
+const fence = new THREE.Group(); world.add(fence);
+for (let x = 0.55; x < 7.5; x += 0.9) box(0.07, 1.25, 0.07, M.fence, x, 0.6, -3.06, fence);
+for (let i = 0; i < 8; i++) box(6.9, 0.1, 0.022, M.fence, 3.9, 0.12 + i * 0.14, -3.02, fence);
+// hedge
+const hedge = new THREE.Group(); world.add(hedge);
+{
+  const r = rnd(11);
+  for (let i = 0; i < 18; i++) {
+    const g = new THREE.IcosahedronGeometry(0.28 + r() * 0.2, 2); const p = g.attributes.position;
+    for (let k = 0; k < p.count; k++) { const f = 1 + (r() - 0.5) * 0.22; p.setXYZ(k, p.getX(k) * f, p.getY(k) * f * 0.9, p.getZ(k) * f); }
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, M.hedge); m.position.set(3.5 + r() * 3.7, 0.25 + r() * 0.45, -2.75 + r() * 0.45);
+    m.castShadow = true; m.receiveShadow = true; hedge.add(m);
+  }
+}
+// painted sky backdrop
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uMix: { value: 0 }, uTime: { value: 0 },
+    sTop: { value: new THREE.Color(0x2c6fc4) }, sHor: { value: new THREE.Color(0xf6cf9e) },
+    wTop: { value: new THREE.Color(0x6f8296) }, wHor: { value: new THREE.Color(0xd9e1e8) },
+  },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+  fragmentShader: `
+    varying vec2 vUv; uniform float uMix,uTime; uniform vec3 sTop,sHor,wTop,wHor;
+    float h(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+    float n(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y); }
+    float fbm(vec2 p){ float v=0.,a=.5; for(int i=0;i<5;i++){ v+=a*n(p); p*=2.03; a*=.5; } return v; }
+    void main(){
+      float y=vUv.y;
+      vec3 top=mix(sTop,wTop,uMix), hor=mix(sHor,wHor,uMix);
+      vec3 col=mix(hor,top,smoothstep(.02,.9,y));
+      vec2 sp=mix(vec2(.8,.8),vec2(.66,.46),uMix);
+      float d=length((vUv-sp)*vec2(1.5,1.));
+      col+=mix(vec3(1.,.85,.6),vec3(1.,.96,.9),uMix)*(exp(-d*14.)*1.2+exp(-d*3.5)*.22);
+      float c=fbm(vec2(vUv.x*3.2+uTime*.006,vUv.y*7.));
+      float cl=smoothstep(.52,.82,c)*smoothstep(.2,.55,y)*mix(.5,.85,uMix);
+      col=mix(col,mix(vec3(1.,.97,.93),vec3(.86,.89,.93),uMix),cl);
+      gl_FragColor=vec4(col,1.);
+    }`,
+  fog: false,
+});
+const sky = new THREE.Mesh(new THREE.PlaneGeometry(7.3, 5.2), skyMat); sky.position.set(3.95, 2.25, -3.34); world.add(sky);
+
+// interior furnishing
+const room = new THREE.Group(); world.add(room);
+{
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.7), M.rug); rug.rotation.x = -Math.PI / 2; rug.position.set(-2.6, 0.003, -1.55); rug.receiveShadow = true; room.add(rug);
+  rbox(2.0, 0.26, 0.86, 0.05, M.sofa, -2.65, 0.22, -2.72, room);
+  rbox(2.0, 0.48, 0.2, 0.06, M.sofa, -2.65, 0.56, -3.05, room);
+  for (const s of [-1, 1]) rbox(0.18, 0.46, 0.86, 0.06, M.sofa, -2.65 + s * 1.0, 0.33, -2.72, room);
+  for (const s of [-0.46, 0.46]) rbox(0.9, 0.14, 0.66, 0.06, M.cushion, -2.65 + s, 0.41, -2.66, room);
+  for (const s of [-1, 1]) for (const z of [-2.35, -3.05]) box(0.04, 0.09, 0.04, M.frame, -2.65 + s * 0.95, 0.045, z, room);
+  // floor lamp
+  const lampX = -4.35, lampZ = -2.75;
+  cyl(0.16, 0.18, 0.02, M.darkSteel, 32, room).position.set(lampX, 0.01, lampZ);
+  cyl(0.012, 0.012, 1.45, M.darkSteel, 12, room).position.set(lampX, 0.74, lampZ);
+  const shade = cyl(0.17, 0.24, 0.3, M.lampShade, 40, room); shade.geometry = new THREE.CylinderGeometry(0.17, 0.24, 0.3, 40, 1, true); shade.position.set(lampX, 1.52, lampZ);
+  const lamp = new THREE.PointLight(0xffc488, 4.5, 7, 2); lamp.position.set(lampX, 1.45, lampZ); room.add(lamp); room.userData.lamp = lamp;
+  // plant
+  const pot = cyl(0.17, 0.13, 0.36, M.pot, 28, room); pot.position.set(-0.85, 0.18, -2.75);
+  const r = rnd(5);
+  for (let i = 0; i < 22; i++) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 6), M.leaf);
+    const a = r() * Math.PI * 2, rr = 0.05 + r() * 0.2, hgt = 0.45 + r() * 0.7;
+    leaf.scale.set(0.35, 1.5, 0.9); leaf.position.set(-0.85 + Math.cos(a) * rr, hgt, -2.75 + Math.sin(a) * rr);
+    leaf.rotation.set((r() - 0.5) * 1.2, a, (r() - 0.5) * 1.4); leaf.castShadow = true; room.add(leaf);
+  }
+  // side table
+  cyl(0.24, 0.24, 0.025, M.frame, 32, room).position.set(-1.3, 0.52, -2.85);
+  cyl(0.02, 0.02, 0.5, M.darkSteel, 10, room).position.set(-1.3, 0.26, -2.85);
+  cyl(0.16, 0.16, 0.012, M.darkSteel, 24, room).position.set(-1.3, 0.006, -2.85);
+}
+
+/* ---------- refrigerant circuit ---------- */
+const rev = (a) => a.slice().reverse();
+function buildCircuit(nodes) {
+  const rp = roundPath(nodes, 0.035);
+  const pts = rp.map((o) => o.p); const curve = new PolyCurve(pts); const cum = curve.cum; const n = pts.length;
+  const runs = {}; let order = [];
+  rp.forEach((o, i) => { if (o.coil) { if (!runs[o.coil]) { runs[o.coil] = [i, i]; order.push(o.coil); } else runs[o.coil][1] = i; } });
+  const [cond, evap] = [runs[order[0]], runs[order[1]]];
+  let exv = rp.findIndex((o, i) => o.exv && i > cond[1]); if (exv < 0) exv = cond[1] + 1;
+  const T = new Float32Array(n), P = new Uint8Array(n);
+  const f = (i, r) => (cum[i] - cum[r[0]]) / Math.max(1e-6, cum[r[1]] - cum[r[0]]);
+  for (let i = 0; i < n; i++) {
+    if (i < cond[0]) { T[i] = 1; P[i] = 0; }
+    else if (i <= cond[1]) { const k = f(i, cond); T[i] = lerp(1, 0.56, k); P[i] = k < 0.25 ? 0 : k < 0.85 ? 2 : 1; }
+    else if (i < exv) { T[i] = 0.56; P[i] = 1; }
+    else if (i < evap[0]) { T[i] = 0.04; P[i] = 2; }
+    else if (i <= evap[1]) { const k = f(i, evap); T[i] = lerp(0.04, 0.3, k); P[i] = k < 0.85 ? 2 : 0; }
+    else { T[i] = 0.32; P[i] = 0; }
+  }
+  const K = Math.ceil(curve.len / 0.008); const lut = new Float32Array((K + 1) * 3), lT = new Float32Array(K + 1), lP = new Uint8Array(K + 1);
+  let j = 0; const tmp = V();
+  for (let k = 0; k <= K; k++) {
+    const d = (k / K) * curve.len; while (j < n - 2 && cum[j + 1] < d) j++;
+    const a = (d - cum[j]) / Math.max(1e-6, cum[j + 1] - cum[j]);
+    tmp.copy(pts[j]).lerp(pts[j + 1], clamp(a, 0, 1)); lut.set([tmp.x, tmp.y, tmp.z], k * 3);
+    lT[k] = lerp(T[j], T[j + 1], clamp(a, 0, 1)); lP[k] = a < 0.5 ? P[j] : P[j + 1];
+  }
+  return { pts, len: curve.len, K, lut, lT, lP };
+}
+function circuitsFor(compOut, outSide, inSide, compIn) {
+  return {
+    cool: buildCircuit([...compOut, ...outSide, ...inSide, ...compIn]),
+    heat: buildCircuit([...compOut, ...rev(inSide), ...rev(outSide), ...compIn]),
+  };
+}
+function drawPipes(sections, parent, r = 0.0065) { for (const s of sections) tube(roundPath(s, 0.035).map((o) => o.p), r, M.pipe, parent); }
+function drawSleeve(nodes, r, parent) { tube(roundPath(nodes, 0.06).map((o) => o.p), r, M.sleeve, parent, 10); }
+
+/* ---------- split system ---------- */
+function buildSplit() {
+  const g = new THREE.Group(); world.add(g);
+  const sys = { id: 'split', group: g, fans: [], notches: [{ y: 2.29, r: 0.075, zc: -0.02 }] };
+  // indoor unit casing (extruded profile, x-ray shell)
+  const prof = new THREE.Shape();
+  prof.moveTo(-0.17, 2.275); prof.lineTo(-0.17, 2.6); prof.lineTo(-0.315, 2.6);
+  prof.quadraticCurveTo(-0.402, 2.6, -0.405, 2.505); prof.lineTo(-0.401, 2.35);
+  prof.quadraticCurveTo(-0.398, 2.279, -0.34, 2.275); prof.closePath();
+  const shell = new THREE.Mesh(new THREE.ExtrudeGeometry(prof, { depth: 0.84, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.006, bevelSegments: 3, curveSegments: 18 }), M.ghost);
+  shell.position.z = -0.91; g.add(shell); g.add(ghostify(shell, 28));
+  const cap = new THREE.Mesh(new THREE.ExtrudeGeometry(prof, { depth: 0.012, bevelEnabled: false, curveSegments: 18 }), M.casing);
+  cap.position.z = -0.935; cap.castShadow = true; g.add(cap);
+  box(0.004, 0.31, 0.84, M.steel, -0.175, 2.44, -0.49, g);
+  const led = box(0.003, 0.006, 0.035, M.led, -0.407, 2.43, -0.16, g); led.castShadow = false; sys.led = led;
+  // coils
+  const F1 = V(-0.382, 2.35, -0.49), F2 = V(-0.337, 2.566, -0.49);
+  const cf = makeCoil({ c: F1.clone().add(F2).multiplyScalar(0.5), u: V(0, 0, -1), v: F2.clone().sub(F1).normalize(), L: 0.74, H: F1.distanceTo(F2), D: 0.028, passes: 4, parent: g });
+  const T1 = V(-0.322, 2.577, -0.49), T2 = V(-0.2, 2.537, -0.49);
+  const ct = makeCoil({ c: T1.clone().add(T2).multiplyScalar(0.5), u: V(0, 0, -1), v: T2.clone().sub(T1).normalize(), L: 0.74, H: T1.distanceTo(T2), D: 0.028, passes: 2, parent: g });
+  // fan, scroll, drain pan, louver
+  const fan = makeCrossFan(0.05, 0.74); fan.position.set(-0.276, 2.405, -0.49); g.add(fan); sys.fans.push({ o: fan, axis: 'z', speed: -9 });
+  const scroll = new THREE.Mesh(new THREE.CylinderGeometry(0.066, 0.066, 0.76, 36, 1, true, 2.2, 3.6), M.darkPlastic);
+  scroll.rotation.x = Math.PI / 2; scroll.position.copy(fan.position); scroll.material = M.darkPlastic.clone(); scroll.material.side = THREE.DoubleSide; g.add(scroll);
+  box(0.064, 0.012, 0.76, M.casing, -0.37, 2.337, -0.49, g);
+  const louver = box(0.085, 0.004, 0.78, M.casing, -0.37, 2.288, -0.49, g); sys.louver = louver;
+  // internal refrigerant runs + drain
+  const liqIn = [N(V(-0.19, 2.262, -0.035)), N(V(-0.2, 2.3, -0.09)), N(V(-0.36, 2.318, -0.09))];
+  const coilA = [...cf.nodes, ...ct.nodes].map((n) => ({ ...n, coil: 'A' }));
+  const gasOut = [N(V(-0.19, 2.49, -0.09)), N(V(-0.19, 2.318, -0.06)), N(V(-0.19, 2.318, -0.01))];
+  tube(roundPath([N(V(-0.36, 2.332, -0.12)), N(V(-0.3, 2.3, -0.08)), N(V(-0.19, 2.235, -0.06)), N(V(0.235, 2.235, -0.06)), N(V(0.27, 2.2, -0.11)), N(V(0.27, 0.22, -0.11))], 0.05).map((o) => o.p), 0.0075, M.hose, g);
+
+  // outdoor unit
+  const ou = new THREE.Group(); ou.position.set(1.35, 0.16, -0.95); ou.rotation.y = 0.35; g.add(ou); ou.updateMatrixWorld(true);
+  const ouM = ou.matrix.clone(); const P = (x, y, z) => V(x, y, z).applyMatrix4(ouM);
+  const pad = box(1.02, 0.06, 0.52, M.concrete, 0, 0, 0); pad.position.set(1.35, 0.03, -0.95); pad.rotation.y = 0.35; g.add(pad);
+  for (const s of [-0.3, 0.3]) { box(0.05, 0.1, 0.42, M.darkSteel, s, -0.05, 0, ou); box(0.07, 0.012, 0.07, M.rubber, s, 0.004, 0.12, ou); }
+  const ouShell = rbox(0.86, 0.62, 0.32, 0.014, M.ghost, 0, 0.31, 0, ou); ou.add(ghostify(ouShell, 30));
+  box(0.86, 0.02, 0.32, M.casing, 0, 0.01, 0, ou);
+  box(0.004, 0.58, 0.3, M.steel, -0.115, 0.3, 0, ou);
+  box(0.01, 0.2, 0.14, M.casing, -0.435, 0.2, 0.08, ou);
+  makeCompressor(0.07, 0.26, ou, V(-0.28, 0.03, -0.02));
+  const acc = cyl(0.032, 0.032, 0.17, M.comp, 24, ou); acc.position.set(-0.18, 0.145, -0.09);
+  for (const y of [0.06, 0.23]) { const d = new THREE.Mesh(new THREE.SphereGeometry(0.032, 20, 10), M.comp); d.position.set(-0.18, y, -0.09); d.scale.y = 0.5; ou.add(d); }
+  makeRV(ou, V(-0.29, 0.47, 0.06));
+  makeEXV(ou, V(-0.19, 0.19, 0.1));
+  for (const [y, z] of [[0.13, 0.06], [0.21, 0.12]]) box(0.035, 0.03, 0.03, M.brass, -0.43, y, z, ou);
+  const oc = makeCoil({ c: V(0.15, 0.32, -0.135), u: V(1, 0, 0), v: V(0, 1, 0), L: 0.5, H: 0.52, D: 0.036, passes: 6, parent: ou });
+  oc.fins.material = M.finFrost; sys.frostFins = oc.fins;
+  const ofan = makeAxialFan(0.19); ofan.position.set(0.15, 0.32, 0.07); ou.add(ofan); sys.fans.push({ o: ofan, axis: 'z', speed: 7 });
+  const motor = cyl(0.05, 0.05, 0.06, M.darkSteel, 24, ou); motor.rotation.x = Math.PI / 2; motor.position.set(0.15, 0.32, 0.0);
+  box(0.012, 0.56, 0.012, M.darkSteel, 0.15, 0.31, -0.02, ou);
+  const bell = new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.012, 10, 60), M.casing); bell.position.set(0.15, 0.32, 0.15); ou.add(bell);
+  for (const r of [0.06, 0.1, 0.14, 0.18]) { const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.0018, 6, 64), M.darkPlastic); ring.position.set(0.15, 0.32, 0.163); ou.add(ring); }
+  for (let i = 0; i < 8; i++) { const s = box(0.2, 0.003, 0.003, M.darkPlastic, 0, 0, 0); s.rotation.z = (i * Math.PI) / 8; s.position.set(0.15, 0.32, 0.164); s.scale.x = 0.42; ou.add(s); }
+
+  // refrigerant path (world space)
+  const RVc = P(-0.29, 0.47, 0.06);
+  const compOut = [N(P(-0.28, 0.15, -0.02)), N(P(-0.28, 0.36, -0.02)), N(P(-0.29, 0.4, 0.06)), N(RVc)];
+  const coilB = rev(oc.nodes).map((n) => ({ ...n, p: n.p.clone().applyMatrix4(ouM), coil: 'B' }));
+  const outSide = [N(RVc), N(P(-0.32, 0.5, 0.06)), N(P(-0.33, 0.54, 0.02)), N(P(-0.33, 0.54, -0.1)), N(P(-0.15, 0.54, -0.135)), ...coilB,
+    N(P(-0.15, 0.103, -0.1)), N(P(-0.15, 0.19, 0.1)), N(P(-0.19, 0.19, 0.1), { exv: true })];
+  const vL = P(-0.5, 0.13, 0.06), vG = P(-0.5, 0.21, 0.12);
+  const liqRun = [N(vL), N(P(-0.62, 0.13, 0.06)), N(V(0.255, 0.29, -0.035)), N(V(0.255, 2.262, -0.035)), N(V(0.2, 2.262, -0.035))];
+  const gasRun = [N(V(0.2, 2.318, -0.01)), N(V(0.29, 2.318, -0.075)), N(V(0.29, 0.36, -0.075)), N(P(-0.62, 0.21, 0.12)), N(vG)];
+  const inSide = [N(P(-0.19, 0.19, 0.1), { exv: true }), N(P(-0.24, 0.19, 0.12)), N(P(-0.24, 0.13, 0.12)), N(P(-0.43, 0.13, 0.06)), ...liqRun, ...liqIn, ...coilA,
+    ...gasOut, ...gasRun, N(P(-0.43, 0.21, 0.12)), N(P(-0.37, 0.21, 0.12)), N(P(-0.37, 0.6, 0.12)), N(P(-0.26, 0.6, 0.08)), N(P(-0.26, 0.5, 0.06)), N(RVc)];
+  const compIn = [N(RVc), N(P(-0.29, 0.5, 0.06)), N(P(-0.29, 0.52, -0.03)), N(P(-0.18, 0.5, -0.09)), N(P(-0.18, 0.1, -0.09)), N(P(-0.24, 0.1, -0.04)), N(P(-0.28, 0.15, -0.02))];
+  sys.circuits = circuitsFor(compOut, outSide, inSide, compIn);
+  drawPipes([compOut, outSide, inSide, compIn], g);
+  drawSleeve([N(V(-0.2, 2.262, -0.035)), ...liqRun.slice().reverse().slice(0, 4), N(P(-0.52, 0.13, 0.06))], 0.015, g);
+  drawSleeve([...gasRun.slice(0, 4), N(P(-0.52, 0.21, 0.12))].map((n, i) => (i === 0 ? N(V(-0.2, 2.318, -0.01)) : n)), 0.018, g);
+
+  // airflow streams
+  const zc = -0.49;
+  const iuPath = (heat) => ({
+    kind: 'room', count: 380, speed: 0.55,
+    pts: [[-1.35, 2.93, zc], [-0.66, 2.82, zc], [-0.36, 2.67, zc], [-0.31, 2.56, zc], [-0.29, 2.46, zc], [-0.29, 2.38, zc], [-0.34, 2.31, zc], [-0.43, 2.27, zc],
+      ...(heat ? [[-0.62, 2.0, zc], [-0.95, 1.4, zc], [-1.5, 0.75, zc], [-2.5, 0.4, -0.6], [-3.7, 0.45, -0.7]]
+        : [[-0.66, 2.2, zc], [-1.25, 1.98, zc], [-2.15, 1.62, -0.52], [-3.1, 1.12, -0.6], [-4.0, 0.72, -0.7]])],
+    w: [[0.25, 0.1, 0.42], [0.12, 0.05, 0.4], [0.03, 0.03, 0.37], [0.02, 0.03, 0.37], [0.02, 0.02, 0.37], [0.02, 0.02, 0.37], [0.02, 0.015, 0.37], [0.03, 0.02, 0.38],
+      [0.1, 0.08, 0.42], [0.18, 0.16, 0.48], [0.26, 0.24, 0.56], [0.34, 0.3, 0.64], [0.42, 0.36, 0.7]],
+  });
+  const ouStream = {
+    kind: 'outdoor', count: 380, speed: 0.75, rot: ou.quaternion.clone(), origin: ou.position.clone(),
+    pts: [[0.15, 0.34, -0.9], [0.15, 0.33, -0.42], [0.15, 0.32, -0.16], [0.15, 0.32, -0.08], [0.15, 0.32, 0.06], [0.15, 0.32, 0.2], [0.17, 0.34, 0.55], [0.2, 0.4, 1.0], [0.25, 0.5, 1.5]],
+    w: [[0.34, 0.32, 0.06], [0.3, 0.28, 0.04], [0.24, 0.25, 0.012], [0.2, 0.2, 0.02], [0.16, 0.16, 0.01], [0.18, 0.18, 0.02], [0.24, 0.24, 0.05], [0.32, 0.32, 0.1], [0.42, 0.42, 0.14]],
+  };
+  sys.streams = { cool: [iuPath(false), ouStream], heat: [iuPath(true), ouStream] };
+  // heat exchange sites
+  const iuSite = { c: V(-0.34, 2.47, zc), ext: V(0.045, 0.1, 0.36), dir: V(0.35, -0.94, 0).normalize() };
+  const ouSite = { c: P(0.15, 0.32, -0.135), ext: V(0.2, 0.22, 0.2), dir: V(0, 0, 1).applyQuaternion(ou.quaternion) };
+  sys.sites = { indoor: iuSite, outdoor: ouSite };
+  sys.drips = {
+    cool: [{ p: V(0.27, 0.215, -0.11), spread: V(0.002, 0, 0.002), fall: 0.2 }, { p: V(-0.37, 2.345, zc), spread: V(0.01, 0, 0.34), fall: 0.0 }],
+    heat: [{ p: P(0.15, 0.0, -0.12), spread: V(0.22, 0, 0.03), fall: 0.1, rot: ou.quaternion }],
+  };
+  sys.anchors = {
+    iucoil: { p: V(-0.39, 2.47, -0.06), side: 'l', t: 'Indoor coil', s: (m) => (m === 'cool' ? 'Evaporator · 7 °C' : 'Condenser · 45 °C') },
+    iufan: { p: V(-0.276, 2.405, -0.05), side: 'l', minor: true, t: 'Cross-flow fan', s: () => 'Drives room air' },
+    oucoil: { p: P(0.4, 0.55, -0.135), side: 'r', t: 'Outdoor coil', s: (m) => (m === 'cool' ? 'Condenser · 48 °C' : 'Evaporator · −4 °C') },
+    oufan: { p: P(0.3, 0.2, 0.16), side: 'r', minor: true, t: 'Propeller fan', s: () => 'Drives outdoor air' },
+    comp: { p: P(-0.35, 0.3, 0.02), side: 'l', t: 'Compressor', s: () => 'Raises pressure & temperature' },
+    rv: { p: P(-0.33, 0.47, 0.06), side: 'l', minor: true, t: 'Reversing valve', s: (m) => (m === 'cool' ? 'Hot gas → outdoor coil' : 'Hot gas → indoor coil') },
+    exv: { p: P(-0.19, 0.22, 0.1), side: 'r', minor: true, t: 'Expansion valve', s: () => 'Pressure drop · flash-cools' },
+    lines: { p: V(0.29, 1.35, -0.06), side: 'r', t: 'Refrigerant lines', s: () => 'Sealed loop through the wall' },
+    drain: { p: (m) => (m === 'cool' ? V(0.27, 0.2, -0.11) : P(0.15, -0.02, -0.12)), side: 'r', minor: true, t: 'Condensate', s: (m) => (m === 'cool' ? 'Water from room air' : 'Meltwater from outdoor coil') },
+  };
+  sys.heatTags = { indoor: V(-0.62, 2.72, -0.3), outdoor: P(0.15, 0.78, -0.1) };
+  const at = (k) => (typeof sys.anchors[k].p === 'function' ? sys.anchors[k].p(S.mode) : sys.anchors[k].p);
+  sys.views = {
+    overview: null,
+    indoor: { t: V(-0.3, 2.44, -0.35), o: V(-1.35, 0.42, 1.25) },
+    comp: { t: at('comp'), o: V(-0.55, 0.45, 1.25) },
+    outdoor: { t: P(0.1, 0.35, 0), o: V(0.2, 0.75, 2.1) },
+    exv: { t: at('exv'), o: V(-0.45, 0.35, 1.0) },
+    rv: { t: at('rv'), o: V(-0.5, 0.35, 1.0) },
+    link: { t: V(0.05, 1.3, -0.2), o: V(2.0, 0.7, 3.4) },
+  };
+  return sys;
+}
+/* ---------- monoblock ---------- */
+function buildMono() {
+  const g = new THREE.Group(); world.add(g);
+  const sys = { id: 'mono', group: g, fans: [], notches: [{ y: 0.62, r: 0.082, zc: -0.06 }, { y: 0.34, r: 0.082, zc: -0.06 }] };
+  const zc = -0.33;
+  const shell = rbox(0.3, 0.58, 0.9, 0.022, M.ghost, -0.32, 0.49, -0.47, g); g.add(ghostify(shell, 30));
+  box(0.3, 0.58, 0.012, M.casing, -0.32, 0.49, -0.925, g);
+  box(0.004, 0.56, 0.88, M.steel, -0.174, 0.49, -0.47, g);
+  box(0.3, 0.014, 0.9, M.casing, -0.32, 0.207, -0.47, g);
+  const led = box(0.003, 0.006, 0.04, M.led, -0.472, 0.72, -0.8, g); led.castShadow = false; sys.led = led;
+  for (let i = 0; i < 9; i++) box(0.006, 0.005, 0.58, M.casing, -0.46 + i * 0.0135, 0.781, zc, g);
+  const louver = box(0.075, 0.004, 0.6, M.casing, -0.45, 0.268, zc, g); sys.louver = louver; sys.louverBase = 0.268;
+  const sepMat = M.foam.clone(); sepMat.transparent = true; sepMat.opacity = 0.42; sepMat.depthWrite = false;
+  const part = box(0.006, 0.55, 0.6, sepMat, -0.33, 0.49, zc, g); part.castShadow = false;
+  box(0.29, 0.55, 0.006, sepMat, -0.32, 0.49, -0.635, g).castShadow = false;
+  // coils
+  const F1 = V(-0.366, 0.452, zc), F2 = V(-0.452, 0.7, zc);
+  const ic = makeCoil({ c: F1.clone().add(F2).multiplyScalar(0.5), u: V(0, 0, 1), v: F2.clone().sub(F1).normalize(), L: 0.56, H: F1.distanceTo(F2), D: 0.026, passes: 4, parent: g });
+  const oc = makeCoil({ c: V(-0.2525, 0.48, zc), u: V(0, 0, 1), v: V(1, 0, 0), L: 0.56, H: 0.13, D: 0.035, passes: 4, parent: g });
+  oc.fins.material = M.finFrost; sys.frostFins = oc.fins;
+  box(0.012, 0.01, 0.58, M.casing, -0.37, 0.438, zc, g);
+  // fans
+  const f1 = makeCrossFan(0.045, 0.56); f1.position.set(-0.405, 0.33, zc); g.add(f1); sys.fans.push({ o: f1, axis: 'z', speed: -9 });
+  const f2 = makeCrossFan(0.045, 0.56); f2.position.set(-0.25, 0.335, zc); g.add(f2); sys.fans.push({ o: f2, axis: 'z', speed: 9 });
+  // compressor bay
+  makeCompressor(0.062, 0.22, g, V(-0.26, 0.215, -0.79));
+  const acc = cyl(0.028, 0.028, 0.15, M.comp, 22, g); acc.position.set(-0.39, 0.32, -0.84);
+  for (const y of [0.245, 0.395]) { const d = new THREE.Mesh(new THREE.SphereGeometry(0.028, 18, 10), M.comp); d.position.set(-0.39, y, -0.84); d.scale.y = 0.5; g.add(d); }
+  makeRV(g, V(-0.3, 0.6, -0.76));
+  makeEXV(g, V(-0.41, 0.53, -0.7));
+  // wall ducts + outdoor hoods
+  for (const y of [0.62, 0.34]) {
+    const d = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.4, 36, 1, true), M.duct); d.rotation.z = Math.PI / 2; d.position.set(0.02, y, -0.06); d.receiveShadow = true; g.add(d);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.082, 0.01, 10, 40), M.casing); ring.rotation.y = Math.PI / 2; ring.position.set(0.205, y, -0.06); g.add(ring);
+    for (let k = -2; k <= 2; k++) { const s = box(0.003, 0.012, 0.15 - Math.abs(k) * 0.025, M.casing, 0.2, y + k * 0.028, -0.06, g); s.rotation.z = -0.5; }
+  }
+  tube(roundPath([N(V(-0.37, 0.43, -0.05)), N(V(-0.3, 0.3, -0.02)), N(V(-0.17, 0.3, -0.09)), N(V(0.21, 0.3, -0.09)), N(V(0.24, 0.26, -0.09)), N(V(0.24, 0.2, -0.09))], 0.04).map((o) => o.p), 0.006, M.hose, g);
+
+  // refrigerant path
+  const RVc = V(-0.3, 0.6, -0.76);
+  const compOut = [N(V(-0.26, 0.32, -0.79)), N(V(-0.26, 0.5, -0.79)), N(V(-0.3, 0.55, -0.76)), N(RVc)];
+  const outSide = [N(RVc), N(V(-0.27, 0.625, -0.76)), N(V(-0.25, 0.67, -0.7)), N(V(-0.3, 0.53, -0.665)), ...oc.nodes.map((n) => ({ ...n, coil: 'B' })),
+    N(V(-0.21, 0.52, -0.67)), N(V(-0.36, 0.53, -0.7)), N(V(-0.41, 0.53, -0.7), { exv: true })];
+  const inSide = [N(V(-0.41, 0.53, -0.7), { exv: true }), N(V(-0.43, 0.46, -0.68)), N(V(-0.37, 0.46, -0.665)), ...ic.nodes.map((n) => ({ ...n, coil: 'A' })),
+    N(V(-0.45, 0.72, -0.68)), N(V(-0.34, 0.69, -0.76)), N(V(-0.33, 0.625, -0.76)), N(RVc)];
+  const compIn = [N(RVc), N(V(-0.3, 0.63, -0.77)), N(V(-0.3, 0.665, -0.84)), N(V(-0.39, 0.64, -0.84)), N(V(-0.39, 0.3, -0.84)), N(V(-0.3, 0.29, -0.8)), N(V(-0.26, 0.32, -0.79))];
+  sys.circuits = circuitsFor(compOut, outSide, inSide, compIn);
+  drawPipes([compOut, outSide, inSide, compIn], g);
+
+  // airflow
+  const roomStream = (heat) => ({
+    kind: 'room', count: 380, speed: 0.5,
+    pts: [[-1.4, 1.3, zc], [-0.74, 1.02, zc], [-0.44, 0.85, zc], [-0.41, 0.77, zc], [-0.41, 0.62, zc], [-0.405, 0.46, zc], [-0.41, 0.34, zc], [-0.45, 0.275, zc], [-0.62, 0.23, zc],
+      ...(heat ? [[-1.15, 0.24, -0.4], [-1.95, 0.5, -0.5], [-2.8, 1.05, -0.6], [-3.6, 1.7, -0.7]] : [[-1.2, 0.16, -0.4], [-2.1, 0.18, -0.5], [-3.1, 0.3, -0.6], [-4.0, 0.45, -0.7]])],
+    w: [[0.25, 0.12, 0.34], [0.14, 0.06, 0.3], [0.03, 0.02, 0.27], [0.03, 0.01, 0.27], [0.02, 0.03, 0.27], [0.02, 0.03, 0.27], [0.02, 0.02, 0.27], [0.02, 0.012, 0.28], [0.06, 0.03, 0.3],
+      [0.14, 0.05, 0.4], [0.22, 0.1, 0.5], [0.3, 0.2, 0.6], [0.38, 0.3, 0.7]],
+  });
+  const outStream = {
+    kind: 'outdoor', count: 380, speed: 0.6,
+    pts: [[1.35, 0.98, -0.06], [0.7, 0.72, -0.06], [0.32, 0.62, -0.06], [0.1, 0.62, -0.06], [-0.13, 0.62, -0.06], [-0.22, 0.61, -0.18], [-0.25, 0.56, zc], [-0.252, 0.48, zc],
+      [-0.25, 0.41, zc], [-0.24, 0.35, -0.2], [-0.14, 0.34, -0.06], [0.1, 0.34, -0.06], [0.32, 0.33, -0.06], [0.72, 0.3, 0.06], [1.45, 0.36, 0.18]],
+    w: [[0.3, 0.26, 0.3], [0.14, 0.1, 0.12], [0.05, 0.05, 0.05], [0.05, 0.05, 0.05], [0.05, 0.05, 0.05], [0.05, 0.04, 0.16], [0.055, 0.03, 0.26], [0.055, 0.01, 0.27],
+      [0.05, 0.03, 0.26], [0.04, 0.03, 0.14], [0.05, 0.05, 0.05], [0.05, 0.05, 0.05], [0.06, 0.05, 0.06], [0.16, 0.1, 0.16], [0.32, 0.22, 0.3]],
+  };
+  sys.streams = { cool: [roomStream(false), outStream], heat: [roomStream(true), outStream] };
+  sys.sites = {
+    indoor: { c: V(-0.41, 0.576, zc), ext: V(0.04, 0.11, 0.26), dir: V(0.3, -0.95, 0).normalize() },
+    outdoor: { c: V(-0.2525, 0.48, zc), ext: V(0.055, 0.02, 0.26), dir: V(0, -1, 0) },
+  };
+  sys.drips = {
+    cool: [{ p: V(0.24, 0.19, -0.09), spread: V(0.002, 0, 0.002), fall: 0.175 }, { p: V(-0.37, 0.445, zc), spread: V(0.006, 0, 0.26), fall: 0 }],
+    heat: [{ p: V(0.24, 0.19, -0.09), spread: V(0.002, 0, 0.002), fall: 0.175 }, { p: V(-0.2525, 0.458, zc), spread: V(0.05, 0, 0.26), fall: 0.2 }],
+  };
+  sys.anchors = {
+    iucoil: { p: V(-0.46, 0.63, -0.03), side: 'l', t: 'Indoor coil', s: (m) => (m === 'cool' ? 'Evaporator · 7 °C' : 'Condenser · 45 °C') },
+    oucoil: { p: V(-0.25, 0.5, -0.03), side: 'u', t: 'Outdoor-air coil', s: (m) => (m === 'cool' ? 'Condenser · 48 °C' : 'Evaporator · −4 °C') },
+    comp: { p: V(-0.32, 0.36, -0.79), side: 'l', t: 'Compressor', s: () => 'Raises pressure & temperature' },
+    rv: { p: V(-0.3, 0.6, -0.76), side: 'l', minor: true, t: 'Reversing valve', s: (m) => (m === 'cool' ? 'Hot gas → outdoor-air coil' : 'Hot gas → indoor coil') },
+    exv: { p: V(-0.41, 0.53, -0.7), side: 'l', minor: true, t: 'Expansion valve', s: () => 'Pressure drop · flash-cools' },
+    iufan: { p: V(-0.405, 0.33, -0.03), side: 'l', minor: true, t: 'Room-air fan', s: () => 'Cross-flow' },
+    oufan: { p: V(-0.25, 0.335, -0.03), side: 'r', minor: true, t: 'Outdoor-air fan', s: () => 'Pulls air through the ducts' },
+    part: { p: V(-0.33, 0.76, -0.03), side: 'u', minor: true, t: 'Sealed partition', s: () => 'Keeps the airstreams apart' },
+    lines: { p: V(0.23, 0.48, -0.02), side: 'r', t: 'Wall ducts', s: () => 'Outdoor air in (top) · out (bottom)' },
+    drain: { p: V(0.24, 0.19, -0.09), side: 'r', minor: true, t: 'Condensate', s: () => 'Drained outside' },
+  };
+  sys.heatTags = { indoor: V(-0.85, 0.98, -0.2), outdoor: V(0.62, 0.88, -0.05) };
+  sys.views = {
+    overview: null,
+    indoor: { t: V(-0.4, 0.52, -0.3), o: V(-1.3, 0.5, 1.3) },
+    comp: { t: V(-0.3, 0.45, -0.78), o: V(-1.05, 0.55, 0.95) },
+    outdoor: { t: V(-0.24, 0.48, -0.3), o: V(-0.55, 0.85, 1.35) },
+    exv: { t: V(-0.41, 0.53, -0.7), o: V(-0.9, 0.4, 0.85) },
+    rv: { t: V(-0.3, 0.6, -0.76), o: V(-0.9, 0.45, 0.85) },
+    link: { t: V(0.0, 0.48, -0.1), o: V(1.7, 0.75, 2.4) },
+  };
+  return sys;
+}
+/* ---------- particles ---------- */
+const pointVS = `attribute float aSize; attribute float aAlpha; attribute vec3 aColor; uniform float uScale; varying float vA; varying vec3 vC;
+  void main(){ vec4 mv=modelViewMatrix*vec4(position,1.); gl_Position=projectionMatrix*mv; gl_PointSize=min(aSize*uScale/-mv.z,72.); vA=aAlpha; vC=aColor; }`;
+const pointFS = `varying float vA; varying vec3 vC; void main(){ vec2 d=gl_PointCoord-.5; float r=length(d); float a=smoothstep(.5,.0,r); a*=a; if(a*vA<.004) discard; gl_FragColor=vec4(vC,a*vA); }`;
+const pointMats = [];
+function makePoints(n) {
+  const geo = new THREE.BufferGeometry();
+  const attrs = { pos: new Float32Array(n * 3), col: new Float32Array(n * 3), a: new Float32Array(n), s: new Float32Array(n) };
+  geo.setAttribute('position', new THREE.BufferAttribute(attrs.pos, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aColor', new THREE.BufferAttribute(attrs.col, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aAlpha', new THREE.BufferAttribute(attrs.a, 1).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(attrs.s, 1).setUsage(THREE.DynamicDrawUsage));
+  const mat = new THREE.ShaderMaterial({ uniforms: { uScale: { value: 800 } }, vertexShader: pointVS, fragmentShader: pointFS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  pointMats.push(mat);
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = 5; scene.add(pts);
+  const flush = () => { for (const k of ['position', 'aColor', 'aAlpha', 'aSize']) geo.attributes[k].needsUpdate = true; };
+  return { pts, ...attrs, flush };
+}
+
+// refrigerant beads
+const MAXB = 560;
+const beads = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ toneMapped: false }), MAXB);
+beads.frustumCulled = false; beads.setColorAt(0, new THREE.Color(1, 1, 1)); scene.add(beads);
+const beadU = new Float32Array(MAXB); let beadCount = 0; let circuit = null;
+const rampStops = [[0, new THREE.Color(0x2a66ff)], [0.3, new THREE.Color(0x8ccaff)], [0.56, new THREE.Color(0xff8c5a)], [1, new THREE.Color(0xff2a1a)]];
+function ramp(t, out) {
+  for (let i = 1; i < rampStops.length; i++) if (t <= rampStops[i][0]) { const a = rampStops[i - 1], b = rampStops[i]; return out.copy(a[1]).lerp(b[1], (t - a[0]) / (b[0] - a[0])); }
+  return out.copy(rampStops[rampStops.length - 1][1]);
+}
+function setCircuit(c) { circuit = c; beadCount = Math.min(MAXB, Math.floor(c.len / 0.045)); for (let i = 0; i < beadCount; i++) beadU[i] = i / beadCount; beads.count = beadCount; }
+const PHASE_SPEED = [1.35, 0.5, 0.85];
+const cTmp = new THREE.Color(), mTmp = new THREE.Matrix4();
+function updateBeads(dt) {
+  const c = circuit; if (!c) return; const K = c.K, L = c.lut;
+  for (let i = 0; i < beadCount; i++) {
+    let u = beadU[i]; const k = Math.min(K, Math.floor(u * K));
+    u += (dt * 0.42 * PHASE_SPEED[c.lP[k]]) / c.len; u -= Math.floor(u); beadU[i] = u;
+    const f = u * K, k0 = Math.min(K - 1, Math.floor(f)), k1 = k0 + 1, a = f - k0;
+    const x = L[k0 * 3] + (L[k1 * 3] - L[k0 * 3]) * a, y = L[k0 * 3 + 1] + (L[k1 * 3 + 1] - L[k0 * 3 + 1]) * a, z = L[k0 * 3 + 2] + (L[k1 * 3 + 2] - L[k0 * 3 + 2]) * a;
+    const s = c.lP[k0] === 1 ? 0.0085 : 0.0098;
+    mTmp.makeScale(s, s, s).setPosition(x, y, z); beads.setMatrixAt(i, mTmp);
+    beads.setColorAt(i, ramp(c.lT[k0], cTmp).multiplyScalar(2.3));
+  }
+  beads.instanceMatrix.needsUpdate = true; beads.instanceColor.needsUpdate = true;
+}
+
+// airflow streams
+const AIR_N = isSmall() ? 560 : 820, TR = 3;
+const air = makePoints(AIR_N * TR);
+const KIND_COL = { room: new THREE.Color(0x5ef0d3), outdoor: new THREE.Color(0xc3a3ff) };
+function prepStream(d) {
+  const pts = d.pts.map((p) => V(...p)); const n = pts.length;
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+  const K = 220; const sp = curve.getSpacedPoints(K); const lut = new Float32Array((K + 1) * 3), wl = new Float32Array((K + 1) * 3);
+  for (let k = 0; k <= K; k++) {
+    lut.set([sp[k].x, sp[k].y, sp[k].z], k * 3);
+    const t = curve.getUtoTmapping(k / K) * (n - 1); const i0 = Math.min(n - 2, Math.floor(t)), a = t - i0;
+    for (let c = 0; c < 3; c++) wl[k * 3 + c] = lerp(d.w[i0][c], d.w[i0 + 1][c], a);
+  }
+  return { kind: d.kind, col: KIND_COL[d.kind], count: d.count, speed: d.speed, len: curve.getLength(), K, lut, wl, rot: d.rot || null, origin: d.origin || null };
+}
+const pS = new Uint8Array(AIR_N), pU = new Float32Array(AIR_N), pJ = new Float32Array(AIR_N * 3), pV = new Float32Array(AIR_N);
+let streams = [];
+function unitBall(arr, o) { let x, y, z; do { x = Math.random() * 2 - 1; y = Math.random() * 2 - 1; z = Math.random() * 2 - 1; } while (x * x + y * y + z * z > 1); arr[o] = x; arr[o + 1] = y; arr[o + 2] = z; }
+function setStreams(list) {
+  streams = list; const tot = list.reduce((a, s) => a + s.count, 0); let acc = 0, si = 0;
+  for (let i = 0; i < AIR_N; i++) {
+    while (si < list.length - 1 && i >= ((acc + list[si].count) / tot) * AIR_N) { acc += list[si].count; si++; }
+    pS[i] = si; pU[i] = Math.random(); pV[i] = 0.8 + Math.random() * 0.4; unitBall(pJ, i * 3);
+  }
+}
+const vA = V(), qTmp = new THREE.Quaternion();
+function updateAir(dt, time) {
+  for (let i = 0; i < AIR_N; i++) {
+    const st = streams[pS[i]]; if (!st) continue;
+    let u = pU[i] + (dt * st.speed * pV[i]) / st.len;
+    if (u >= 1) { u -= 1; unitBall(pJ, i * 3); }
+    pU[i] = u;
+    for (let t = 0; t < TR; t++) {
+      const uu = u - (t * 0.03) / st.len; const o = (i * TR + t);
+      if (uu < 0) { air.a[o] = 0; continue; }
+      const f = uu * st.K, k0 = Math.min(st.K - 1, Math.floor(f)), a = f - k0, k1 = k0 + 1;
+      const L = st.lut, W = st.wl;
+      const wob = Math.sin(time * 1.3 + i * 1.7) * 0.15;
+      vA.set(pJ[i * 3] * lerp(W[k0 * 3], W[k1 * 3], a), pJ[i * 3 + 1] * lerp(W[k0 * 3 + 1], W[k1 * 3 + 1], a) * (1 + wob), pJ[i * 3 + 2] * lerp(W[k0 * 3 + 2], W[k1 * 3 + 2], a));
+      vA.x += L[k0 * 3] + (L[k1 * 3] - L[k0 * 3]) * a; vA.y += L[k0 * 3 + 1] + (L[k1 * 3 + 1] - L[k0 * 3 + 1]) * a; vA.z += L[k0 * 3 + 2] + (L[k1 * 3 + 2] - L[k0 * 3 + 2]) * a;
+      if (st.rot) vA.applyQuaternion(st.rot).add(st.origin);
+      air.pos[o * 3] = vA.x; air.pos[o * 3 + 1] = vA.y; air.pos[o * 3 + 2] = vA.z;
+      const fade = Math.min(1, uu / 0.07) * Math.min(1, (1 - uu) / 0.2);
+      air.a[o] = fade * (0.62 - t * 0.19);
+      air.s[o] = 0.034 * (1 - t * 0.2);
+      air.col[o * 3] = st.col.r; air.col[o * 3 + 1] = st.col.g; air.col[o * 3 + 2] = st.col.b;
+    }
+  }
+  air.flush();
+}
+
+// heat energy sparks
+const HEAT_N = 170;
+const heat = makePoints(HEAT_N);
+const hT = new Float32Array(HEAT_N), hD = new Float32Array(HEAT_N), hA = new Float32Array(HEAT_N * 3), hB = new Float32Array(HEAT_N * 3);
+let sites = null;
+const roleOf = (site) => ((S.mode === 'cool') === (site === 'indoor') ? 'abs' : 'rel');
+function spawnHeat(i) {
+  if (!sites) return; const key = i % 2 ? 'outdoor' : 'indoor'; const s = sites[key];
+  const r = V((Math.random() * 2 - 1) * s.ext.x, (Math.random() * 2 - 1) * s.ext.y, (Math.random() * 2 - 1) * s.ext.z);
+  const far = 0.14 + Math.random() * 0.16;
+  let A, B;
+  if (roleOf(key) === 'abs') { A = s.c.clone().add(r).addScaledVector(s.dir, -far); B = s.c.clone().addScaledVector(r, 0.5); }
+  else { A = s.c.clone().addScaledVector(r, 0.5); B = s.c.clone().add(r).addScaledVector(s.dir, far); }
+  hA.set([A.x, A.y, A.z], i * 3); hB.set([B.x, B.y, B.z], i * 3); hD[i] = 1.3 + Math.random() * 1.1;
+}
+function resetHeat() { for (let i = 0; i < HEAT_N; i++) { spawnHeat(i); hT[i] = Math.random(); } }
+function updateHeat(dt, time) {
+  for (let i = 0; i < HEAT_N; i++) {
+    hT[i] += dt / hD[i]; if (hT[i] >= 1) { hT[i] -= 1; spawnHeat(i); }
+    const t = hT[i], e = 1 - Math.pow(1 - t, 2);
+    for (let c = 0; c < 3; c++) heat.pos[i * 3 + c] = lerp(hA[i * 3 + c], hB[i * 3 + c], e) + (c === 1 ? Math.sin(time * 5 + i) * 0.006 : 0);
+    heat.a[i] = Math.pow(Math.sin(Math.PI * t), 1.3) * 0.95;
+    heat.s[i] = 0.052 * (0.75 + 0.25 * Math.sin(time * 9 + i * 2.3));
+    heat.col[i * 3] = 1.25; heat.col[i * 3 + 1] = 0.9; heat.col[i * 3 + 2] = 0.3;
+  }
+  heat.flush();
+}
+
+// condensate drops
+const DROP_N = 46;
+const waterMat = new THREE.MeshPhysicalMaterial({ color: 0xcdeeff, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.9, emissive: 0x3d8fd6, emissiveIntensity: 0.55, clearcoat: 1 });
+const drops = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 10), waterMat, DROP_N); drops.frustumCulled = false; scene.add(drops);
+const dT = new Float32Array(DROP_N), dP = new Float32Array(DROP_N), dO = new Float32Array(DROP_N * 3);
+let dripList = [];
+function seedDrop(i) {
+  const e = dripList[i % dripList.length]; if (!e) return;
+  const o = V((Math.random() * 2 - 1) * e.spread.x, 0, (Math.random() * 2 - 1) * e.spread.z); if (e.rot) o.applyQuaternion(e.rot);
+  dO.set([o.x, o.y, o.z], i * 3); dP[i] = e.fall > 0 ? 1.1 + Math.random() * 1.4 : 2.5 + Math.random() * 2.5;
+}
+function resetDrops(list) { dripList = list; for (let i = 0; i < DROP_N; i++) { seedDrop(i); dT[i] = Math.random(); } }
+function updateDrops(dt) {
+  for (let i = 0; i < DROP_N; i++) {
+    const e = dripList[i % dripList.length]; if (!e) { drops.setMatrixAt(i, mTmp.makeScale(0, 0, 0)); continue; }
+    dT[i] += dt / dP[i]; if (dT[i] >= 1) { dT[i] -= 1; seedDrop(i); }
+    const t = dT[i]; let y = e.p.y, sx = 0.0055, sy = 0.0055;
+    if (e.fall > 0) {
+      if (t < 0.55) { const g = t / 0.55; sx = sy = 0.0055 * g; }
+      else { const f = (t - 0.55) / 0.45; y -= e.fall * f * f; sy = 0.0085; sx = 0.0048; if (f > 0.92) sx = sy = 0; }
+    } else { sx = sy = 0.0045 * Math.sin(Math.PI * t); }
+    mTmp.makeScale(sx, sy, sx).setPosition(e.p.x + dO[i * 3], y, e.p.z + dO[i * 3 + 2]); drops.setMatrixAt(i, mTmp);
+  }
+  drops.instanceMatrix.needsUpdate = true;
+}
+
+// winter snowfall on the exterior
+const SNOW_N = isSmall() ? 160 : 260;
+const snow = makePoints(SNOW_N);
+const snV = new Float32Array(SNOW_N);
+for (let i = 0; i < SNOW_N; i++) { snow.pos.set([0.35 + Math.random() * 7.1, Math.random() * 4.3, -3.0 + Math.random() * 3.0], i * 3); snV[i] = 0.25 + Math.random() * 0.35; snow.col.set([0.9, 0.95, 1.0], i * 3); snow.s[i] = 0.02 + Math.random() * 0.02; }
+function updateSnow(dt, time) {
+  for (let i = 0; i < SNOW_N; i++) {
+    let y = snow.pos[i * 3 + 1] - snV[i] * dt; if (y < 0) y += 4.3;
+    snow.pos[i * 3 + 1] = y; snow.pos[i * 3] += Math.sin(time * 0.8 + i) * dt * 0.05;
+    snow.a[i] = S.mix * 0.7 * Math.min(1, y / 0.2);
+  }
+  snow.flush();
+}
+/* ---------- state ---------- */
+const SYS = { split: buildSplit(), mono: buildMono() };
+for (const s of Object.values(SYS)) s.streamsP = { cool: s.streams.cool.map(prepStream), heat: s.streams.heat.map(prepStream) };
+const TEMPS = { cool: { start: 27, target: 22, out: 35, outSub: 'Summer afternoon' }, heat: { start: 16, target: 21, out: 3, outSub: 'Winter morning' } };
+const tour = $('tour'), tagsEl = $('tags');
+let tags = [];
+
+function applyState() {
+  const sys = SYS[S.system];
+  for (const s of Object.values(SYS)) s.group.visible = s === sys;
+  buildWall(sys.notches);
+  setCircuit(sys.circuits[S.mode]);
+  setStreams(sys.streamsP[S.mode]);
+  sites = sys.sites; resetHeat();
+  resetDrops(sys.drips[S.mode]);
+  buildTags();
+  document.body.dataset.mode = S.mode;
+  document.querySelectorAll('[data-system]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.system === S.system)));
+  document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
+  const sp = S.system === 'split', cool = S.mode === 'cool', T = TEMPS[S.mode];
+  $('stSystem').textContent = sp ? 'Split system' : 'Monoblock';
+  $('stMode').textContent = cool ? 'Cooling' : 'Heating';
+  $('tOut').textContent = String(T.out); $('tOutSub').textContent = T.outSub; $('tInSub').textContent = `Target ${T.target} °C`;
+  const oc = sp ? 'Outdoor coil' : 'Outdoor-air coil';
+  $('absWhere').textContent = cool ? 'Indoor coil, from room air' : `${oc}, from ${T.out} °C outside air`;
+  $('relWhere').textContent = cool ? `${oc}, into ${T.out} °C outside air` : 'Indoor coil, into room air';
+  lastTIn = null; idleIdx = 0; idleT = 0;
+  renderTour();
+}
+
+/* ---------- labels ---------- */
+function buildTags() {
+  tagsEl.innerHTML = ''; tags = [];
+  const sys = SYS[S.system];
+  for (const [key, a] of Object.entries(sys.anchors)) addTag(key, a);
+  for (const site of ['indoor', 'outdoor']) {
+    addTag('heat-' + site, {
+      p: sys.heatTags[site], side: site === 'indoor' ? 'l' : 'r', heat: true,
+      t: () => (roleOf(site) === 'abs' ? '↓ Heat absorbed' : '↑ Heat released'),
+      s: () => (roleOf(site) === 'abs' ? (site === 'indoor' ? 'from room air' : 'from outdoor air') : (site === 'indoor' ? 'into room air' : 'to outdoor air')),
+    });
+  }
+  for (const t of tags) { t.b.textContent = typeof t.a.t === 'function' ? t.a.t(S.mode) : t.a.t; t.s.textContent = t.a.s ? t.a.s(S.mode) : ''; }
+}
+function addTag(key, a) {
+  const el = document.createElement('div');
+  el.className = `tag ${a.side || 'r'}${a.heat ? ' heat' : ''}`;
+  el.innerHTML = '<i class="d"></i><i class="ln"></i><div class="tx"><b></b><span></span></div>';
+  tagsEl.appendChild(el);
+  tags.push({ key, a, el, b: el.querySelector('b'), s: el.querySelector('span') });
+}
+const proj = V();
+function updateTags() {
+  tagsEl.style.display = S.labels ? '' : 'none'; if (!S.labels) return;
+  const w = innerWidth, h = innerHeight; const hl = S.guide >= 0 ? steps()[S.guide].hl : [];
+  for (const t of tags) {
+    const p = typeof t.a.p === 'function' ? t.a.p(S.mode) : t.a.p;
+    proj.copy(p).project(camera);
+    const dist = camera.position.distanceTo(p);
+    const isHl = hl.includes(t.key) || (t.a.heat && hl.includes('heat'));
+    let vis = proj.z < 1 && Math.abs(proj.x) < 1.05 && Math.abs(proj.y) < 1.05;
+    if (t.a.minor && !isHl && dist > 2.4) vis = false;
+    if (!t.a.minor && !t.a.heat && !isHl && dist > 15) vis = false;
+    t.el.style.opacity = vis ? '1' : '0';
+    t.el.classList.toggle('hl', isHl);
+    if (!vis) continue;
+    const x = ((proj.x * 0.5 + 0.5) * w).toFixed(1), y = ((-proj.y * 0.5 + 0.5) * h).toFixed(1); const side = t.a.side || 'r';
+    t.el.style.transform = side === 'l' ? `translate3d(${x}px,${y}px,0) translate(calc(-100% + 3.5px),-50%)`
+      : side === 'u' ? `translate3d(${x}px,${y}px,0) translate(-50%,calc(-100% + 3.5px))` : `translate3d(${x}px,${y}px,0) translate(-3.5px,-50%)`;
+  }
+}
+
+/* ---------- camera ---------- */
+const HOME = { t: V(0.2, 1.2, -0.6), p: V(-0.9, 2.45, 7.5) };
+let atHome = true, tween = null;
+function homeView() {
+  const k = clamp(1.62 / camera.aspect, 1, 2.3); const dir = HOME.p.clone().sub(HOME.t);
+  const t = HOME.t.clone(); if (camera.aspect < 0.9) t.y -= 0.35;
+  return { t, p: t.clone().addScaledVector(dir, k) };
+}
+function viewFor(f) {
+  const v = SYS[S.system].views[f];
+  if (!v) return homeView();
+  const k = camera.aspect < 0.9 ? 1.7 : 1; return { t: v.t.clone(), p: v.t.clone().addScaledVector(v.o, k) };
+}
+function flyTo(v, dur = 1.6) {
+  if (reduced || dur === 0) { camera.position.copy(v.p); controls.target.copy(v.t); tween = null; return; }
+  tween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: v.p.clone(), t1: v.t.clone(), s: performance.now(), d: dur * 1000 };
+}
+function updateTween(now) {
+  if (!tween) return; const k = clamp((now - tween.s) / tween.d, 0, 1), e = ease(k);
+  camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e);
+  if (k < 1) camera.position.y += Math.sin(Math.PI * k) * 0.25 * tween.p0.distanceTo(tween.p1) * 0.08;
+  if (k >= 1) tween = null;
+}
+controls.addEventListener('start', () => { tween = null; atHome = false; });
+function zoom(f) {
+  const d = camera.position.clone().sub(controls.target); const len = clamp(d.length() * f, controls.minDistance, controls.maxDistance);
+  atHome = false; flyTo({ t: controls.target.clone(), p: controls.target.clone().addScaledVector(d.normalize(), len) }, 0.45);
+}
+
+/* ---------- guided explanation ---------- */
+const STEP_DUR = 8.5;
+function steps() {
+  const sp = S.system === 'split', cool = S.mode === 'cool', ocn = sp ? 'outdoor coil' : 'outdoor-air coil';
+  return [
+    { f: 'overview', hl: ['iucoil', 'oucoil', 'heat'], x: () => `Air conditioning doesn't make cold. It <b>moves heat</b>, and right now it is carrying heat ${S.mode === 'cool' ? 'out of the room' : 'into the room'}.` },
+    { f: cool ? 'indoor' : 'outdoor', hl: [cool ? 'iucoil' : 'oucoil', 'heat', 'drain'], x: () => (S.mode === 'cool'
+      ? 'The indoor coil runs at about 7 °C. Warm room air crosses it and <b>gives up its heat</b> to the evaporating refrigerant. Moisture condenses into water.'
+      : `The ${ocn} runs at about −4 °C, colder than the 3 °C outside air, so it still <b>absorbs heat</b> as the refrigerant evaporates.`) },
+    { f: 'comp', hl: ['comp'], x: () => 'The compressor squeezes the cool, low-pressure vapor. Its <b>pressure and temperature jump</b>, to roughly 70 °C.' },
+    { f: cool ? 'outdoor' : 'indoor', hl: [cool ? 'oucoil' : 'iucoil', 'heat'], x: () => (S.mode === 'cool'
+      ? `At 48 °C the refrigerant is hotter than the 35 °C air, so the ${ocn} <b>releases the heat</b> outdoors and the refrigerant condenses to a liquid.`
+      : 'The hot refrigerant condenses in the indoor coil at about 45 °C and <b>releases its heat</b> into the room air.') },
+    { f: 'exv', hl: ['exv'], x: () => 'The expansion valve drops the pressure. Part of the liquid flashes to vapor and it turns <b>very cold</b>, ready to absorb heat again.' },
+    { f: 'rv', hl: ['rv', 'iucoil', 'oucoil'], flip: true, x: () => `The reversing valve redirects the compressor's hot gas. It just switched to <b>${S.mode === 'cool' ? 'Cooling' : 'Heating'}</b>, so the two coils have swapped roles.` },
+    { f: 'link', hl: ['lines', 'part'], x: () => (sp
+      ? 'Only refrigerant crosses the wall, inside two sealed copper lines. <b>Room air and outdoor air never mix</b>; only heat moves between them.'
+      : 'Outdoor air enters and leaves through two wall ducts, sealed from room air by a partition. <b>The airstreams never mix</b>; only heat crosses.') },
+  ];
+}
+const IDLE = {
+  cool: ['Press <b>Guide</b> for a one-minute tour. Drag to orbit, scroll or pinch to zoom.', 'Cooling: the cold indoor coil <b>absorbs heat</b> from room air; the refrigerant carries it outside.', 'Refrigerant color shows its state: <b>red</b> is hot high-pressure gas, <b>blue</b> is cold low-pressure liquid.', 'Gold sparks are <b>heat energy</b>: entering the refrigerant indoors, leaving it outdoors.'],
+  heat: ['Press <b>Guide</b> for a one-minute tour. Drag to orbit, scroll or pinch to zoom.', 'Heating: the loop runs in reverse, pulling heat <b>from winter air</b> and releasing it indoors.', 'The outdoor coil is colder than the 3 °C air, so heat still flows <b>into</b> it. Frost forms on its fins.', 'Gold sparks are <b>heat energy</b>: entering the refrigerant outdoors, leaving it indoors.'],
+};
+const SYS_NOTE = { split: 'Split system: two units joined by <b>sealed refrigerant lines</b> through the wall.', mono: 'Monoblock: <b>one cabinet</b> holds the whole circuit; outdoor air is ducted through the wall.' };
+let idleIdx = 0, idleT = 0;
+function idleList() { const l = IDLE[S.mode].slice(); l.splice(1, 0, SYS_NOTE[S.system]); return l; }
+function renderTour() {
+  const g = S.guide >= 0;
+  tour.classList.toggle('guiding', g); document.body.classList.toggle('guiding', g);
+  if (g) {
+    const st = steps(); $('tourStep').textContent = `Step ${S.guide + 1} of ${st.length}`;
+    $('tourText').innerHTML = st[S.guide].x();
+    $('tourDots').innerHTML = st.map((_, i) => `<i class="${i <= S.guide ? 'on' : ''}"></i>`).join('');
+  } else {
+    $('tourStep').textContent = 'Now'; const l = idleList(); $('tourText').innerHTML = l[idleIdx % l.length];
+  }
+  measureHud();
+}
+function measureHud() {
+  const r = document.documentElement.style;
+  r.setProperty('--dockH', `${document.querySelector('.dock').offsetHeight}px`);
+  r.setProperty('--tourH', `${tour.offsetHeight}px`);
+}
+function enterStep() {
+  const st = steps()[S.guide];
+  if (st.flip) setMode(S.mode === 'cool' ? 'heat' : 'cool', true);
+  flyTo(viewFor(st.f), 1.9); renderTour();
+}
+function startGuide() { S.guide = 0; S.guideT = 0; atHome = false; if (!S.playing) setPlaying(true); enterStep(); }
+function stepBy(d) { const n = S.guide + d; if (n < 0) return; if (n >= steps().length) return endGuide(true); S.guide = n; S.guideT = 0; enterStep(); }
+function endGuide(done) {
+  S.guide = -1; $('bGuideTx').textContent = 'Replay'; $('tourProg').style.width = '0%'; idleT = 0; renderTour();
+  if (done) { atHome = true; flyTo(homeView(), 1.6); }
+}
+
+/* ---------- controls ---------- */
+function setMode(m, fromGuide = false) {
+  if (m === S.mode) return; S.mode = m; S.simT = 0; applyState();
+  if (!fromGuide && S.guide >= 0) renderTour();
+}
+function setSystem(s) {
+  if (s === S.system) return; S.system = s; S.simT = 0; applyState();
+  if (S.guide >= 0) flyTo(viewFor(steps()[S.guide].f), 1.2);
+}
+function setPlaying(p) {
+  S.playing = p; document.body.classList.toggle('paused', !p);
+  $('icPause').style.display = p ? '' : 'none'; $('icPlay').style.display = p ? 'none' : '';
+  const b = $('bPlay'); b.setAttribute('aria-label', p ? 'Pause' : 'Play'); b.title = p ? 'Pause' : 'Play';
+  $('stRun').textContent = p ? 'Running' : 'Paused';
+}
+document.querySelectorAll('[data-system]').forEach((b) => b.addEventListener('click', () => setSystem(b.dataset.system)));
+document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+$('bPlay').addEventListener('click', () => setPlaying(!S.playing));
+$('bZoomIn').addEventListener('click', () => zoom(0.72));
+$('bZoomOut').addEventListener('click', () => zoom(1.38));
+$('bReset').addEventListener('click', () => { if (S.guide >= 0) endGuide(false); atHome = true; flyTo(homeView(), 1.2); });
+$('bLabels').addEventListener('click', () => { S.labels = !S.labels; $('bLabels').setAttribute('aria-pressed', String(S.labels)); $('bLabels').setAttribute('aria-label', S.labels ? 'Hide labels' : 'Show labels'); });
+$('bGuide').addEventListener('click', startGuide);
+$('tPrev').addEventListener('click', () => stepBy(-1));
+$('tNext').addEventListener('click', () => stepBy(1));
+$('tClose').addEventListener('click', () => endGuide(true));
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLButtonElement && (e.key === ' ' || e.key === 'Enter')) return;
+  if (e.key === ' ') { e.preventDefault(); setPlaying(!S.playing); }
+  else if (S.guide >= 0 && e.key === 'ArrowRight') stepBy(1);
+  else if (S.guide >= 0 && e.key === 'ArrowLeft') stepBy(-1);
+  else if (e.key === 'Escape' && S.guide >= 0) endGuide(true);
+});
+
+/* ---------- environment blend (summer ↔ winter) ---------- */
+const CB = (a, b) => [new THREE.Color(a), new THREE.Color(b)];
+const MIX = {
+  grass: CB(0x5a7736, 0xdfe6ea), hedge: CB(0x3d5a2a, 0x8a9a91), sun: CB(0xfff0da, 0xdbe7ff), hemi: CB(0xd8e8ff, 0xc3d2e6),
+  spot: CB(0xfff4e8, 0xffe0bd), fin: CB(0xc8d1d9, 0xf4f8ff), led: CB(0x6cc6ff, 0xff8f52), gravel: CB(0x8f8a82, 0xd7dde0),
+};
+function applyMix(m) {
+  M.grass.color.lerpColors(...MIX.grass, m); M.hedge.color.lerpColors(...MIX.hedge, m); M.gravel.color.lerpColors(...MIX.gravel, m * 0.8);
+  sun.color.lerpColors(...MIX.sun, m); sun.intensity = lerp(2.5, 1.35, m); sun.position.set(lerp(5.5, 7.5, m), lerp(9.5, 5.8, m), lerp(7.5, 6.2, m));
+  hemi.color.lerpColors(...MIX.hemi, m); hemi.intensity = lerp(0.5, 0.42, m);
+  roomSpot.color.lerpColors(...MIX.spot, m); roomSpot.intensity = lerp(12, 16, m); room.userData.lamp.intensity = lerp(3, 6.5, m);
+  M.finFrost.color.lerpColors(...MIX.fin, m); M.finFrost.roughness = lerp(0.3, 0.75, m); M.finFrost.metalness = lerp(0.9, 0.15, m);
+  M.led.color.lerpColors(...MIX.led, m);
+  skyMat.uniforms.uMix.value = m;
+  for (const s of Object.values(SYS)) if (s.louver) s.louver.rotation.z = lerp(0.3, 0.95, m);
+}
+
+/* ---------- resize & loop ---------- */
+function resize() {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight), pr = pixelRatio();
+  renderer.setPixelRatio(pr); renderer.setSize(w, h, false);
+  composer.setPixelRatio(pr); composer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  const scale = (h * pr) / (2 * Math.tan((camera.fov * Math.PI) / 360));
+  for (const m of pointMats) m.uniforms.uScale.value = scale;
+  if (atHome && S.guide < 0 && !tween) flyTo(homeView(), 0);
+  measureHud();
+}
+addEventListener('resize', resize);
+new ResizeObserver(resize).observe(stage);
+
+let lastTIn = null, simTime = 0, first = true;
+const clock = new THREE.Clock();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const sdt = S.playing ? dt * (reduced ? 0.45 : 1) : 0;
+  simTime += sdt; S.simT += sdt;
+  const tm = S.mode === 'heat' ? 1 : 0;
+  S.mix = reduced ? tm : S.mix + (tm - S.mix) * Math.min(1, dt * 1.8);
+  applyMix(S.mix);
+  skyMat.uniforms.uTime.value = simTime;
+  updateBeads(sdt); updateAir(sdt, simTime); updateHeat(sdt, simTime); updateDrops(sdt); updateSnow(sdt, simTime);
+  for (const f of SYS[S.system].fans) f.o.rotation.z += f.speed * sdt;
+  updateTween(now); controls.update();
+  const t = controls.target; t.set(clamp(t.x, -5, 7), clamp(t.y, -0.2, 3.2), clamp(t.z, -3.2, 0.8));
+  if (S.guide >= 0) {
+    S.guideT += sdt; $('tourProg').style.width = `${Math.min(100, (S.guideT / STEP_DUR) * 100)}%`;
+    if (S.guideT >= STEP_DUR) stepBy(1);
+  } else if (S.playing) {
+    idleT += dt; if (idleT > 7) { idleT = 0; idleIdx++; renderTour(); }
+  }
+  const T = TEMPS[S.mode]; const tin = (T.target + (T.start - T.target) * Math.exp(-S.simT / 45)).toFixed(1);
+  if (tin !== lastTIn) { $('tIn').textContent = tin; lastTIn = tin; }
+  composer.render();
+  updateTags();
+  if (first) { first = false; $('loader').classList.add('done'); window.__acReady = true; }
+  requestAnimationFrame(frame);
+}
+
+try {
+  applyState();
+  const h0 = homeView(); camera.position.copy(h0.p); controls.target.copy(h0.t);
+  resize(); setPlaying(true); applyMix(0);
+  window.__ac = { state: S, camera, controls };
+  requestAnimationFrame(frame);
+} catch (err) {
+  console.error(err); window.__acFail('The 3D scene could not be initialised on this device.');
+}
+</script>
+</body>
+</html>

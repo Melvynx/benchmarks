@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Sonnet 5.5</title>
+<style>
+:root{
+  --bg:#0c1016; --panel:#11151d; --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.16);
+  --text:#e9edf4; --muted:#8f9bb0; --accent:#ff7a2f; --accent2:#ffa45c; --good:#54d6a2; --warn:#ffcf5a;
+  --glass:rgba(14,18,26,.78);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+  font:14px/1.4 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+#app{display:flex;height:100%;width:100%}
+#stage{position:relative;flex:1;min-width:0;overflow:hidden;background:#cfe0ec}
+#view{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+.topbar{position:absolute;left:0;right:0;top:0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px;pointer-events:none;flex-wrap:wrap}
+.topbar>*{pointer-events:auto}
+.brand{display:flex;align-items:center;gap:10px;margin:0;padding:8px 14px 8px 10px;border-radius:12px;background:var(--glass);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);box-shadow:0 6px 22px rgba(8,12,20,.28);
+  font-size:18px;font-weight:700;letter-spacing:-.01em;color:#fff}
+.brand::before{content:"";width:22px;height:22px;border-radius:6px;flex:none;
+  background:
+   linear-gradient(90deg,transparent 0 46%,rgba(0,0,0,.35) 46% 54%,transparent 54%) ,
+   linear-gradient(0deg,transparent 0 30%,rgba(0,0,0,.35) 30% 38%,transparent 38% 63%,rgba(0,0,0,.35) 63% 71%,transparent 71%),
+   linear-gradient(135deg,var(--accent2),var(--accent))}
+.actions{display:flex;gap:8px;align-items:center}
+.btn{appearance:none;border:1px solid var(--line2);background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  padding:10px 16px;border-radius:12px;font-weight:600;cursor:pointer;color:var(--text);display:inline-flex;align-items:center;gap:8px;
+  box-shadow:0 6px 22px rgba(8,12,20,.28);transition:transform .08s,background .15s,border-color .15s}
+.btn:hover{background:rgba(30,37,52,.92);border-color:rgba(255,255,255,.28)}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible,.seg button:focus-visible,summary:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+.btn.primary{background:linear-gradient(180deg,#ff9448,#f0601a);border-color:#ffb27d;color:#1b0d04;font-size:16px;padding:11px 26px 11px 20px;letter-spacing:.01em;
+  box-shadow:0 8px 26px rgba(240,96,26,.42),inset 0 1px 0 rgba(255,255,255,.35)}
+.btn.primary:hover{background:linear-gradient(180deg,#ffa05a,#f56a24)}
+.btn.primary .tri{width:0;height:0;border-left:11px solid currentColor;border-top:7px solid transparent;border-bottom:7px solid transparent}
+.btn .gear{width:16px;height:16px;border-radius:50%;border:2px dashed currentColor;opacity:.85}
+
+.chips{position:absolute;left:16px;top:74px;display:flex;flex-wrap:wrap;gap:6px;max-width:calc(100% - 32px);pointer-events:none}
+.chip{background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px;color:#c9d2e2;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-variant-numeric:tabular-nums}
+.chip b{color:#fff;font-weight:650}
+
+.status{position:absolute;left:50%;top:18px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;
+  background:var(--glass);border:1px solid var(--line);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#d6deed;pointer-events:none;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.status i{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 10px var(--good)}
+.status.run i{background:var(--accent);box-shadow:0 0 10px var(--accent);animation:pulse .8s infinite alternate}
+.status.hit i{background:#ff4d4d;box-shadow:0 0 12px #ff4d4d}
+@keyframes pulse{to{opacity:.35}}
+
+.hud{position:absolute;left:16px;right:16px;bottom:14px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;pointer-events:none}
+.tile{background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:9px 12px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);min-width:0}
+.tile span{display:block;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile b{display:block;font-size:20px;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile b small{font-size:12px;font-weight:500;color:var(--muted);margin-left:3px}
+
+.toast{position:absolute;left:50%;top:60px;transform:translate(-50%,-8px);opacity:0;pointer-events:none;transition:.3s;background:rgba(12,16,24,.9);border:1px solid var(--accent);
+  color:#fff;padding:10px 18px;border-radius:12px;font-size:13.5px;text-align:center;max-width:min(92%,640px);box-shadow:0 10px 34px rgba(0,0,0,.35)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast b{color:var(--accent2)}
+
+#panel{width:340px;flex:none;background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden;padding:18px 18px 28px;
+  transition:margin-right .25s ease;z-index:4}
+#panel.closed{margin-right:-341px;visibility:hidden;transition:margin-right .25s ease,visibility 0s .25s}
+#panel h2{margin:0 0 4px;font-size:16px;letter-spacing:-.01em}
+#panel p.hint{margin:0 0 14px;color:var(--muted);font-size:12.5px}
+.group{margin:16px 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent2);font-weight:650}
+.ctl{padding:9px 0 10px;border-bottom:1px solid var(--line)}
+.ctl-h{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.ctl-h label{font-size:13px;color:#dbe2ef}
+.ctl-h .val{display:flex;align-items:baseline;gap:5px;color:var(--muted);font-size:12px}
+.ctl-h .val input{width:74px;background:#0a0d13;border:1px solid var(--line2);border-radius:8px;padding:4px 7px;text-align:right;font-variant-numeric:tabular-nums;color:#fff;font-weight:600}
+.ctl-h .val input:focus{outline:2px solid var(--accent2);outline-offset:1px}
+.ctl-h .val em{font-style:normal;min-width:34px;text-align:left}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;margin:0;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:linear-gradient(90deg,var(--accent) var(--p,50%),#252c3a var(--p,50%))}
+input[type=range]::-moz-range-track{height:5px;border-radius:3px;background:#252c3a}
+input[type=range]::-moz-range-progress{height:5px;border-radius:3px;background:var(--accent)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid var(--accent);margin-top:-6.5px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#fff;border:3px solid var(--accent)}
+details{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:rgba(255,255,255,.02)}
+summary{cursor:pointer;padding:11px 0;font-weight:600;font-size:13px;list-style:none;display:flex;justify-content:space-between;color:#dbe2ef}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--muted);font-size:16px;line-height:1}
+details[open] summary::after{content:"\2212"}
+.row{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:10px;overflow:hidden}
+.seg button{appearance:none;background:transparent;border:0;padding:7px 12px;cursor:pointer;color:var(--muted);font-weight:600;font-size:12.5px}
+.seg button[aria-pressed=true]{background:var(--accent);color:#1b0d04}
+.small{font-size:12px;color:var(--muted)}
+.link{appearance:none;background:none;border:1px solid var(--line2);border-radius:10px;padding:7px 12px;cursor:pointer;color:#dbe2ef;font-size:12.5px;font-weight:600}
+.link:hover{border-color:var(--accent2);color:#fff}
+dl.consts{display:grid;grid-template-columns:auto auto;gap:4px 12px;margin:0 0 12px;font-size:12.5px}
+dl.consts dt{color:var(--muted)} dl.consts dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;color:#dbe2ef}
+
+@media (max-width:1000px){
+  #panel{position:absolute;right:0;top:0;bottom:0;box-shadow:-18px 0 40px rgba(0,0,0,.45);width:min(340px,92vw)}
+  #panel.closed{margin-right:-100%}
+  .hud{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .tile b{font-size:17px}
+}
+@media (max-width:560px){.hud{grid-template-columns:repeat(2,minmax(0,1fr))}.chips{top:120px}.brand{font-size:15px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="view" aria-label="Brick wall crash experiment"></canvas>
+
+    <div class="topbar">
+      <h1 class="brand">Claude Sonnet 5.5</h1>
+      <div class="actions">
+        <button class="btn primary" id="btnTest" title="Launch the car (Space)"><span class="tri"></span>Test</button>
+        <button class="btn" id="btnReset" title="Reset the scene (R)">Reset</button>
+        <button class="btn" id="btnSettings" aria-expanded="true" aria-controls="panel"><span class="gear"></span>Settings</button>
+      </div>
+    </div>
+
+    <div class="chips" id="chips" aria-label="Active parameters"></div>
+    <div class="status" id="status"><i></i><span id="statusText">Ready</span></div>
+    <div class="toast" id="toast" role="status"></div>
+
+    <section class="hud" aria-label="Telemetry">
+      <div class="tile"><span>Car speed</span><b id="tSpeed">0.0<small>m/s</small></b></div>
+      <div class="tile"><span>Elapsed</span><b id="tTime">0.00<small>s</small></b></div>
+      <div class="tile"><span>Moving bricks</span><b id="tMoving">0<small>/ 0</small></b></div>
+      <div class="tile"><span>Displaced</span><b id="tDisp">0<small>/ 0</small></b></div>
+      <div class="tile"><span>Car momentum</span><b id="tMom">0<small>kN&middot;s</small></b></div>
+      <div class="tile"><span>Peak impact force</span><b id="tForce">0<small>kN</small></b></div>
+    </section>
+  </main>
+
+  <aside id="panel" aria-label="Settings">
+    <h2>Experiment settings</h2>
+    <p class="hint">Changing a value rebuilds the scene. Identical settings always give the identical physical outcome.</p>
+    <div class="group">Experiment</div>
+    <div id="mainCtl"></div>
+
+    <details id="advBox">
+      <summary>Advanced physics</summary>
+      <div id="advCtl"></div>
+    </details>
+
+    <div class="row">
+      <span class="small">Playback</span>
+      <div class="seg" id="speedSeg" role="group" aria-label="Playback speed">
+        <button data-ts="1" aria-pressed="true">1&times;</button>
+        <button data-ts="0.5" aria-pressed="false">&frac12;&times;</button>
+        <button data-ts="0.25" aria-pressed="false">&frac14;&times;</button>
+      </div>
+    </div>
+    <div class="row"><button class="link" id="btnDefaults">Restore defaults</button></div>
+
+    <div class="group">Fixed by the rig</div>
+    <dl class="consts" id="consts"></dl>
+    <p class="small">The car is towed from rest over a fixed 7 m run-up and released at first contact; its wheels lock on impact. Each brick is a rigid body; depth layers multiply a brick's mass (plane-strain slab).</p>
+  </aside>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   PARAMETERS
+   ===================================================================== */
+const DEFAULTS = Object.freeze({
+  speed: 22, cols: 12, rows: 8, layers: 2, brickMass: 2.5,
+  brickW: 0.50, brickH: 0.24, gravity: 9.81, brickFriction: 0.72, brickRestitution: 0.18,
+  carMass: 1250, carW: 4.2, carH: 1.45, groundFriction: 0.85, scale: 80
+});
+const PARAM_DEFS = [
+  { key: 'speed',     label: 'Car speed',         unit: 'm/s',    min: 5,   max: 45, step: 0.5,  dec: 1, main: true },
+  { key: 'cols',      label: 'Wall columns',      unit: 'bricks', min: 4,   max: 24, step: 1,    dec: 0, main: true },
+  { key: 'rows',      label: 'Wall rows',         unit: 'bricks', min: 3,   max: 16, step: 1,    dec: 0, main: true },
+  { key: 'layers',    label: 'Wall depth layers', unit: 'layers', min: 1,   max: 5,  step: 1,    dec: 0, main: true },
+  { key: 'brickMass', label: 'Brick mass',        unit: 'kg',     min: 0.5, max: 12, step: 0.1,  dec: 1, main: true },
+  { key: 'gravity',          label: 'Gravity',              unit: 'm/s²', min: 1.62, max: 24,  step: 0.01, dec: 2 },
+  { key: 'brickFriction',    label: 'Brick friction',       unit: 'μ',    min: 0.05, max: 1.2, step: 0.01, dec: 2 },
+  { key: 'brickRestitution', label: 'Brick restitution',    unit: 'e',         min: 0,    max: 0.9, step: 0.01, dec: 2 },
+  { key: 'groundFriction',   label: 'Ground friction',      unit: 'μ',    min: 0.05, max: 1.2, step: 0.01, dec: 2 },
+  { key: 'carMass',          label: 'Car mass',             unit: 'kg',        min: 300,  max: 5000, step: 10,  dec: 0 },
+  { key: 'carW',             label: 'Car width',            unit: 'm',         min: 3,    max: 6,   step: 0.1,  dec: 1 },
+  { key: 'carH',             label: 'Car height',           unit: 'm',         min: 1,    max: 2,   step: 0.05, dec: 2 },
+  { key: 'brickW',           label: 'Brick width',          unit: 'm',         min: 0.3,  max: 0.8, step: 0.01, dec: 2 },
+  { key: 'brickH',           label: 'Brick height',         unit: 'm',         min: 0.15, max: 0.4, step: 0.01, dec: 2 },
+  { key: 'scale',            label: 'Simulation scale',     unit: 'px/m',      min: 30,   max: 120, step: 1,    dec: 0 }
+];
+
+/* Rig geometry (fixed) */
+const RUN_UP = 7.0;       // nose-to-wall distance at rest, metres
+const STAGGER = 0.4;      // odd-row offset, in brick widths (keeps end bricks balanced)
+
+/* =====================================================================
+   RIGID BODY ENGINE  (soft-step sequential impulses, speculative contacts)
+   ===================================================================== */
+const STEP = 1 / 120, SUBSTEPS = 4, HS = STEP / SUBSTEPS;
+const SLOP = 0.002, SPEC = 0.01, MAX_SWEEP = 0.5, PUSH_MAX = 3, REST_THRESH = 1, ROLL_MU = 0.015;
+const K_GROUND = 0, K_BRICK = 1, K_CAR = 2;
+
+function makeSoftness(hertz, zeta, h) {
+  const omega = 2 * Math.PI * hertz, a1 = 2 * zeta + h * omega, a2 = h * omega * a1, a3 = 1 / (1 + a2);
+  return { biasRate: omega / a1, massScale: a2 * a3, impulseScale: a3 };
+}
+const SOFT = makeSoftness(30, 10, HS), SOFT_STATIC = makeSoftness(60, 10, HS);
+
+let nextBodyId = 1, nextShapeId = 1;
+
+class Shape {
+  constructor(body, type) {
+    this.body = body; this.type = type; this.id = nextShapeId++;
+    this.friction = 0.5; this.restitution = 0; this.wheel = false;
+    this.minX = 0; this.minY = 0; this.maxX = 0; this.maxY = 0; this.margin = 0;
+    this.cx = 0; this.cy = 0; this.r = 0; this.lcx = 0; this.lcy = 0; this.n = 0;
+  }
+}
+
+class Body {
+  constructor(kind, x, y, mass, inertia) {
+    this.kind = kind; this.id = nextBodyId++;
+    this.x = x; this.y = y; this.c = 1; this.s = 0;
+    this.x0 = x; this.y0 = y;
+    this.vx = 0; this.vy = 0; this.w = 0;
+    this.mass = mass; this.invM = mass > 0 ? 1 / mass : 0; this.invI = inertia > 0 ? 1 / inertia : 0;
+    this.dpx = 0; this.dpy = 0; this.dqc = 1; this.dqs = 0;
+    this.linDamp = 0.01; this.angDamp = 0.03;
+    this.radius = 0; this.shapes = [];
+    this.tint = 0;
+  }
+  addPoly(pts, friction, restitution) {
+    const n = pts.length / 2, sh = new Shape(this, 0);
+    sh.n = n; sh.friction = friction; sh.restitution = restitution;
+    sh.lx = new Float64Array(n); sh.ly = new Float64Array(n); sh.lnx = new Float64Array(n); sh.lny = new Float64Array(n);
+    sh.wx = new Float64Array(n); sh.wy = new Float64Array(n); sh.nx = new Float64Array(n); sh.ny = new Float64Array(n);
+    for (let i = 0; i < n; i++) { sh.lx[i] = pts[2 * i]; sh.ly[i] = pts[2 * i + 1]; }
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, ex = sh.lx[j] - sh.lx[i], ey = sh.ly[j] - sh.ly[i], len = Math.sqrt(ex * ex + ey * ey);
+      sh.lnx[i] = ey / len; sh.lny[i] = -ex / len;
+      this.radius = Math.max(this.radius, Math.sqrt(sh.lx[i] * sh.lx[i] + sh.ly[i] * sh.ly[i]));
+    }
+    this.shapes.push(sh); return sh;
+  }
+  addCircle(cx, cy, r, friction, restitution) {
+    const sh = new Shape(this, 1);
+    sh.lcx = cx; sh.lcy = cy; sh.r = r; sh.friction = friction; sh.restitution = restitution;
+    this.radius = Math.max(this.radius, Math.sqrt(cx * cx + cy * cy) + r);
+    this.shapes.push(sh); return sh;
+  }
+}
+
+function updateShape(sh, b, margin) {
+  const c = b.c, s = b.s;
+  sh.margin = margin;
+  if (sh.type === 0) {
+    let minX = 1e30, minY = 1e30, maxX = -1e30, maxY = -1e30;
+    for (let i = 0; i < sh.n; i++) {
+      const lx = sh.lx[i], ly = sh.ly[i];
+      const x = b.x + c * lx - s * ly, y = b.y + s * lx + c * ly;
+      sh.wx[i] = x; sh.wy[i] = y;
+      sh.nx[i] = c * sh.lnx[i] - s * sh.lny[i]; sh.ny[i] = s * sh.lnx[i] + c * sh.lny[i];
+      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    sh.minX = minX - margin; sh.maxX = maxX + margin; sh.minY = minY - margin; sh.maxY = maxY + margin;
+  } else {
+    sh.cx = b.x + c * sh.lcx - s * sh.lcy; sh.cy = b.y + s * sh.lcx + c * sh.lcy;
+    const e = sh.r + margin;
+    sh.minX = sh.cx - e; sh.maxX = sh.cx + e; sh.minY = sh.cy - e; sh.maxY = sh.cy + e;
+  }
+}
+
+/* ---- narrow phase: every routine fills `man` with a manifold whose normal points A -> B ---- */
+const man = { n: 0, nx: 0, ny: 0, px: [0, 0], py: [0, 0], sep: [0, 0], id: [0, 0] };
+let _idx = 0;
+
+function maxSep(A, B, margin) {
+  let best = -1e30, bi = 0;
+  const nA = A.n, nB = B.n, bx = B.wx, by = B.wy;
+  for (let i = 0; i < nA; i++) {
+    const nx = A.nx[i], ny = A.ny[i], vx = A.wx[i], vy = A.wy[i];
+    let m = 1e30;
+    for (let j = 0; j < nB; j++) {
+      const d = nx * (bx[j] - vx) + ny * (by[j] - vy);
+      if (d < m) m = d;
+    }
+    if (m > best) { best = m; bi = i; if (m > margin) break; }
+  }
+  _idx = bi; return best;
+}
+
+function collidePolys(A, B, margin) {
+  const sepA = maxSep(A, B, margin), eA = _idx;
+  if (sepA > margin) return 0;
+  const sepB = maxSep(B, A, margin), eB = _idx;
+  if (sepB > margin) return 0;
+  let R, I, e, flip;
+  if (sepB > sepA + 0.1 * SLOP) { R = B; I = A; e = eB; flip = 1; } else { R = A; I = B; e = eA; flip = 0; }
+  const nx = R.nx[e], ny = R.ny[e], e2 = e + 1 === R.n ? 0 : e + 1;
+  const v1x = R.wx[e], v1y = R.wy[e], v2x = R.wx[e2], v2y = R.wy[e2];
+  let minD = 1e30, ii = 0;
+  for (let j = 0; j < I.n; j++) { const d = nx * I.nx[j] + ny * I.ny[j]; if (d < minD) { minD = d; ii = j; } }
+  const ii2 = ii + 1 === I.n ? 0 : ii + 1;
+  const p1x = I.wx[ii], p1y = I.wy[ii], p2x = I.wx[ii2], p2y = I.wy[ii2];
+  let tx = v2x - v1x, ty = v2y - v1y;
+  const len = Math.sqrt(tx * tx + ty * ty); tx /= len; ty /= len;
+  const s1 = tx * (p1x - v1x) + ty * (p1y - v1y), s2 = tx * (p2x - v1x) + ty * (p2y - v1y);
+  let u0 = 0, u1 = 1, id0 = ii, id1 = ii2;
+  const ds = s2 - s1;
+  if (Math.abs(ds) < 1e-9) { if (s1 < 0 || s1 > len) return 0; }
+  else {
+    const uz = -s1 / ds, ul = (len - s1) / ds;
+    if (ds > 0) { if (uz > 0) { u0 = uz; id0 = 6; } if (ul < 1) { u1 = ul; id1 = 7; } }
+    else { if (ul > 0) { u0 = ul; id0 = 7; } if (uz < 1) { u1 = uz; id1 = 6; } }
+    if (u0 > u1) return 0;
+  }
+  const dx = p2x - p1x, dy = p2y - p1y, base = flip * 1000 + e * 10;
+  let n = 0;
+  for (let k = 0; k < 2; k++) {
+    if (k === 1 && u1 - u0 < 1e-6) break;
+    const u = k === 0 ? u0 : u1, qx = p1x + u * dx, qy = p1y + u * dy;
+    const sep = nx * (qx - v1x) + ny * (qy - v1y);
+    if (sep > margin) continue;
+    man.px[n] = qx - nx * sep * 0.5; man.py[n] = qy - ny * sep * 0.5; man.sep[n] = sep;
+    man.id[n] = base + (k === 0 ? id0 : id1); n++;
+  }
+  if (n === 0) return 0;
+  if (flip) { man.nx = -nx; man.ny = -ny; } else { man.nx = nx; man.ny = ny; }
+  man.n = n; return n;
+}
+
+function collidePolyCircle(P, C, margin, flipN) {
+  const cx = C.cx, cy = C.cy, r = C.r;
+  let best = -1e30, e = 0;
+  for (let i = 0; i < P.n; i++) {
+    const s = P.nx[i] * (cx - P.wx[i]) + P.ny[i] * (cy - P.wy[i]);
+    if (s > best) { best = s; e = i; }
+  }
+  if (best > r + margin) return 0;
+  const e2 = e + 1 === P.n ? 0 : e + 1;
+  const v1x = P.wx[e], v1y = P.wy[e], v2x = P.wx[e2], v2y = P.wy[e2];
+  const ex = v2x - v1x, ey = v2y - v1y;
+  const u1 = (cx - v1x) * ex + (cy - v1y) * ey, u2 = -((cx - v2x) * ex + (cy - v2y) * ey);
+  let nx, ny, sep, px, py, id;
+  if (best > 0 && (u1 <= 0 || u2 <= 0)) {
+    const useV1 = u1 <= 0, vx = useV1 ? v1x : v2x, vy = useV1 ? v1y : v2y;
+    const dx = cx - vx, dy = cy - vy, d = Math.sqrt(dx * dx + dy * dy);
+    if (d > r + margin) return 0;
+    if (d < 1e-9) { nx = P.nx[e]; ny = P.ny[e]; } else { nx = dx / d; ny = dy / d; }
+    sep = d - r; px = vx + nx * sep * 0.5; py = vy + ny * sep * 0.5; id = 10 + (useV1 ? e : e2);
+  } else {
+    nx = P.nx[e]; ny = P.ny[e]; sep = best - r;
+    px = cx - nx * (r + sep * 0.5); py = cy - ny * (r + sep * 0.5); id = e;
+  }
+  man.n = 1; man.px[0] = px; man.py[0] = py; man.sep[0] = sep; man.id[0] = id;
+  if (flipN) { man.nx = -nx; man.ny = -ny; } else { man.nx = nx; man.ny = ny; }
+  return 1;
+}
+
+function collideGround(sh, margin) {
+  man.nx = 0; man.ny = 1;
+  if (sh.type === 1) {
+    const sep = sh.cy - sh.r;
+    if (sep > margin) return 0;
+    man.n = 1; man.px[0] = sh.cx; man.py[0] = sep * 0.5; man.sep[0] = sep; man.id[0] = 0; return 1;
+  }
+  let s0 = 1e30, i0 = -1, s1 = 1e30, i1 = -1;
+  for (let i = 0; i < sh.n; i++) {
+    const y = sh.wy[i];
+    if (y <= margin) {
+      if (y < s0) { s1 = s0; i1 = i0; s0 = y; i0 = i; } else if (y < s1) { s1 = y; i1 = i; }
+    }
+  }
+  let n = 0;
+  if (i0 >= 0) { man.px[0] = sh.wx[i0]; man.py[0] = s0 * 0.5; man.sep[0] = s0; man.id[0] = i0; n = 1; }
+  if (i1 >= 0) { man.px[1] = sh.wx[i1]; man.py[1] = s1 * 0.5; man.sep[1] = s1; man.id[1] = i1; n = 2; }
+  man.n = n; return n;
+}
+
+class Pt {
+  constructor() {
+    this.px = 0; this.py = 0; this.sep = 0; this.id = -1;
+    this.rax = 0; this.ray = 0; this.rbx = 0; this.rby = 0; this.adj = 0;
+    this.nMass = 0; this.tMass = 0; this.relVel = 0; this.nImp = 0; this.tImp = 0; this.maxN = 0;
+  }
+}
+class Contact {
+  constructor(sa, sb, key) {
+    this.sa = sa; this.sb = sb; this.A = sa.body; this.B = sb.body; this.key = key;
+    this.n = 0; this.nx = 0; this.ny = 0; this.friction = 0; this.restitution = 0;
+    this.stale = false; this.isNew = true; this.pts = [new Pt(), new Pt()];
+    const ka = this.A.kind, kb = this.B.kind;
+    this.isStatic = this.A.invM === 0 || this.B.invM === 0;
+    this.carBrick = (ka === K_CAR && kb === K_BRICK) || (ka === K_BRICK && kb === K_CAR);
+    this.wheelGround = ka === K_GROUND && sb.wheel;
+    this.kind = ka === K_GROUND ? (kb === K_CAR ? 3 : 0) : (this.carBrick ? 2 : 1);
+  }
+}
+
+class World {
+  constructor(g) {
+    this.g = g; this.time = 0;
+    this.bodies = []; this.sap = []; this.contacts = []; this.map = new Map(); this.events = [];
+    this.ground = new Body(K_GROUND, 0, 0, 0, 0);
+    this.groundShape = { id: 0, type: 2, body: this.ground, friction: 0.85, restitution: 0, wheel: false };
+    this.car = null; this.hit = false; this.hitTime = -1;
+    this.towTarget = 0; this.towAccel = 0;
+    this.carImpulse = 0; this.peakForce = 0; this.forceNow = 0;
+  }
+  add(b) { this.bodies.push(b); for (const s of b.shapes) this.sap.push(s); return b; }
+
+  prepareShapes() {
+    for (const b of this.bodies) {
+      const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy) + Math.abs(b.w) * b.radius;
+      const m = SPEC + Math.min(MAX_SWEEP, sp * STEP);
+      for (const sh of b.shapes) updateShape(sh, b, m);
+    }
+    const a = this.sap;
+    for (let i = 1; i < a.length; i++) {
+      const s = a[i]; let j = i - 1;
+      while (j >= 0 && a[j].minX > s.minX) { a[j + 1] = a[j]; j--; }
+      a[j + 1] = s;
+    }
+  }
+
+  commit(sa, sb, key) {
+    let c = this.map.get(key), isNew = false;
+    if (c === undefined) { c = new Contact(sa, sb, key); this.map.set(key, c); this.contacts.push(c); isNew = true; }
+    const oc = c.n, p0 = c.pts[0], p1 = c.pts[1];
+    const id0 = p0.id, n0 = p0.nImp, t0 = p0.tImp, id1 = p1.id, n1 = p1.nImp, t1 = p1.tImp;
+    c.n = man.n; c.nx = man.nx; c.ny = man.ny; c.stale = false; c.isNew = isNew;
+    c.friction = Math.sqrt(sa.friction * sb.friction);
+    c.restitution = sa.restitution > sb.restitution ? sa.restitution : sb.restitution;
+    for (let k = 0; k < man.n; k++) {
+      const p = c.pts[k];
+      p.px = man.px[k]; p.py = man.py[k]; p.sep = man.sep[k]; p.id = man.id[k];
+      p.nImp = 0; p.tImp = 0;
+      if (!isNew && oc > 0) {
+        if (p.id === id0) { p.nImp = n0; p.tImp = t0; }
+        else if (oc > 1 && p.id === id1) { p.nImp = n1; p.tImp = t1; }
+      }
+    }
+  }
+
+  collide() {
+    const cs = this.contacts;
+    for (let i = 0; i < cs.length; i++) cs[i].stale = true;
+    const sap = this.sap, n = sap.length;
+    for (let i = 0; i < n; i++) {
+      const a = sap[i], amax = a.maxX;
+      for (let j = i + 1; j < n; j++) {
+        const b = sap[j];
+        if (b.minX > amax) break;
+        if (a.body === b.body || a.maxY < b.minY || b.maxY < a.minY) continue;
+        let sa = a, sb = b;
+        if (sa.id > sb.id) { sa = b; sb = a; }
+        const margin = a.margin + b.margin;
+        let cnt;
+        if (sa.type === 0) cnt = sb.type === 0 ? collidePolys(sa, sb, margin) : collidePolyCircle(sa, sb, margin, false);
+        else cnt = sb.type === 0 ? collidePolyCircle(sb, sa, margin, true) : 0;
+        if (cnt > 0) this.commit(sa, sb, sa.id * 65536 + sb.id);
+      }
+    }
+    const gs = this.groundShape;
+    for (let i = 0; i < n; i++) {
+      const s = sap[i];
+      if (s.minY < 0 && collideGround(s, s.margin) > 0) this.commit(gs, s, s.id);
+    }
+    let k = 0;
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i];
+      if (c.stale) this.map.delete(c.key); else cs[k++] = c;
+    }
+    cs.length = k;
+  }
+
+  prepare() {
+    const car = this.car;
+    for (const c of this.contacts) {
+      const A = c.A, B = c.B, mA = A.invM, iA = A.invI, mB = B.invM, iB = B.invI;
+      const nx = c.nx, ny = c.ny, tx = ny, ty = -nx;
+      if (c.wheelGround && car && !car.braking) c.friction = ROLL_MU;
+      let bestApproach = 0, ex = 0, ey = 0;
+      for (let k = 0; k < c.n; k++) {
+        const p = c.pts[k];
+        const rax = p.px - A.x, ray = p.py - A.y, rbx = p.px - B.x, rby = p.py - B.y;
+        p.rax = rax; p.ray = ray; p.rbx = rbx; p.rby = rby;
+        p.adj = p.sep - ((rbx - rax) * nx + (rby - ray) * ny);
+        const rnA = rax * ny - ray * nx, rnB = rbx * ny - rby * nx;
+        const kn = mA + mB + iA * rnA * rnA + iB * rnB * rnB;
+        p.nMass = kn > 0 ? 1 / kn : 0;
+        const rtA = rax * ty - ray * tx, rtB = rbx * ty - rby * tx;
+        const kt = mA + mB + iA * rtA * rtA + iB * rtB * rtB;
+        p.tMass = kt > 0 ? 1 / kt : 0;
+        const dvx = B.vx - B.w * rby - A.vx + A.w * ray, dvy = B.vy + B.w * rbx - A.vy - A.w * rax;
+        p.relVel = dvx * nx + dvy * ny; p.maxN = 0;
+        if (-p.relVel > bestApproach) { bestApproach = -p.relVel; ex = p.px; ey = p.py; }
+        if (c.carBrick && !this.hit && p.sep <= 0.01) {
+          this.hit = true; this.hitTime = this.time; car.tow = false; car.braking = true;
+        }
+      }
+      if (c.isNew && bestApproach > 2 && this.events.length < 24) {
+        this.events.push({ x: ex, y: ey, v: bestApproach, kind: c.kind, nx: nx, ny: ny });
+      }
+    }
+  }
+
+  integrateVelocities() {
+    const car = this.car, g = this.g;
+    for (const b of this.bodies) {
+      let ax = 0;
+      if (b === car && car.tow) {
+        const want = (this.towTarget - b.vx) / HS;
+        ax += (want > 0 ? Math.min(this.towAccel, want) : 0) + ROLL_MU * g;
+      }
+      b.vx += HS * ax; b.vy -= HS * g;
+      const dl = 1 / (1 + HS * b.linDamp), da = 1 / (1 + HS * b.angDamp);
+      b.vx *= dl; b.vy *= dl; b.w *= da;
+    }
+  }
+
+  warmStart() {
+    for (const c of this.contacts) {
+      const A = c.A, B = c.B, mA = A.invM, iA = A.invI, mB = B.invM, iB = B.invI;
+      const nx = c.nx, ny = c.ny, tx = ny, ty = -nx;
+      let vAx = A.vx, vAy = A.vy, wA = A.w, vBx = B.vx, vBy = B.vy, wB = B.w;
+      for (let k = 0; k < c.n; k++) {
+        const p = c.pts[k];
+        const Px = p.nImp * nx + p.tImp * tx, Py = p.nImp * ny + p.tImp * ty;
+        vAx -= mA * Px; vAy -= mA * Py; wA -= iA * (p.rax * Py - p.ray * Px);
+        vBx += mB * Px; vBy += mB * Py; wB += iB * (p.rbx * Py - p.rby * Px);
+      }
+      A.vx = vAx; A.vy = vAy; A.w = wA; B.vx = vBx; B.vy = vBy; B.w = wB;
+    }
+  }
+
+  solve(useBias) {
+    const invH = 1 / HS;
+    for (const c of this.contacts) {
+      const A = c.A, B = c.B, mA = A.invM, iA = A.invI, mB = B.invM, iB = B.invI;
+      const nx = c.nx, ny = c.ny, tx = ny, ty = -nx, soft = c.isStatic ? SOFT_STATIC : SOFT;
+      let vAx = A.vx, vAy = A.vy, wA = A.w, vBx = B.vx, vBy = B.vy, wB = B.w;
+      const dpx = B.dpx - A.dpx, dpy = B.dpy - A.dpy;
+      const fr = c.friction;
+      for (let k = 0; k < c.n; k++) {
+        const p = c.pts[k];
+        const rax = p.rax, ray = p.ray, rbx = p.rbx, rby = p.rby;
+        const dvx = vBx - wB * rby - vAx + wA * ray, dvy = vBy + wB * rbx - vAy - wA * rax;
+        const vt = dvx * tx + dvy * ty;
+        const maxF = fr * p.nImp;
+        let imp = -p.tMass * vt;
+        const ni = Math.max(-maxF, Math.min(maxF, p.tImp + imp));
+        imp = ni - p.tImp; p.tImp = ni;
+        const Px = imp * tx, Py = imp * ty;
+        vAx -= mA * Px; vAy -= mA * Py; wA -= iA * (rax * Py - ray * Px);
+        vBx += mB * Px; vBy += mB * Py; wB += iB * (rbx * Py - rby * Px);
+      }
+      for (let k = 0; k < c.n; k++) {
+        const p = c.pts[k];
+        const rax = p.rax, ray = p.ray, rbx = p.rbx, rby = p.rby;
+        const prAx = A.dqc * rax - A.dqs * ray, prAy = A.dqs * rax + A.dqc * ray;
+        const prBx = B.dqc * rbx - B.dqs * rby, prBy = B.dqs * rbx + B.dqc * rby;
+        const s = (dpx + prBx - prAx) * nx + (dpy + prBy - prAy) * ny + p.adj;
+        let bias = 0, massScale = 1, impulseScale = 0;
+        if (s > 0) bias = s * invH;
+        else if (useBias) {
+          bias = Math.max(soft.biasRate * Math.min(0, s + SLOP), -PUSH_MAX);
+          massScale = soft.massScale; impulseScale = soft.impulseScale;
+        }
+        const dvx = vBx - wB * rby - vAx + wA * ray, dvy = vBy + wB * rbx - vAy - wA * rax;
+        const vn = dvx * nx + dvy * ny;
+        let imp = -p.nMass * massScale * (vn + bias) - impulseScale * p.nImp;
+        const ni = Math.max(p.nImp + imp, 0);
+        imp = ni - p.nImp; p.nImp = ni; if (ni > p.maxN) p.maxN = ni;
+        const Px = imp * nx, Py = imp * ny;
+        vAx -= mA * Px; vAy -= mA * Py; wA -= iA * (rax * Py - ray * Px);
+        vBx += mB * Px; vBy += mB * Py; wB += iB * (rbx * Py - rby * Px);
+      }
+      A.vx = vAx; A.vy = vAy; A.w = wA; B.vx = vBx; B.vy = vBy; B.w = wB;
+    }
+  }
+
+  integratePositions() {
+    for (const b of this.bodies) {
+      let vx = b.vx, vy = b.vy, w = b.w;
+      const sp2 = vx * vx + vy * vy;
+      if (sp2 > 22500) { const k = 150 / Math.sqrt(sp2); vx *= k; vy *= k; b.vx = vx; b.vy = vy; }
+      if (w > 120) { w = 120; b.w = w; } else if (w < -120) { w = -120; b.w = w; }
+      const dx = vx * HS, dy = vy * HS, da = w * HS;
+      b.x += dx; b.y += dy; b.dpx += dx; b.dpy += dy;
+      let c = b.c - da * b.s, s = b.s + da * b.c, inv = 1 / Math.sqrt(c * c + s * s);
+      b.c = c * inv; b.s = s * inv;
+      c = b.dqc - da * b.dqs; s = b.dqs + da * b.dqc; inv = 1 / Math.sqrt(c * c + s * s);
+      b.dqc = c * inv; b.dqs = s * inv;
+    }
+  }
+
+  applyRestitution() {
+    for (const c of this.contacts) {
+      if (c.restitution === 0) continue;
+      const A = c.A, B = c.B, mA = A.invM, iA = A.invI, mB = B.invM, iB = B.invI;
+      const nx = c.nx, ny = c.ny;
+      let vAx = A.vx, vAy = A.vy, wA = A.w, vBx = B.vx, vBy = B.vy, wB = B.w;
+      for (let k = 0; k < c.n; k++) {
+        const p = c.pts[k];
+        if (p.relVel > -REST_THRESH || p.maxN === 0) continue;
+        const dvx = vBx - wB * p.rby - vAx + wA * p.ray, dvy = vBy + wB * p.rbx - vAy - wA * p.rax;
+        const vn = dvx * nx + dvy * ny;
+        let imp = -p.nMass * (vn + c.restitution * p.relVel);
+        const ni = Math.max(p.nImp + imp, 0);
+        imp = ni - p.nImp; p.nImp = ni;
+        const Px = imp * nx, Py = imp * ny;
+        vAx -= mA * Px; vAy -= mA * Py; wA -= iA * (p.rax * Py - p.ray * Px);
+        vBx += mB * Px; vBy += mB * Py; wB += iB * (p.rbx * Py - p.rby * Px);
+      }
+      A.vx = vAx; A.vy = vAy; A.w = wA; B.vx = vBx; B.vy = vBy; B.w = wB;
+    }
+  }
+
+  step() {
+    this.prepareShapes();
+    this.collide();
+    this.prepare();
+    for (let i = 0; i < SUBSTEPS; i++) {
+      this.integrateVelocities();
+      this.warmStart();
+      this.solve(true);
+      this.integratePositions();
+      this.solve(false);
+    }
+    this.applyRestitution();
+    let sumN = 0;
+    for (const c of this.contacts) if (c.carBrick) for (let k = 0; k < c.n; k++) sumN += c.pts[k].nImp;
+    this.forceNow = sumN / HS;
+    if (this.forceNow > this.peakForce) this.peakForce = this.forceNow;
+    this.carImpulse += sumN * SUBSTEPS;
+    for (const b of this.bodies) { b.dpx = 0; b.dpy = 0; b.dqc = 1; b.dqs = 0; }
+    this.time += STEP;
+  }
+}
+
+/* =====================================================================
+   SCENE CONSTRUCTION
+   ===================================================================== */
+function polyProps(p) {
+  let A = 0, cx = 0, cy = 0, I = 0;
+  const n = p.length / 2;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, x1 = p[2 * i], y1 = p[2 * i + 1], x2 = p[2 * j], y2 = p[2 * j + 1];
+    const cr = x1 * y2 - x2 * y1;
+    A += cr / 2; cx += (x1 + x2) * cr / 6; cy += (y1 + y2) * cr / 6;
+    I += cr * (x1 * x1 + x1 * x2 + x2 * x2 + y1 * y1 + y1 * y2 + y2 * y2) / 12;
+  }
+  return { a: A, cx: cx / A, cy: cy / A, i0: I };
+}
+
+function buildCar(world, P) {
+  const sx = P.carW / 4.2, sy = P.carH / 1.45;
+  const sc = (a) => a.map((v, i) => (i & 1 ? v * sy : v * sx));
+  const chassis = sc([-2.10, 0.28, 2.10, 0.28, 2.10, 0.66, 1.85, 0.82, -1.90, 0.84, -2.10, 0.70]);
+  const cabin = sc([-1.30, 0.80, 0.90, 0.80, 0.30, 1.45, -0.85, 1.45]);
+  const wr = 0.32 * Math.min(sx, sy);
+  const wheels = [[-1.32 * sx, wr], [1.32 * sx, wr]];
+  const p1 = polyProps(chassis), p2 = polyProps(cabin);
+  const rho = P.carMass / (p1.a + p2.a), m1 = p1.a * rho, m2 = p2.a * rho, M = m1 + m2;
+  const comx = (m1 * p1.cx + m2 * p2.cx) / M, comy = (m1 * p1.cy + m2 * p2.cy) / M;
+  const inertia = (p1.i0 + p2.i0) * rho - M * (comx * comx + comy * comy);
+  const b = new Body(K_CAR, P.carW / 2 + comx, comy + 0.0005, M, inertia);
+  b.linDamp = 0; b.angDamp = 0;
+  const loc = (a) => a.map((v, i) => v - (i & 1 ? comy : comx));
+  const fr = P.groundFriction, e = 0.1;
+  b.addPoly(loc(chassis), fr, e);
+  b.addPoly(loc(cabin), fr, e);
+  for (const w of wheels) b.addCircle(w[0] - comx, w[1] - comy, wr, fr, e).wheel = true;
+  b.tow = true; b.braking = false; b.spin = 0;
+  b.info = { sx, sy, comx, comy, wr, wheels };
+  world.add(b); world.car = b;
+  world.towTarget = P.speed;
+  world.towAccel = P.speed * P.speed / (2 * (RUN_UP - 0.15));
+  return b;
+}
+
+function createScene(P) {
+  nextBodyId = 1; nextShapeId = 1;
+  const world = new World(P.gravity);
+  world.groundShape.friction = P.groundFriction;
+  const car = buildCar(world, P);
+  const bw = P.brickW, bh = P.brickH, hw = bw / 2, hh = bh / 2;
+  const x0 = P.carW + RUN_UP;
+  const mass = P.brickMass * P.layers, inertia = mass * (bw * bw + bh * bh) / 12;
+  const bricks = [];
+  for (let r = 0; r < P.rows; r++) {
+    for (let c = 0; c < P.cols; c++) {
+      const x = x0 + bw * (c + 0.5 + (r & 1 ? STAGGER : 0)), y = bh * (r + 0.5);
+      const b = new Body(K_BRICK, x, y, mass, inertia);
+      b.addPoly([-hw, -hh, hw, -hh, hw, hh, -hw, hh], P.brickFriction, P.brickRestitution);
+      b.tint = (r * 7 + c * 13 + ((r * c) % 5)) % 6;
+      bricks.push(b); world.add(b);
+    }
+  }
+  const right = x0 + bw * (P.cols + STAGGER);
+  return { world, car, bricks, wallX0: x0, wallRight: right, P: Object.assign({}, P) };
+}
+
+/* Node hook for headless testing */
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { createScene, DEFAULTS, STEP, World, RUN_UP };
+}
+
+/* =====================================================================
+   PRESENTATION
+   ===================================================================== */
+function initApp() {
+  const $ = (s) => document.querySelector(s);
+  const canvas = $('#view'), ctx = canvas.getContext('2d'), stage = $('#stage');
+  const P = Object.assign({}, DEFAULTS);
+  const S = { scene: null, running: false, finished: false, acc: 0, timeScale: 1, still: 0, statusAt: 0 };
+  let W = 800, H = 600, dpr = 1, groundY = 450, simT = 0;
+  const cam = { x: 0, s: 60 }, base = { x: 0, s: 60 };
+  const shake = { amp: 0 };
+  const dust = [], chips = [], skids = [];
+  let rng = mulberry32(7), lastWheelX = [null, null];
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const fmt = (v, d) => v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  /* ---------- scene lifecycle ---------- */
+  function build() {
+    S.scene = createScene(P);
+    S.running = false; S.finished = false; S.acc = 0; S.still = 0;
+    dust.length = 0; chips.length = 0; skids.length = 0; shake.amp = 0; lastWheelX = [null, null];
+    rng = mulberry32(20240607);
+    computeBase(); cam.x = base.x; cam.s = base.s;
+    setStatus('Ready', '');
+    hideToast();
+    updateChips(); updateHud(true);
+  }
+  function startTest() {
+    build();
+    S.running = true;
+    setStatus('Launching', 'run');
+  }
+
+  function computeBase() {
+    const sc = S.scene, left = -1.0, right = sc.wallRight + 1.2;
+    const fitX = (W - 24) / (right - left);
+    const fitY = (groundY - 96) / (Math.max(P.rows * P.brickH, P.carH) + 1.3);
+    base.s = Math.max(12, Math.min(P.scale, fitX, fitY));
+    base.x = (left + right) / 2;
+  }
+
+  /* ---------- FX ---------- */
+  function spawnImpact(ev) {
+    const v = ev.v, strength = clamp(v / 25, 0.1, 1.6);
+    const carHit = ev.kind === 2;
+    if (v > 2.5) {
+      const nd = Math.min(carHit ? 7 : 3, 1 + (v * 0.35) | 0);
+      for (let i = 0; i < nd && dust.length < 700; i++) {
+        const a = Math.PI * (0.15 + rng() * 0.7);
+        dust.push({ x: ev.x + (rng() - 0.5) * 0.3, y: Math.max(0.05, ev.y) + rng() * 0.2, vx: Math.cos(a) * (0.5 + rng() * 2.5) * strength + ev.nx * 1.5,
+          vy: Math.sin(a) * (0.6 + rng() * 2.2) * strength, r: 0.10 + rng() * 0.22 * strength, life: 0, max: 0.8 + rng() * 1.2, a: 0.32 + rng() * 0.2, g: 0 });
+      }
+    }
+    if (v > 5) {
+      const nc = Math.min(carHit ? 12 : 5, 2 + (v * 0.4) | 0);
+      for (let i = 0; i < nc && chips.length < 500; i++) {
+        const sp = (0.25 + rng() * 0.6) * v * 0.45, a = Math.atan2(ev.ny, ev.nx) + (rng() - 0.5) * 2.4;
+        chips.push({ x: ev.x, y: Math.max(0.05, ev.y), vx: Math.cos(a) * sp + (carHit ? 3 : 0), vy: Math.abs(Math.sin(a)) * sp * 0.8 + 1,
+          sz: 0.025 + rng() * 0.055, rot: rng() * 6.28, vr: (rng() - 0.5) * 24, life: 0, max: 2.2 + rng() * 2, tint: (rng() * 3) | 0 });
+      }
+    }
+    if (carHit) shake.amp = Math.min(16, shake.amp + strength * 5.5);
+    else if (v > 8) shake.amp = Math.min(16, shake.amp + strength * 0.9);
+  }
+
+  function updateFx(dt) {
+    for (let i = dust.length - 1; i >= 0; i--) {
+      const p = dust[i]; p.life += dt;
+      if (p.life >= p.max) { dust[i] = dust[dust.length - 1]; dust.pop(); continue; }
+      const d = Math.exp(-dt * 1.6);
+      p.vx *= d; p.vy = p.vy * d + p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.y < 0.02 && p.g === 0) { p.y = 0.02; p.vy = Math.abs(p.vy) * 0.2; }
+      p.r += dt * 0.35;
+    }
+    for (let i = chips.length - 1; i >= 0; i--) {
+      const p = chips[i]; p.life += dt;
+      if (p.life >= p.max) { chips[i] = chips[chips.length - 1]; chips.pop(); continue; }
+      p.vy -= 9.81 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      if (p.y < p.sz) { p.y = p.sz; p.vy *= -0.3; p.vx *= 0.6; p.vr *= 0.6; if (Math.abs(p.vy) < 0.4) p.vy = 0; }
+    }
+    shake.amp *= Math.exp(-dt * 5.5);
+    const car = S.scene.car;
+    if (S.running && car.braking && dust.length < 700) {
+      const sp = Math.sqrt(car.vx * car.vx + car.vy * car.vy);
+      if (sp > 2 && car.y < 1.6 * car.info.sy) {
+        const cnt = dt * sp * 1.3; let n = Math.floor(cnt) + (rng() < cnt % 1 ? 1 : 0);
+        for (; n > 0; n--) {
+          const wh = car.info.wheels[(rng() * 2) | 0], x = car.x + car.c * (wh[0] - car.info.comx) - car.s * (wh[1] - car.info.comy);
+          dust.push({ x: x, y: 0.05, vx: -Math.sign(car.vx) * (0.5 + rng() * 1.5) + car.vx * 0.15, vy: 0.3 + rng() * 1.1, r: 0.08 + rng() * 0.12, life: 0, max: 0.6 + rng(), a: 0.22, g: 0 });
+        }
+      }
+    }
+    if (S.running && dmg() > 0.5 && rng() < dt * 22 && dust.length < 700) {
+      const hx = 1.4 * car.info.sx - car.info.comx, hy = 0.9 * car.info.sy - car.info.comy;
+      dust.push({ x: car.x + car.c * hx - car.s * hy, y: car.y + car.s * hx + car.c * hy, vx: (rng() - 0.5) * 0.4 + car.vx * 0.05, vy: 0.9 + rng() * 0.8, r: 0.1, life: 0, max: 1.6 + rng(), a: 0.4, g: 0.5, smoke: true });
+    }
+  }
+  function dmg() { const w = S.scene.world; return clamp(w.carImpulse / (w.car.mass * 14), 0, 1); }
+
+  /* ---------- per-step bookkeeping ---------- */
+  function afterStep() {
+    const sc = S.scene, w = sc.world, car = sc.car;
+    for (const ev of w.events) spawnImpact(ev);
+    w.events.length = 0;
+    const r = car.info.wr;
+    if (!car.braking) car.spin += (car.vx * car.c + car.vy * car.s) * STEP / r;
+    if (car.braking) {
+      for (let i = 0; i < 2; i++) {
+        const wh = car.info.wheels[i], lx = wh[0] - car.info.comx, ly = wh[1] - car.info.comy;
+        const wx = car.x + car.c * lx - car.s * ly, wy = car.y + car.s * lx + car.c * ly;
+        if (wy - r < 0.03 && Math.abs(car.vx) > 0.6) {
+          const last = lastWheelX[i];
+          if (last !== null && Math.abs(wx - last) < 1) {
+            const sg = skids[skids.length - 1];
+            if (sg && sg.w === i && Math.abs(sg.x1 - last) < 1e-6) sg.x1 = wx; else if (skids.length < 500) skids.push({ w: i, x0: last, x1: wx });
+          }
+          lastWheelX[i] = wx;
+        } else lastWheelX[i] = null;
+      }
+    }
+    let mv = 0, mw = 0;
+    for (const b of w.bodies) { const v = Math.abs(b.vx) + Math.abs(b.vy); if (v > mv) mv = v; const a = Math.abs(b.w); if (a > mw) mw = a; }
+    if (w.hit) {
+      S.still = (mv < 0.06 && mw < 0.12) ? S.still + STEP : 0;
+      if (S.still >= 1.2 || w.time - w.hitTime > 45) finish();
+    }
+  }
+
+  function brickStats() {
+    const sc = S.scene, L = sc.P.layers; let moving = 0, disp = 0;
+    for (const b of sc.bricks) {
+      const sp = Math.abs(b.vx) + Math.abs(b.vy);
+      if (sp > 0.15 || Math.abs(b.w) > 0.4) moving++;
+      if (Math.abs(b.x - b.x0) > 0.12 || Math.abs(b.y - b.y0) > 0.12 || Math.abs(Math.atan2(b.s, b.c)) > 0.12) disp++;
+    }
+    return { moving: moving * L, disp: disp * L, total: sc.bricks.length * L };
+  }
+
+  function finish() {
+    S.finished = true;
+    const st = brickStats(), sc = S.scene, car = sc.car;
+    const past = car.x + sc.P.carW / 2 - 0 - sc.wallX0;
+    let far = 0; for (const b of sc.bricks) far = Math.max(far, b.x - sc.wallRight);
+    setStatus('Complete', '');
+    const standing = st.total - st.disp;
+    showToast(`<b>Test complete</b> &middot; ${st.disp} of ${st.total} bricks displaced` + (standing > 0 ? `, ${standing} still standing` : ', wall destroyed') +
+      ` &middot; car nose ended ${fmt(Math.abs(past), 1)} m ${past >= 0 ? 'past' : 'short of'} the wall face` + (far > 0.5 ? ` &middot; debris thrown ${fmt(far, 1)} m` : ''));
+  }
+
+  /* ---------- HUD ---------- */
+  const el = { speed: $('#tSpeed'), time: $('#tTime'), moving: $('#tMoving'), disp: $('#tDisp'), mom: $('#tMom'), force: $('#tForce'), status: $('#status'), statusText: $('#statusText'), toast: $('#toast'), chips: $('#chips') };
+  function setStatus(t, cls) { el.statusText.textContent = t; el.status.className = 'status ' + cls; }
+  function showToast(html) { el.toast.innerHTML = html; el.toast.classList.add('show'); }
+  function hideToast() { el.toast.classList.remove('show'); }
+  function updateChips() {
+    const items = [['', fmt(P.speed, 1), 'm/s'], ['Wall', `${P.cols}&times;${P.rows}&times;${P.layers}`, ''], ['Brick', fmt(P.brickMass, 1), 'kg'], ['Car', fmt(P.carMass, 0), 'kg'], ['g', fmt(P.gravity, 2), 'm/s²'], ['μ brick', fmt(P.brickFriction, 2), ''], ['e', fmt(P.brickRestitution, 2), ''], ['μ ground', fmt(P.groundFriction, 2), ''], ['Scale', fmt(P.scale, 0), 'px/m']];
+    el.chips.innerHTML = items.map(([a, b, c]) => `<span class="chip">${a ? a + ' ' : ''}<b>${b}</b>${c ? ' ' + c : ''}</span>`).join('');
+    $('#consts').innerHTML = [['Car size', `${fmt(P.carW, 1)} &times; ${fmt(P.carH, 2)} m`], ['Brick size', `${fmt(P.brickW, 2)} &times; ${fmt(P.brickH, 2)} m`], ['Bricks in wall', `${P.cols * P.rows * P.layers}`], ['Wall mass', `${fmt(P.cols * P.rows * P.layers * P.brickMass, 0)} kg`], ['Run-up', `${RUN_UP} m`], ['Physics step', '480 Hz']].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  }
+  let hudT = 0;
+  function updateHud(force) {
+    const now = performance.now();
+    if (!force && now - hudT < 66) return; hudT = now;
+    const sc = S.scene, w = sc.world, car = sc.car, st = brickStats();
+    const sp = Math.sqrt(car.vx * car.vx + car.vy * car.vy);
+    el.speed.innerHTML = `${fmt(sp, 1)}<small>m/s &middot; ${fmt(sp * 3.6, 0)} km/h</small>`;
+    el.time.innerHTML = `${fmt(w.time, 2)}<small>s</small>`;
+    el.moving.innerHTML = `${st.moving}<small>/ ${st.total}</small>`;
+    el.disp.innerHTML = `${st.disp}<small>/ ${st.total}</small>`;
+    el.mom.innerHTML = `${fmt(car.mass * sp / 1000, 1)}<small>kN&middot;s</small>`;
+    el.force.innerHTML = `${fmt(w.peakForce / 1000, 0)}<small>kN</small>`;
+    if (S.running && !S.finished && w.hit) {
+      const t = w.time - w.hitTime;
+      if (t < 0.9) setStatus('Impact', 'hit'); else setStatus('Settling', 'run');
+    }
+  }
+
+  /* ---------- camera ---------- */
+  const xsBuf = { a: new Float64Array(1) };
+  function updateCamera(dt) {
+    const sc = S.scene, car = sc.car;
+    let tx = base.x, ts = base.s;
+    if (S.running && sc.world.hit) {
+      const n = sc.bricks.length;
+      if (xsBuf.a.length !== n) xsBuf.a = new Float64Array(n);
+      for (let i = 0; i < n; i++) xsBuf.a[i] = sc.bricks[i].x;
+      xsBuf.a.sort();
+      const p04 = xsBuf.a[Math.floor(0.04 * (n - 1))], p96 = xsBuf.a[Math.floor(0.96 * (n - 1))];
+      const hl = sc.P.carW / 2;
+      const lo = Math.min(car.x - hl - 1.5, p04 - 1.5, sc.wallX0 - 2.5), hi = Math.max(car.x + hl + 1.5, p96 + 1.5, sc.wallRight + 1);
+      const width = hi - lo;
+      ts = clamp((W - 24) / width, 22, base.s);
+      const vis = (W - 24) / ts;
+      if (width > vis) { tx = lo + vis / 2; const carHi = car.x + hl + 1.5; if (carHi > lo + vis) tx = carHi - vis / 2; }
+      else tx = (lo + hi) / 2;
+    }
+    const k = 1 - Math.exp(-dt * 3.2);
+    cam.x += (tx - cam.x) * k;
+    cam.s = Math.exp(Math.log(cam.s) + (Math.log(ts) - Math.log(cam.s)) * k);
+  }
+
+  /* ---------- rendering ---------- */
+  const BRICK = ['#b9583d', '#ad4f38', '#c4694c', '#a24833', '#bd6042', '#a64c34'];
+  const BACK = ['#8a3f2d', '#753526', '#642d20', '#552619'];
+  let sky = null;
+  function buildSky() {
+    sky = ctx.createLinearGradient(0, 0, 0, groundY);
+    sky.addColorStop(0, '#8fb9de'); sky.addColorStop(0.55, '#c9def0'); sky.addColorStop(1, '#f2ead9');
+  }
+  function drawHills(par, lift, amp, freq, color) {
+    ctx.beginPath(); ctx.moveTo(0, groundY);
+    for (let x = 0; x <= W + 12; x += 12) {
+      const t = (x + cam.x * cam.s * par) / freq;
+      ctx.lineTo(x, groundY - lift - amp * (Math.sin(t * 1.3) + 0.6 * Math.sin(t * 2.9 + 1.7) + 0.3 * Math.sin(t * 6.1 + 0.4)));
+    }
+    ctx.lineTo(W, groundY); ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+  }
+
+  function render() {
+    const sc = S.scene, world = sc.world, car = sc.car, Sc = cam.s;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    simT += 0.016;
+    const shx = shake.amp * Math.sin(simT * 83) , shy = shake.amp * 0.6 * Math.sin(simT * 97 + 1);
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, groundY + 2);
+    const sun = ctx.createRadialGradient(W * 0.78, groundY * 0.28, 4, W * 0.78, groundY * 0.28, 170);
+    sun.addColorStop(0, 'rgba(255,248,224,.85)'); sun.addColorStop(1, 'rgba(255,248,224,0)');
+    ctx.fillStyle = sun; ctx.fillRect(0, 0, W, groundY);
+    drawHills(0.05, 70, 26, 260, '#b6cddb'); drawHills(0.12, 26, 20, 170, '#9db9ca'); drawHills(0.22, 0, 12, 110, '#85a3b5');
+
+    const ox = W / 2 - cam.x * Sc + shx, oy = groundY + shy;
+    const xl = cam.x - (W / 2 + 60) / Sc, xr = cam.x + (W / 2 + 60) / Sc;
+
+    /* lamp posts + fence (world fixed) */
+    ctx.lineWidth = Math.max(1.5, 0.07 * Sc); ctx.strokeStyle = '#5c6b78';
+    for (let x = Math.ceil(xl / 12) * 12; x < xr; x += 12) {
+      const X = ox + x * Sc; ctx.beginPath(); ctx.moveTo(X, oy); ctx.lineTo(X, oy - 5.6 * Sc); ctx.lineTo(X + 0.9 * Sc, oy - 5.9 * Sc); ctx.stroke();
+      ctx.fillStyle = '#fff6d0'; ctx.fillRect(X + 0.75 * Sc, oy - 5.95 * Sc, 0.4 * Sc, 0.09 * Sc);
+    }
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(70,84,96,.55)';
+    ctx.beginPath(); ctx.moveTo(0, oy - 0.75 * Sc); ctx.lineTo(W, oy - 0.75 * Sc); ctx.moveTo(0, oy - 0.35 * Sc); ctx.lineTo(W, oy - 0.35 * Sc);
+    for (let x = Math.ceil(xl / 2) * 2; x < xr; x += 2) { const X = ox + x * Sc; ctx.moveTo(X, oy); ctx.lineTo(X, oy - 0.95 * Sc); }
+    ctx.stroke();
+
+    /* ground */
+    const gg = ctx.createLinearGradient(0, groundY, 0, H);
+    gg.addColorStop(0, '#565c66'); gg.addColorStop(0.08, '#3c4149'); gg.addColorStop(1, '#22262c');
+    ctx.fillStyle = gg; ctx.fillRect(0, oy, W, H - oy + 4);
+    ctx.fillStyle = '#9aa1ab'; ctx.fillRect(0, oy, W, Math.max(3, 0.07 * Sc));
+    ctx.fillStyle = 'rgba(226,226,210,.72)';
+    const dashY = oy + Math.max(22, 0.42 * Sc);
+    for (let x = Math.floor(xl / 3) * 3; x < xr; x += 3) ctx.fillRect(ox + x * Sc, dashY, 1.4 * Sc, Math.max(2, 0.05 * Sc));
+    ctx.font = '600 11px ui-sans-serif,system-ui,sans-serif'; ctx.textAlign = 'center';
+    for (let x = Math.ceil(xl / 5) * 5; x < xr; x += 5) {
+      const X = ox + x * Sc;
+      ctx.fillStyle = '#ffcf5a'; ctx.fillRect(X - 1, oy, 2, Math.max(6, 0.12 * Sc) + 5);
+      ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText(x + ' m', X, oy + Math.max(22, 0.42 * Sc) + 24);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.14)';
+    for (let x = Math.ceil(xl); x < xr; x++) if (x % 5) ctx.fillRect(ox + x * Sc, oy, 1, 4);
+    /* skid marks */
+    ctx.fillStyle = 'rgba(8,8,10,.62)';
+    const sh = Math.max(2, 0.05 * Sc);
+    for (const s of skids) ctx.fillRect(ox + Math.min(s.x0, s.x1) * Sc, oy + 1 + s.w * 3, Math.abs(s.x1 - s.x0) * Sc + 1, sh);
+
+    /* back layers of wall */
+    const bricks = sc.bricks, nB = bricks.length, L = sc.P.layers, bw = sc.P.brickW / 2, bh = sc.P.brickH / 2;
+    const cx = new Float32Array(nB * 8);
+    for (let i = 0; i < nB; i++) {
+      const b = bricks[i], c = b.c, s = b.s, o = i * 8;
+      const ax = c * bw, ay = s * bw, bx = -s * bh, by = c * bh;
+      cx[o] = ox + (b.x - ax - bx) * Sc; cx[o + 1] = oy - (b.y - ay - by) * Sc;
+      cx[o + 2] = ox + (b.x + ax - bx) * Sc; cx[o + 3] = oy - (b.y + ay - by) * Sc;
+      cx[o + 4] = ox + (b.x + ax + bx) * Sc; cx[o + 5] = oy - (b.y + ay + by) * Sc;
+      cx[o + 6] = ox + (b.x - ax + bx) * Sc; cx[o + 7] = oy - (b.y - ay + by) * Sc;
+    }
+    const inside = (i) => cx[i * 8] > -80 && cx[i * 8] < W + 80;
+    ctx.lineJoin = 'round';
+    for (let l = L - 1; l >= 1; l--) {
+      const dx = l * 0.05 * Sc, dy = -l * 0.035 * Sc;
+      ctx.beginPath();
+      for (let i = 0; i < nB; i++) {
+        if (!inside(i)) continue; const o = i * 8;
+        ctx.moveTo(cx[o] + dx, cx[o + 1] + dy); ctx.lineTo(cx[o + 2] + dx, cx[o + 3] + dy); ctx.lineTo(cx[o + 4] + dx, cx[o + 5] + dy); ctx.lineTo(cx[o + 6] + dx, cx[o + 7] + dy); ctx.closePath();
+      }
+      ctx.fillStyle = BACK[Math.min(l - 1, 3)]; ctx.fill();
+      ctx.strokeStyle = 'rgba(28,10,6,.55)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    /* front layer */
+    for (let t = 0; t < 6; t++) {
+      ctx.beginPath(); let any = false;
+      for (let i = 0; i < nB; i++) {
+        if (bricks[i].tint !== t || !inside(i)) continue; any = true; const o = i * 8;
+        ctx.moveTo(cx[o], cx[o + 1]); ctx.lineTo(cx[o + 2], cx[o + 3]); ctx.lineTo(cx[o + 4], cx[o + 5]); ctx.lineTo(cx[o + 6], cx[o + 7]); ctx.closePath();
+      }
+      if (any) { ctx.fillStyle = BRICK[t]; ctx.fill(); }
+    }
+    ctx.beginPath();
+    for (let i = 0; i < nB; i++) { if (!inside(i)) continue; const o = i * 8; ctx.moveTo(cx[o + 6], cx[o + 7]); ctx.lineTo(cx[o + 4], cx[o + 5]); }
+    ctx.strokeStyle = 'rgba(255,214,190,.30)'; ctx.lineWidth = Math.max(1, 0.03 * Sc); ctx.stroke();
+    ctx.beginPath();
+    for (let i = 0; i < nB; i++) {
+      if (!inside(i)) continue; const o = i * 8;
+      ctx.moveTo(cx[o], cx[o + 1]); ctx.lineTo(cx[o + 2], cx[o + 3]); ctx.lineTo(cx[o + 4], cx[o + 5]); ctx.lineTo(cx[o + 6], cx[o + 7]); ctx.closePath();
+    }
+    ctx.strokeStyle = 'rgba(52,20,12,.6)'; ctx.lineWidth = 1; ctx.stroke();
+
+    /* dust behind car, then car, chips, smoke */
+    drawParticles(ox, oy, Sc, false);
+    drawCar(car, ox, oy, Sc);
+    drawParticles(ox, oy, Sc, true);
+    ctx.textAlign = 'left';
+  }
+
+  function drawParticles(ox, oy, Sc, front) {
+    if (front) {
+      for (const p of chips) {
+        const a = 1 - Math.max(0, (p.life - p.max * 0.7) / (p.max * 0.3));
+        ctx.save(); ctx.translate(ox + p.x * Sc, oy - p.y * Sc); ctx.rotate(-p.rot); ctx.globalAlpha = a;
+        ctx.fillStyle = BRICK[p.tint]; const s = Math.max(1.5, p.sz * Sc); ctx.fillRect(-s, -s * 0.6, s * 2, s * 1.2); ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+    } else {
+      for (const p of dust) {
+        const t = p.life / p.max, a = p.a * (1 - t) * (t < 0.1 ? t / 0.1 : 1);
+        ctx.fillStyle = p.smoke ? `rgba(45,45,50,${a * 1.3})` : `rgba(176,158,136,${a})`;
+        ctx.beginPath(); ctx.arc(ox + p.x * Sc, oy - p.y * Sc, Math.max(1, p.r * Sc), 0, 6.2832); ctx.fill();
+      }
+    }
+  }
+
+  function drawCar(car, ox, oy, Sc) {
+    const inf = car.info, sx = inf.sx, sy = inf.sy, comx = inf.comx, comy = inf.comy;
+    const gx = (x) => x * sx - comx, gy = (y) => y * sy - comy;
+    const lw = 1 / Sc;
+    const hgt = Math.max(0, car.y - comy);
+    ctx.save();
+    ctx.fillStyle = `rgba(10,12,16,${0.30 * Math.exp(-hgt * 1.4)})`;
+    ctx.beginPath(); ctx.ellipse(ox + car.x * Sc, oy + 1, car.info.sx * 2.1 * Sc, 5 + 0.06 * Sc, 0, 0, 6.2832); ctx.fill();
+    ctx.translate(ox + car.x * Sc, oy - car.y * Sc); ctx.rotate(-Math.atan2(car.s, car.c)); ctx.scale(Sc, -Sc);
+    ctx.lineJoin = 'round';
+    /* body */
+    const chassis = car.shapes[0], cabin = car.shapes[1];
+    const poly = (sh) => { ctx.beginPath(); ctx.moveTo(sh.lx[0], sh.ly[0]); for (let i = 1; i < sh.n; i++) ctx.lineTo(sh.lx[i], sh.ly[i]); ctx.closePath(); };
+    let g = ctx.createLinearGradient(0, gy(0.28), 0, gy(0.86)); g.addColorStop(0, '#173a9c'); g.addColorStop(0.55, '#2c66f0'); g.addColorStop(1, '#5f93ff');
+    poly(chassis); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#0d2270'; ctx.lineWidth = 1.6 * lw; ctx.stroke();
+    g = ctx.createLinearGradient(0, gy(0.8), 0, gy(1.45)); g.addColorStop(0, '#3b76f7'); g.addColorStop(1, '#7ea9ff');
+    poly(cabin); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#0d2270'; ctx.stroke();
+    /* windows */
+    const glass = ctx.createLinearGradient(0, gy(0.88), 0, gy(1.4)); glass.addColorStop(0, '#26364f'); glass.addColorStop(1, '#8fb4d6');
+    ctx.fillStyle = glass;
+    ctx.beginPath(); ctx.moveTo(gx(0.72), gy(0.88)); ctx.lineTo(gx(0.28), gy(1.36)); ctx.lineTo(gx(-0.20), gy(1.36)); ctx.lineTo(gx(-0.20), gy(0.88)); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(gx(-0.30), gy(0.88)); ctx.lineTo(gx(-0.30), gy(1.36)); ctx.lineTo(gx(-0.80), gy(1.36)); ctx.lineTo(gx(-1.15), gy(0.88)); ctx.closePath(); ctx.fill();
+    /* crash-test dummy */
+    ctx.fillStyle = '#f6c21e'; ctx.beginPath(); ctx.arc(gx(-0.02), gy(1.12), 0.17 * Math.min(sx, sy), 0, 6.2832); ctx.fill();
+    ctx.fillStyle = '#151515'; ctx.beginPath(); ctx.moveTo(gx(-0.02), gy(1.12)); ctx.arc(gx(-0.02), gy(1.12), 0.17 * Math.min(sx, sy), 0, 1.5708); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(gx(-0.02), gy(1.12)); ctx.arc(gx(-0.02), gy(1.12), 0.17 * Math.min(sx, sy), 3.1416, 4.7124); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(20,30,50,.5)'; ctx.fillRect(gx(-0.12), gy(0.88), 0.2 * sx, 0.16 * sy);
+    /* damage: cracks */
+    const d = dmg();
+    if (d > 0.12) {
+      ctx.strokeStyle = 'rgba(235,245,255,.8)'; ctx.lineWidth = 1.1 * lw; ctx.beginPath();
+      const k = Math.min(1, d * 1.6);
+      ctx.moveTo(gx(0.30), gy(1.25)); ctx.lineTo(gx(0.05 - 0.1 * k), gy(1.1)); ctx.lineTo(gx(-0.12), gy(0.95));
+      ctx.moveTo(gx(0.05), gy(1.1)); ctx.lineTo(gx(0.32), gy(1.02));
+      if (k > 0.4) { ctx.moveTo(gx(0.15), gy(1.3)); ctx.lineTo(gx(-0.1), gy(1.24)); ctx.moveTo(gx(0.55), gy(0.95)); ctx.lineTo(gx(0.34), gy(1.08)); }
+      ctx.stroke();
+    }
+    /* details */
+    ctx.strokeStyle = 'rgba(8,20,70,.7)'; ctx.lineWidth = 1.2 * lw;
+    ctx.beginPath(); ctx.moveTo(gx(-0.25), gy(0.86)); ctx.lineTo(gx(-0.25), gy(0.40)); ctx.moveTo(gx(-1.9), gy(0.50)); ctx.lineTo(gx(1.95), gy(0.50)); ctx.stroke();
+    ctx.fillStyle = '#0a1233'; ctx.fillRect(gx(0.02), gy(0.68), 0.28 * sx, 0.05 * sy); ctx.fillRect(gx(-0.55), gy(0.68), 0.28 * sx, 0.05 * sy);
+    ctx.fillStyle = '#fff3b0'; ctx.fillRect(gx(1.88), gy(0.54), 0.22 * sx, 0.12 * sy);
+    ctx.fillStyle = '#1a1d24'; ctx.fillRect(gx(1.98), gy(0.30), 0.12 * sx, 0.16 * sy);
+    ctx.fillStyle = '#d61f2c'; ctx.fillRect(gx(-2.10), gy(0.58), 0.10 * sx, 0.14 * sy);
+    ctx.fillStyle = '#ff8a3d'; ctx.fillRect(gx(-1.9), gy(0.36), 3.9 * sx, 0.05 * sy);
+    for (const m of [[1.35, 0.68], [-1.55, 0.66], [-0.3, 1.40]]) {
+      const r = 0.1 * Math.min(sx, sy); ctx.fillStyle = '#f6c21e'; ctx.beginPath(); ctx.arc(gx(m[0]), gy(m[1]), r, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.moveTo(gx(m[0]), gy(m[1])); ctx.arc(gx(m[0]), gy(m[1]), r, 0, 1.5708); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(gx(m[0]), gy(m[1])); ctx.arc(gx(m[0]), gy(m[1]), r, 3.1416, 4.7124); ctx.closePath(); ctx.fill();
+    }
+    /* dents */
+    if (d > 0.2) {
+      ctx.strokeStyle = 'rgba(5,15,60,.65)'; ctx.lineWidth = 2 * lw; ctx.beginPath();
+      ctx.moveTo(gx(2.06), gy(0.62)); ctx.lineTo(gx(1.86), gy(0.58)); ctx.lineTo(gx(1.98), gy(0.46));
+      ctx.moveTo(gx(1.7), gy(0.80)); ctx.lineTo(gx(1.5), gy(0.7)); ctx.stroke();
+    }
+    /* wheels */
+    for (let i = 0; i < 2; i++) {
+      const w = inf.wheels[i], x = w[0] - comx, y = w[1] - comy, r = inf.wr;
+      ctx.fillStyle = '#0a0c10'; ctx.beginPath(); ctx.arc(x, y, r * 1.12, 0, 6.2832); ctx.fillStyle = 'rgba(6,8,16,.85)'; ctx.fill();
+      ctx.fillStyle = '#15181f'; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
+      ctx.strokeStyle = '#2b303a'; ctx.lineWidth = 3 * lw; ctx.beginPath(); ctx.arc(x, y, r * 0.93, 0, 6.2832); ctx.stroke();
+      ctx.fillStyle = '#c4cad6'; ctx.beginPath(); ctx.arc(x, y, r * 0.58, 0, 6.2832); ctx.fill();
+      ctx.strokeStyle = '#6a7180'; ctx.lineWidth = 2.2 * lw; ctx.beginPath();
+      for (let k = 0; k < 5; k++) { const a = -car.spin + k * 1.2566; ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * r * 0.55, y + Math.sin(a) * r * 0.55); }
+      ctx.stroke();
+      ctx.fillStyle = '#eef1f7'; ctx.beginPath(); ctx.arc(x, y, r * 0.14, 0, 6.2832); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /* ---------- controls ---------- */
+  const inputs = {};
+  function buildPanel() {
+    for (const d of PARAM_DEFS) {
+      const wrap = document.createElement('div'); wrap.className = 'ctl';
+      wrap.innerHTML = `<div class="ctl-h"><label for="rg-${d.key}">${d.label}</label><span class="val"><input type="number" id="num-${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" aria-label="${d.label}"><em>${d.unit}</em></span></div>` +
+        `<input type="range" id="rg-${d.key}" min="${d.min}" max="${d.max}" step="${d.step}">`;
+      (d.main ? $('#mainCtl') : $('#advCtl')).appendChild(wrap);
+      const rg = wrap.querySelector('input[type=range]'), nm = wrap.querySelector('input[type=number]');
+      inputs[d.key] = { rg, nm, d };
+      rg.addEventListener('input', () => setParam(d.key, parseFloat(rg.value)));
+      nm.addEventListener('change', () => { const v = parseFloat(nm.value); setParam(d.key, isNaN(v) ? DEFAULTS[d.key] : v); });
+      nm.addEventListener('keydown', (e) => { if (e.key === 'Enter') nm.blur(); });
+    }
+    syncInputs();
+  }
+  function syncInputs() {
+    for (const k in inputs) {
+      const { rg, nm, d } = inputs[k], v = P[k];
+      rg.value = v; nm.value = v.toFixed(d.dec);
+      rg.style.setProperty('--p', ((v - d.min) / (d.max - d.min) * 100) + '%');
+    }
+  }
+  function setParam(key, v) {
+    const d = inputs[key].d;
+    v = clamp(Math.round(v / d.step) * d.step, d.min, d.max);
+    v = parseFloat(v.toFixed(4));
+    P[key] = v; syncInputs(); build();
+  }
+
+  $('#btnTest').addEventListener('click', startTest);
+  $('#btnReset').addEventListener('click', build);
+  $('#btnDefaults').addEventListener('click', () => { Object.assign(P, DEFAULTS); syncInputs(); build(); });
+  const panel = $('#panel'), btnS = $('#btnSettings');
+  function togglePanel(open) {
+    const o = open === undefined ? panel.classList.contains('closed') : open;
+    panel.classList.toggle('closed', !o); btnS.setAttribute('aria-expanded', String(o));
+  }
+  btnS.addEventListener('click', () => togglePanel());
+  document.querySelectorAll('#speedSeg button').forEach((b) => b.addEventListener('click', () => {
+    S.timeScale = parseFloat(b.dataset.ts);
+    document.querySelectorAll('#speedSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  window.addEventListener('keydown', (e) => {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+    if (e.code === 'Space' && e.target.tagName !== 'BUTTON') { e.preventDefault(); startTest(); }
+    else if (e.key === 'r' || e.key === 'R') build();
+  });
+
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    W = Math.max(280, r.width); H = Math.max(280, r.height); dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    groundY = Math.max(H * 0.5, Math.min(H * 0.76, H - 150));
+    buildSky();
+    if (S.scene) { computeBase(); if (!(S.running && S.scene.world.hit)) { cam.x = base.x; cam.s = base.s; } }
+  }
+  new ResizeObserver(resize).observe(stage);
+  if (window.innerWidth < 1000) togglePanel(false);
+
+  buildPanel(); resize(); build();
+
+  /* ---------- main loop ---------- */
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
+    let fxDt = dt;
+    if (S.running && !S.finished) {
+      S.acc += dt * S.timeScale; let n = 0;
+      while (S.acc >= STEP && n < 6) { S.scene.world.step(); afterStep(); S.acc -= STEP; n++; if (S.finished) break; }
+      if (n === 6) S.acc = 0;
+      fxDt = dt * S.timeScale;
+    }
+    updateFx(fxDt); updateCamera(dt); render(); updateHud(false);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  window.__crash = { P, S, cam, get scene() { return S.scene; }, startTest, build, setParam };
+}
+
+if (typeof document !== 'undefined') initApp();
+</script>
+</body>
+</html>
