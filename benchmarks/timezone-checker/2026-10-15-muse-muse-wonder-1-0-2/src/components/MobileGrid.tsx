@@ -1,0 +1,43 @@
+import { formatHour, formatUtcOffset, type TimeFormat } from '../lib/time'
+import type { RowData } from '../lib/types'
+
+interface Props {
+  rows: RowData[]
+  timeFormat: TimeFormat
+  onPromote: (id: string) => void
+  onRemove: (id: string) => void
+}
+
+export default function MobileGrid({ rows, timeFormat, onPromote, onRemove }: Props) {
+  const hours = Array.from({ length: 24 }, (_, i) => i)
+  return (
+    <div className="mobile-grid" data-layout="mobile">
+      <div className="mobile-header" style={{ gridTemplateColumns: `52px repeat(${rows.length}, minmax(0,1fr))` }}>
+        <div className="mobile-corner">Ref ↓</div>
+        {rows.map((row, idx) => (
+          <div key={row.city.id} className="mobile-city-head">
+            <button type="button" className="city-name-btn small" onClick={() => onPromote(row.city.id)} aria-label={idx === 0 ? `${row.city.name} (reference)` : `Promote ${row.city.name} to reference`}>
+              {row.city.name}
+            </button>
+            {idx === 0 && <span className="ref-badge">REF</span>}
+            <span className="utc-offset small">{formatUtcOffset(row.offset)}</span>
+            <button type="button" className="remove-btn small" onClick={() => onRemove(row.city.id)} aria-label={`Remove ${row.city.name}`}>×</button>
+          </div>
+        ))}
+      </div>
+      {hours.map((h) => (
+        <div key={h} className="mobile-row" style={{ gridTemplateColumns: `52px repeat(${rows.length}, minmax(0,1fr))` }}>
+          <div className="mobile-hour-label">{formatHour(h, timeFormat)}</div>
+          {rows.map((row) => {
+            const cell = row.cells[h]
+            return (
+              <div key={row.city.id} className={`cell cell--${cell.state}`} data-state={cell.state} data-ref-hour={h} title={`${row.city.name}: ${cell.label} — ${cell.state}`}>
+                {cell.label}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}

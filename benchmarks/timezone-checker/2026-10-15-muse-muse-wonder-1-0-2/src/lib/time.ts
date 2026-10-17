@@ -1,0 +1,105 @@
+export type TimeFormat = '12h' | '24h'
+export type Mode = 'meeting' | 'base'
+
+export function getOffsetMinutes(timezone: string, date = new Date()): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date)
+    const map: Record<string, number> = {}
+    for (const p of parts) {
+      if (p.type !== 'literal') map[p.type] = parseInt(p.value, 10)
+    }
+    const asUTC = Date.UTC(map.year, map.month - 1, map.day, map.hour, map.minute, map.second)
+    const truncated = Math.floor(date.getTime() / 1000) * 1000
+    return Math.round((asUTC - truncated) / 60000)
+  } catch {
+    return 0
+  }
+}
+
+export function formatUtcOffset(offsetMinutes: number): string {
+  const sign = offsetMinutes < 0 ? '-' : '+'
+  const abs = Math.abs(offsetMinutes)
+  const h = Math.floor(abs / 60)
+  const m = abs % 60
+  if (m === 0) return `UTC${sign}${h}`
+  return `UTC${sign}${h}:${String(m).padStart(2, '0')}`
+}
+
+export function normalizeMinutes(minutes: number): number {
+  return ((minutes % 1440) + 1440) % 1440
+}
+
+export function localMinutesForRefHour(refHour: number, refOffset: number, targetOffset: number): number {
+  return normalizeMinutes(refHour * 60 + (targetOffset - refOffset))
+}
+
+export function isAwake(localMinutes: number, wake: number, sleep: number): boolean {
+  const mins = normalizeMinutes(localMinutes)
+  const start = wake * 60
+  const end = sleep * 60
+  if (start === end) return true
+  if (start < end) return mins >= start && mins < end
+  return mins >= start || mins < end
+}
+
+export function isAwakeHour(localHour: number, wake: number, sleep: number): boolean {
+  return isAwake(localHour * 60, wake, sleep)
+}
+
+export function formatHour(hour: number, format: TimeFormat): string {
+  const h = ((hour % 24) + 24) % 24
+  if (format === '24h') return String(h).padStart(2, '0')
+  if (h === 0) return '12am'
+  if (h === 12) return '12pm'
+  if (h < 12) return `${h}am`
+  return `${h - 12}pm`
+}
+
+export function formatHourLong(hour: number, format: TimeFormat): string {
+  const h = ((hour % 24) + 24) % 24
+  if (format === '24h') return `${String(h).padStart(2, '0')}:00`
+  return formatHour(h, format)
+}
+
+export function formatMinutes(minutes: number, format: TimeFormat): string {
+  const mins = normalizeMinutes(minutes)
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (m === 0) return formatHour(h, format)
+  if (format === '24h') return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  const suffix = h < 12 ? 'am' : 'pm'
+  const display = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${display}:${String(m).padStart(2, '0')}${suffix}`
+}
+
+export interface TimeRange {
+  start: number
+  endExclusive: number
+}
+
+export function contiguousRanges(hours: number[]): TimeRange[] {
+  const sorted = [...hours].sort((a, b) => a - b)
+  const ranges: TimeRange[] = []
+  for (const h of sorted) {
+    const last = ranges[ranges.length - 1]
+    if (last && h === last.endExclusive) {
+      last.endExclusive = h + 1
+    } else {
+      ranges.push({ start: h, endExclusive: h + 1 })
+    }
+  }
+  return ranges
+}
+
+export function formatRange(range: TimeRange, format: TimeFormat): string {
+  return `${formatHour(range.start, format)} — ${formatHour(range.endExclusive, format)}`
+}

@@ -1,0 +1,13 @@
+import { chromium } from "playwright";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const errors = [];
+page.on("pageerror", (e) => errors.push("pageerror: " + String(e)));
+page.on("console", (m) => (m.type() === "error" || m.type() === "warning") && errors.push(m.type() + ": " + m.text()));
+await page.goto("http://localhost:9391/", { waitUntil: "networkidle" });
+await page.waitForSelector("[role=grid] [data-thread-id]");
+await page.getByRole("button", { name: "Compose" }).first().click();
+await page.waitForTimeout(3000);
+console.log("composers:", await page.locator("[data-composer]").count(), "ui:", await page.evaluate(() => document.querySelectorAll("[role=dialog]").length));
+console.log(errors.join("\n") || "no errors");
+await browser.close();

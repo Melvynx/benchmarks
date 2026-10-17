@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>muse-wonder-1.0</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#070507;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#f5efe8}
+#app{position:fixed;inset:0}canvas{display:block}
+.brand{position:fixed;top:20px;left:22px;z-index:10;pointer-events:none}
+.brand h1{font-size:15px;letter-spacing:.22em;font-weight:600;margin:0;text-transform:lowercase;color:rgba(255,244,230,.92);text-shadow:0 2px 18px rgba(0,0,0,.7)}
+.brand p{margin:6px 0 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,244,230,.45)}
+.hint{position:fixed;left:22px;bottom:20px;z-index:10;font-size:11px;letter-spacing:.08em;color:rgba(255,244,230,.48);pointer-events:none;text-shadow:0 1px 8px #000}
+.panel{position:fixed;right:18px;bottom:18px;z-index:20;width:288px;padding:16px 16px 14px;border-radius:18px;background:linear-gradient(160deg,rgba(20,16,20,.72),rgba(10,8,12,.62));backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.10);box-shadow:0 18px 50px rgba(0,0,0,.55)}
+.panel .row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0}
+.panel label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,244,230,.72)}
+.panel input[type=range]{-webkit-appearance:none;appearance:none;width:150px;height:4px;border-radius:99px;background:rgba(255,255,255,.18);outline:none}
+.panel input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#ffd9a0;border:2px solid rgba(0,0,0,.35);box-shadow:0 0 12px rgba(255,180,90,.7);cursor:pointer}
+.swatches{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 2px}
+.swatch{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.18);cursor:pointer;padding:0;position:relative;box-shadow:inset 0 0 0 3px rgba(0,0,0,.18)}
+.swatch.active{border-color:#fff;transform:scale(1.08)}
+.switch{position:relative;width:48px;height:26px;flex:0 0 auto}
+.switch input{opacity:0;width:100%;height:100%;position:absolute;margin:0;cursor:pointer;z-index:2}
+.knob{position:absolute;inset:0;border-radius:99px;background:rgba(255,255,255,.16);transition:.25s;border:1px solid rgba(255,255,255,.14)}
+.knob:after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#ddd;transition:.25s}
+.switch input:checked + .knob{background:rgba(255,166,66,.85);box-shadow:0 0 16px rgba(255,150,50,.55)}
+.switch input:checked + .knob:after{left:25px;background:#fff7e8}
+.small{font-size:11px;color:rgba(255,244,230,.55)}
+.divider{height:1px;background:rgba(255,255,255,.09);margin:12px 0}
+@media(max-width:640px){.panel{left:12px;right:12px;width:auto;bottom:12px}.hint{display:none}.brand{top:14px;left:14px}}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div class="brand"><h1>muse-wonder-1.0</h1><p>lava lamp &mdash; night study</p></div>
+<div class="hint">Drag to orbit &middot; Scroll to zoom &middot; Click the cord switch</div>
+
+<aside class="panel" aria-label="Lamp controls">
+  <div class="row" style="margin-top:0"><label for="power">Power</label><span class="switch"><input id="power" type="checkbox" checked><span class="knob"></span></span></div>
+  <div class="divider"></div>
+  <label>Colour</label>
+  <div class="swatches" id="swatches"></div>
+  <div class="row"><label for="heat">Heat</label><input id="heat" type="range" min="0.4" max="2" step="0.01" value="1"></div>
+  <div class="row"><label for="waxAmt">Wax amount</label><input id="waxAmt" type="range" min="0.35" max="1.6" step="0.01" value="1"></div>
+  <div class="row"><label for="room">Room light</label><input id="room" type="range" min="0" max="1.6" step="0.01" value="0.55"></div>
+  <div class="divider"></div>
+  <div class="row"><label for="slow">Slow motion</label><span class="switch"><input id="slow" type="checkbox"><span class="knob"></span></span></div>
+  <div class="row" style="margin-bottom:0"><label for="orbit">Auto-orbit</label><span class="switch"><input id="orbit" type="checkbox"><span class="knob"></span></span></div>
+</aside>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const app=document.getElementById('app');
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.08;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.useLegacyLights=false;
+app.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0a0709);
+scene.fog=new THREE.FogExp2(0x0a0709,0.045);
+const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,0.1,100);
+camera.position.set(4.6,3.4,6.2);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,2.1,0);
+controls.enableDamping=true; controls.dampingFactor=0.06;
+controls.minDistance=2.4; controls.maxDistance=11;
+controls.maxPolarAngle=Math.PI*0.62; controls.minPolarAngle=Math.PI*0.12;
+controls.autoRotateSpeed=0.7;
+
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(renderer),0.04).texture;
+scene.environmentIntensity=0.35;
+
+// procedural wood texture
+function woodTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=512; const g=c.getContext('2d');
+  g.fillStyle='#4a2f1d'; g.fillRect(0,0,512,512);
+  for(let i=0;i<90;i++){ const y=Math.random()*512; g.strokeStyle=`rgba(${20+Math.random()*60|0},${12+Math.random()*35|0},${6+Math.random()*18|0},${0.18+Math.random()*0.25})`; g.lineWidth=1+Math.random()*5; g.beginPath(); g.moveTo(0,y); for(let x=0;x<=512;x+=32) g.lineTo(x,y+Math.sin(x*0.02+i)*4+(Math.random()-0.5)*3); g.stroke(); }
+  for(let i=0;i<2600;i++){ g.fillStyle=`rgba(0,0,0,${Math.random()*0.08})`; g.fillRect(Math.random()*512,Math.random()*512,1.5,1.5); }
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=8; return t;
+}
+function wallTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d');
+  g.fillStyle='#171216'; g.fillRect(0,0,256,256);
+  for(let i=0;i<9000;i++){ const v=Math.random()*22; g.fillStyle=`rgba(${140+v|0},${120+v|0},${130+v|0},${Math.random()*0.05})`; g.fillRect(Math.random()*256,Math.random()*256,1,1); }
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(4,2); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+
+// room
+const table=new THREE.Mesh(new THREE.BoxGeometry(16,0.35,10), new THREE.MeshStandardMaterial({map:woodTexture(),roughness:0.62,metalness:0.02,envMapIntensity:0.35}));
+table.position.y=-0.175; table.receiveShadow=true; scene.add(table);
+const wallMat=new THREE.MeshStandardMaterial({map:wallTexture(),roughness:0.95,metalness:0,envMapIntensity:0.12});
+const backWall=new THREE.Mesh(new THREE.PlaneGeometry(18,9),wallMat); backWall.position.set(0,4.5,-3.4); backWall.receiveShadow=true; scene.add(backWall);
+const sideWall=new THREE.Mesh(new THREE.PlaneGeometry(12,9),wallMat); sideWall.rotation.y=Math.PI/2; sideWall.position.set(-5.2,4.5,0); sideWall.receiveShadow=true; scene.add(sideWall);
+
+// props for scale: books, mug, small plant, frame
+function box(w,h,d,color,x,y,z,ry=0){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color,roughness:0.72,envMapIntensity:0.25})); m.position.set(x,y,z); m.rotation.y=ry; m.castShadow=m.receiveShadow=true; scene.add(m); return m; }
+box(1.15,0.14,0.82,0x5a2e22,-2.15,0.07,0.55,0.28); box(1.0,0.12,0.74,0x24333d,-2.12,0.20,0.52,0.12); box(0.88,0.11,0.66,0x6b5a2e,-2.1,0.315,0.5,-0.06);
+const mug=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.16,0.34,32,1,true),new THREE.MeshStandardMaterial({color:0x88908e,roughness:0.35,metalness:0.05,side:THREE.DoubleSide,envMapIntensity:0.6}));
+mug.position.set(2.05,0.17,0.75); mug.castShadow=mug.receiveShadow=true; scene.add(mug);
+const mugBase=new THREE.Mesh(new THREE.CircleGeometry(0.16,32),new THREE.MeshStandardMaterial({color:0x6d7472,roughness:0.4})); mugBase.rotation.x=-Math.PI/2; mugBase.position.set(2.05,0.005,0.75); scene.add(mugBase);
+const pot=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.18,0.36,24),new THREE.MeshStandardMaterial({color:0x7a4a32,roughness:0.8})); pot.position.set(-2.55,0.18,-0.85); pot.castShadow=pot.receiveShadow=true; scene.add(pot);
+const leafMat=new THREE.MeshStandardMaterial({color:0x2e5a32,roughness:0.7});
+for(let i=0;i<9;i++){ const leaf=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),leafMat); const a=i/9*Math.PI*2; leaf.scale.set(0.55,1.5,0.55); leaf.position.set(-2.55+Math.cos(a)*0.12,0.62+Math.random()*0.18,-0.85+Math.sin(a)*0.12); leaf.rotation.set(Math.sin(a)*0.5,0,Math.cos(a)*0.5); leaf.castShadow=true; scene.add(leaf); }
+const frame=box(1.3,1.0,0.06,0x2b211a,1.85,3.15,-3.34,0); frame.material.roughness=0.5;
+const art=new THREE.Mesh(new THREE.PlaneGeometry(1.08,0.78),new THREE.MeshStandardMaterial({color:0x3a2f3f,roughness:0.9,emissive:0x120a18,emissiveIntensity:0.4})); art.position.set(1.85,3.15,-3.30); scene.add(art);
+
+// ---- lamp ----
+const lamp=new THREE.Group(); scene.add(lamp);
+const metal=new THREE.MeshPhysicalMaterial({color:0xd8d2cc,metalness:1,roughness:0.28,envMapIntensity:1.35,clearcoat:0.25,clearcoatRoughness:0.3});
+const metalDark=new THREE.MeshPhysicalMaterial({color:0x8f8a86,metalness:1,roughness:0.42,envMapIntensity:1.0});
+function addMesh(geo,mat,x=0,y=0,z=0){ const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; lamp.add(m); return m; }
+addMesh(new THREE.CylinderGeometry(0.84,0.90,0.10,64),metalDark,0,0.05,0);
+addMesh(new THREE.CylinderGeometry(0.52,0.84,0.92,64),metal,0,0.56,0);
+addMesh(new THREE.TorusGeometry(0.53,0.045,16,64),metal,0,1.03,0).rotation.x=Math.PI/2;
+addMesh(new THREE.CylinderGeometry(0.56,0.52,0.12,64),metalDark,0,1.06,0);
+// bulb housing glow disc
+const bulbMat=new THREE.MeshBasicMaterial({color:0xffc37a});
+const bulb=new THREE.Mesh(new THREE.SphereGeometry(0.16,24,18),bulbMat); bulb.position.set(0,1.18,0); bulb.scale.y=1.35; lamp.add(bulb);
+const bulbCore=new THREE.Mesh(new THREE.SphereGeometry(0.07,16,12),new THREE.MeshBasicMaterial({color:0xfff3d0})); bulbCore.position.copy(bulb.position); lamp.add(bulbCore);
+
+// glass profile: tapered, rounded sealed top, thick bottom
+const GLASS_Y0=1.10, GLASS_H=2.85;
+function radiusAt(t){ // t 0 bottom ->1 top of cylindrical part
+  const base=THREE.MathUtils.lerp(0.60,0.26,Math.pow(t,0.92));
+  return base;
+}
+const glassPts=[];
+for(let i=0;i<=28;i++){ const t=i/28; const y=GLASS_Y0+t*GLASS_H; let r=radiusAt(t); if(i===0) r=0.0; glassPts.push(new THREE.Vector2(Math.max(r,0.001),y)); }
+// dome
+for(let i=1;i<=10;i++){ const a=i/10*Math.PI/2; const r=Math.cos(a)*0.26; const y=GLASS_Y0+GLASS_H+Math.sin(a)*0.26; glassPts.push(new THREE.Vector2(Math.max(r,0.001),y)); }
+const glassGeo=new THREE.LatheGeometry(glassPts,72);
+const glassMat=new THREE.MeshPhysicalMaterial({color:0xffffff,metalness:0,roughness:0.06,transmission:1,thickness:0.06,ior:1.52,envMapIntensity:1.4,specularIntensity:1,clearcoat:0.4,clearcoatRoughness:0.08,transparent:true,side:THREE.DoubleSide,depthWrite:false});
+const glass=new THREE.Mesh(glassGeo,glassMat); glass.castShadow=false; glass.renderOrder=5; lamp.add(glass);
+// inner liquid volume (slightly smaller)
+const liqPts=[];
+for(let i=0;i<=24;i++){ const t=i/24; liqPts.push(new THREE.Vector2(Math.max(radiusAt(t)*0.94,0.001),GLASS_Y0+0.04+t*(GLASS_H-0.06))); }
+for(let i=1;i<=8;i++){ const a=i/8*Math.PI/2; liqPts.push(new THREE.Vector2(Math.max(Math.cos(a)*0.245,0.001),GLASS_Y0+GLASS_H-0.02+Math.sin(a)*0.22)); }
+const liquidMat=new THREE.MeshPhysicalMaterial({color:0xffc21f,metalness:0,roughness:0.15,transmission:0.72,thickness:1.4,ior:1.36,transparent:true,opacity:0.38,envMapIntensity:0.5,depthWrite:false,side:THREE.FrontSide,attenuationColor:new THREE.Color(0xffb300),attenuationDistance:1.2});
+const liquid=new THREE.Mesh(new THREE.LatheGeometry(liqPts,56),liquidMat); liquid.renderOrder=2; lamp.add(liquid);
+
+// cap
+addMesh(new THREE.CylinderGeometry(0.20,0.31,0.38,48),metal,0,GLASS_Y0+GLASS_H+0.32,0);
+addMesh(new THREE.CylinderGeometry(0.31,0.31,0.07,48),metalDark,0,GLASS_Y0+GLASS_H+0.15,0);
+addMesh(new THREE.SphereGeometry(0.075,20,14),metal,0,GLASS_Y0+GLASS_H+0.56,0);
+
+// cord + inline switch
+const cordMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.65,metalness:0.05});
+const cordPts=[new THREE.Vector3(0.55,0.22,0.35),new THREE.Vector3(1.05,0.06,0.85),new THREE.Vector3(1.75,0.045,1.15),new THREE.Vector3(2.55,0.045,0.95),new THREE.Vector3(3.35,0.04,1.45),new THREE.Vector3(4.25,0.04,1.35)];
+const cord=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(cordPts),80,0.035,10),cordMat); cord.castShadow=cord.receiveShadow=true; scene.add(cord);
+const switchBody=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.12,0.18),new THREE.MeshStandardMaterial({color:0x1c1c1e,roughness:0.45,envMapIntensity:0.5}));
+switchBody.position.set(2.55,0.10,0.95); switchBody.rotation.y=-0.35; switchBody.castShadow=true; scene.add(switchBody);
+const switchToggle=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.09,16),new THREE.MeshStandardMaterial({color:0xd8d2cc,metalness:0.8,roughness:0.3}));
+switchToggle.position.set(2.55,0.19,0.95); switchToggle.rotation.z=0.35; scene.add(switchToggle);
+
+// lights
+const bulbLight=new THREE.PointLight(0xffa63d,28,14,2); bulbLight.position.set(0,1.35,0); bulbLight.castShadow=true; bulbLight.shadow.mapSize.set(1024,1024); bulbLight.shadow.bias=-0.004; bulbLight.shadow.camera.near=0.15; bulbLight.shadow.camera.far=13; scene.add(bulbLight);
+const glowLight=new THREE.PointLight(0xff8a2a,10,7,2); glowLight.position.set(0,2.3,0); scene.add(glowLight);
+const ambient=new THREE.HemisphereLight(0x8a7f9a,0x1a100c,0.35); scene.add(ambient);
+const rim=new THREE.DirectionalLight(0xbfd0ff,0.35); rim.position.set(-4,5,-3); scene.add(rim);
+const poolLight=new THREE.SpotLight(0xff9a3d,0,9,0.9,1,1.6); poolLight.position.set(0,1.2,0); poolLight.target.position.set(0,0,2.5); scene.add(poolLight,poolLight.target);
+
+// ---- wax: heat-driven blob agents + MarchingCubes merging surface ----
+const waxMat=new THREE.MeshPhysicalMaterial({color:0xff2200,roughness:0.34,metalness:0,transmission:0.18,thickness:1.1,ior:1.42,emissive:0xff1800,emissiveIntensity:0.55,clearcoat:0.35,clearcoatRoughness:0.45,envMapIntensity:0.45,sheen:0.4,sheenColor:new THREE.Color(0xff6a33)});
+const waxPowerUniforms=[];
+waxMat.onBeforeCompile=(sh)=>{
+  sh.fragmentShader=sh.fragmentShader.replace('#include <emissivemap_fragment>',
+  `#include <emissivemap_fragment>
+   // fake SSS: thin / low areas near bulb glow warmer
+   float sss = smoothstep(2.6,1.1,vWorldPosition.y) * uPowerF;
+   totalEmissiveRadiance += diffuseColor.rgb * sss * 0.85;`);
+  sh.fragmentShader='uniform float uPowerF;\nvarying vec3 vWorldPosition;\n'+sh.fragmentShader;
+  sh.vertexShader='varying vec3 vWorldPosition;\n'+sh.vertexShader.replace('#include <worldpos_vertex>','#include <worldpos_vertex>\n vWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
+  sh.uniforms.uPowerF={value:1}; waxPowerUniforms.push(sh.uniforms.uPowerF);
+};
+const MC_W=1.14, MC_H=2.72, MC_Y0=GLASS_Y0+0.06;
+// Two overlapping MarchingCubes volumes keep blobs near-spherical in a tall vessel;
+// each is clipped at the shared seam so the surface stays continuous across it.
+const SEG_H=1.50, SEAM=MC_Y0+MC_H/2;
+renderer.localClippingEnabled=true;
+function makeWaxSegment(segY0,clipPlane){
+  const mat=waxMat.clone();
+  mat.onBeforeCompile=waxMat.onBeforeCompile;
+  mat.clippingPlanes=[clipPlane];
+  const m=new MarchingCubes(52,mat,false,false,11000);
+  m.isolation=72; m.scale.set(MC_W,SEG_H,MC_W); m.position.set(0,segY0+SEG_H/2,0);
+  m.castShadow=false; m.receiveShadow=false; m.renderOrder=3; m.userData.y0=segY0; scene.add(m); return m;
+}
+const waxSegments=[
+  makeWaxSegment(MC_Y0, new THREE.Plane(new THREE.Vector3(0,-1,0), SEAM)),
+  makeWaxSegment(MC_Y0+MC_H-SEG_H, new THREE.Plane(new THREE.Vector3(0,1,0), -SEAM))
+];
+const waxMats=waxSegments.map(s=>s.material);
+waxMats[0].userData={}; // SSS shader refs live per material after compile
+
+const N_BLOBS=26;
+const blobs=[];
+function rand(a,b){ return a+Math.random()*(b-a); }
+for(let i=0;i<N_BLOBS;i++){
+  const t=Math.pow(Math.random(),1.6); // more near bottom initially, already running
+  blobs.push({ y: MC_Y0+0.12 + t*(MC_H-0.35), angle: rand(0,Math.PI*2), radial: rand(0,0.16), vy: rand(-0.02,0.05), temp: rand(0.25,0.95), r: rand(0.13,0.30), phase: rand(0,Math.PI*2), seed: rand(0.7,1.3), wob: rand(0.6,1.4) });
+}
+let powerOn=true, powerLevel=1, heat=1, waxAmount=1, warmup=1; // warmup 1 = already hot on load
+let simTime=0;
+function stepWax(dt){
+  simTime+=dt;
+  const target=powerOn?1:0;
+  // warmup is slow on power-on, cooling slower
+  if(powerOn) warmup=Math.min(1,warmup+dt*0.14); else warmup=Math.max(0,warmup-dt*0.08);
+  powerLevel += (target-powerLevel)*Math.min(1,dt*1.8);
+  for(const b of blobs){
+    const tNorm=(b.y-MC_Y0)/MC_H;
+    const heatHere = powerLevel * warmup * Math.exp(-tNorm*2.2) * heat; // strongest at bulb
+    const coolHere = Math.max(0,tNorm-0.55)*0.55 + 0.04;
+    if(powerOn) b.temp += (heatHere*0.55 - coolHere*0.28)*dt*b.seed;
+    else b.temp -= dt*0.10*(0.4+b.temp);
+    b.temp=THREE.MathUtils.clamp(b.temp,-0.2,1.15);
+    // buoyancy: warm rises, cold sinks, with drag & terminal velocity
+    const buoy=(b.temp-0.42)*0.55*heat;
+    b.vy += buoy*dt;
+    b.vy *= Math.exp(-dt*1.15); // drag
+    b.vy=THREE.MathUtils.clamp(b.vy,-0.22,0.34);
+    if(!powerOn) b.vy += (-0.06-b.vy)*dt*0.8;
+    b.y += b.vy*dt*60*0.016*1.0;
+    // gentle convection drift + wobble-driven radial wander
+    b.angle += dt*0.12*Math.sin(simTime*0.3*b.wob+b.phase);
+    b.radial += Math.sin(simTime*0.45*b.wob+b.phase*2)*dt*0.012;
+    // bounds following taper
+    const rMax=Math.max(0.03, radiusAt(THREE.MathUtils.clamp(tNorm,0,1))*0.88 - b.r*0.55);
+    b.radial=THREE.MathUtils.clamp(b.radial,0,Math.max(0,rMax-0.02));
+    const yMin=MC_Y0+b.r*0.45, yMax=MC_Y0+MC_H-b.r*0.55;
+    if(b.y<yMin){ b.y=yMin; b.vy=Math.abs(b.vy)*0.25; b.temp=Math.max(b.temp,powerOn?0.55*b.seed: b.temp); }
+    if(b.y>yMax){ b.y=yMax; b.vy=-Math.abs(b.vy)*0.25; b.temp=Math.min(b.temp,0.25); }
+    // recycle: a cooled blob that reaches bottom reheats; a hot blob reaching top cools (handled by temp fields)
+  }
+}
+function updateWaxField(){
+  for(const s of waxSegments) s.reset();
+  const active=Math.max(3,Math.round(N_BLOBS*Math.min(waxAmount,1.35)));
+  const subtract=11;
+  const add=(wx,wy,wz,r,strengthScale=1)=>{
+    const rn=r/Math.sqrt(SEG_H*MC_W); // geometric mean keeps blobs near-spherical
+    const strength=THREE.MathUtils.clamp(rn*rn*(72+subtract),0.05,2.4)*strengthScale;
+    for(const s of waxSegments){
+      const by=(wy-s.userData.y0)/SEG_H;
+      if(by<-0.12||by>1.12) continue;
+      s.addBall(0.5+wx/MC_W,by,0.5+wz/MC_W,strength,subtract);
+    }
+  };
+  // warm pool at bottom: flattened cluster feeding blobs
+  const poolR=0.44*Math.sqrt(Math.min(waxAmount,1.5));
+  const poolLift=0.5+0.5*Math.sin(simTime*0.7)*0.08 + warmup*0.12;
+  for(let i=0;i<7;i++){ const a=i/7*Math.PI*2+0.4; const rr=(i===0?0:poolR*0.55); add(Math.cos(a)*rr, MC_Y0+0.10+Math.sin(simTime*0.9+i)*0.008, Math.sin(a)*rr, 0.20, 1.05*poolLift); }
+  add(0,MC_Y0+0.13,0,0.26,1.1*poolLift);
+  for(let i=0;i<active;i++){
+    const b=blobs[i];
+    const wobX=Math.sin(simTime*1.3*b.wob+b.phase)*0.018;
+    const wobZ=Math.cos(simTime*1.1*b.wob+b.phase*1.7)*0.018;
+    const wx=Math.cos(b.angle)*b.radial+wobX, wz=Math.sin(b.angle)*b.radial+wobZ;
+    const stretch=THREE.MathUtils.clamp(Math.abs(b.vy)*2.4,0,0.65);
+    const r=b.r*(0.85+0.25*b.temp)*(waxAmount>1? Math.sqrt(Math.min(waxAmount,1.45)):1);
+    add(wx,b.y,wz,r,1);
+    if(stretch>0.12){ // elongated neck when moving fast
+      const dir=Math.sign(b.vy)||1;
+      add(wx,b.y+dir*r*0.55,wz,r*0.72,0.85);
+      add(wx,b.y-dir*r*0.42,wz,r*0.62,0.7);
+      // occasional pinch-off droplet
+      if(Math.sin(simTime*0.23+b.phase*3)>0.86) add(wx*0.92,b.y+dir*r*1.15,wz*0.92,r*0.38,0.8);
+    }
+  }
+  for(const s of waxSegments) s.update();
+}
+
+// ---- presets & controls ----
+const PRESETS=[
+ {name:'Classic', wax:0xff2200, waxEmissive:0xff1a00, liquid:0xffc21f, atten:0xff9d00, light:0xffa63d, css:'linear-gradient(135deg,#ff2a00 50%,#ffc21f 50%)'},
+ {name:'Amethyst', wax:0x8b2eff, waxEmissive:0x6a12ff, liquid:0x1e4dff, atten:0x2244cc, light:0x8a5cff, css:'linear-gradient(135deg,#8b2eff 50%,#1e4dff 50%)'},
+ {name:'Lagoon', wax:0x00c853, waxEmissive:0x00a040, liquid:0x00b8d4, atten:0x008fa3, light:0x37e0a0, css:'linear-gradient(135deg,#00c853 50%,#00b8d4 50%)'},
+ {name:'Sunset', wax:0xff6a00, waxEmissive:0xff4400, liquid:0xd81b8c, atten:0xb01070, light:0xff7a3d, css:'linear-gradient(135deg,#ff6a00 50%,#d81b8c 50%)'},
+ {name:'Glacier', wax:0xe8f4ff, waxEmissive:0x88bbdd, liquid:0x7a5cff, atten:0x5544bb, light:0xaac8ff, css:'linear-gradient(135deg,#e8f4ff 50%,#7a5cff 50%)'},
+];
+let currentPreset=PRESETS[0];
+function applyPreset(p,btn){
+  currentPreset=p;
+  for(const m of waxMats){ m.color.set(p.wax); m.emissive.set(p.waxEmissive); m.sheenColor.set(p.wax); }
+  liquidMat.color.set(p.liquid); liquidMat.attenuationColor.set(p.atten);
+  bulbLight.color.set(p.light); glowLight.color.set(p.light); poolLight.color.set(p.light);
+  bulbMat.color.set(p.light).lerp(new THREE.Color(0xffffff),0.35);
+  document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('active')); if(btn) btn.classList.add('active');
+}
+const swWrap=document.getElementById('swatches');
+PRESETS.forEach((p,i)=>{ const b=document.createElement('button'); b.className='swatch'+(i===0?' active':''); b.title=p.name; b.setAttribute('aria-label',p.name); b.style.background=p.css; b.onclick=()=>applyPreset(p,b); swWrap.appendChild(b); });
+
+const $=id=>document.getElementById(id);
+let roomLevel=0.55, slow=false;
+function setPower(on){ powerOn=on; if(on) warmup=Math.min(warmup,0.12); $('power').checked=on; switchToggle.rotation.z=on?0.35:-0.35; }
+$('power').addEventListener('change',e=>setPower(e.target.checked));
+$('heat').addEventListener('input',e=>heat=parseFloat(e.target.value));
+$('waxAmt').addEventListener('input',e=>waxAmount=parseFloat(e.target.value));
+$('room').addEventListener('input',e=>roomLevel=parseFloat(e.target.value));
+$('slow').addEventListener('change',e=>slow=e.target.checked);
+$('orbit').addEventListener('change',e=>controls.autoRotate=e.target.checked);
+
+// clickable physical switch
+const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
+renderer.domElement.addEventListener('pointerdown',e=>{ ptr.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1); ray.setFromCamera(ptr,camera); if(ray.intersectObjects([switchBody,switchToggle]).length) setPower(!powerOn); });
+
+// ---- post-processing: bloom + grain/vignette ----
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.55,0.55,0.62);
+composer.addPass(bloom);
+const GradeShader={ uniforms:{tDiffuse:{value:null},uTime:{value:0}}, vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+ fragmentShader:`uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv; float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+ void main(){ vec4 c=texture2D(tDiffuse,vUv); vec2 d=vUv-0.5; float vig=smoothstep(0.95,0.35,length(d)); c.rgb*=mix(0.72,1.0,vig); c.rgb+=(hash(vUv*vec2(1920.,1080.)+fract(uTime)*7.13)-0.5)*0.028; gl_FragColor=c; }`};
+const grade=new ShaderPass(GradeShader); composer.addPass(grade); composer.addPass(new OutputPass());
+
+// ---- loop: fixed-timestep sim, adaptive quality ----
+const clock=new THREE.Clock();
+let acc=0; const STEP=1/60;
+let fpsAcc=0,fpsN=0,fpsTimer=0, qualityScale=1;
+function flickerAndLights(t){
+  // wax passing in front of bulb occludes / tints the spill
+  let occl=0; for(const b of blobs){ const low=Math.exp(-Math.pow((b.y-MC_Y0-0.25)/0.45,2)); occl+=low*Math.exp(-(b.radial*b.radial)/0.08)*(b.r/0.25); }
+  occl=THREE.MathUtils.clamp(occl,0,1.6);
+  const fl=0.92+0.08*Math.sin(t*13.7)*Math.sin(t*7.3+1.7)+0.04*Math.sin(t*31.0);
+  const inten=powerLevel*fl*(1-occl*0.22);
+  bulbLight.intensity=30*inten; bulbLight.color.copy(new THREE.Color(currentPreset.light)).lerp(new THREE.Color(currentPreset.wax),occl*0.18);
+  glowLight.intensity=11*powerLevel*(1-occl*0.15);
+  poolLight.intensity=18*inten;
+  bloom.strength=0.18+0.48*powerLevel;
+  bulbMat.color.copy(new THREE.Color(currentPreset.light)).lerp(new THREE.Color(0xffffff),0.3).multiplyScalar(0.25+powerLevel);
+  bulbCore.material.color.setScalar(0.2+powerLevel*1.4);
+  bulb.visible=bulbCore.visible=powerLevel>0.02;
+  for(const m of waxMats) m.emissiveIntensity=0.08+0.55*powerLevel*warmup;
+  for(const u of waxPowerUniforms) u.value=powerLevel*warmup;
+  liquidMat.opacity=0.20+0.18*powerLevel;
+  ambient.intensity=0.06+roomLevel*0.55; rim.intensity=roomLevel*0.55; scene.environmentIntensity=0.08+roomLevel*0.45;
+  switchToggle.rotation.z += ((powerOn?0.35:-0.35)-switchToggle.rotation.z)*0.2;
+}
+function animate(){
+  requestAnimationFrame(animate);
+  const rawDt=Math.min(clock.getDelta(),0.06);
+  const dt=rawDt*(slow?0.22:1);
+  acc+=dt; let n=0;
+  while(acc>=STEP && n<4){ stepWax(STEP); acc-=STEP; n++; }
+  if(n===4) acc=0;
+  updateWaxField();
+  flickerAndLights(performance.now()*0.001);
+  grade.uniforms.uTime.value=performance.now()*0.001;
+  controls.update();
+  composer.render();
+  // adaptive resolution
+  fpsAcc+=rawDt; fpsN++; fpsTimer+=rawDt;
+  if(fpsTimer>2){ const avg=fpsN/Math.max(fpsAcc,0.001); if(avg<48 && qualityScale>0.65){ qualityScale=Math.max(0.65,qualityScale-0.15); renderer.setPixelRatio(Math.min(devicePixelRatio,1.75)*qualityScale); composer.setSize(innerWidth,innerHeight); } fpsAcc=fpsN=fpsTimer=0; }
+}
+applyPreset(PRESETS[0],document.querySelector('.swatch'));
+animate();
+
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight); });
+</script>
+</body>
+</html>
+
+
+

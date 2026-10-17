@@ -1,0 +1,81 @@
+export type TimeFormat = '12h' | '24h'
+export type Mode = 'meeting' | 'base'
+export type CellState = 'sleep' | 'awake' | 'overlap'
+
+/** UTC offset in minutes for a zone at the current instant (DST handled by Intl). */
+export function getOffsetMinutes(timeZone: string, date = new Date()): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const v: Record<string, number> = {}
+  for (const p of parts) if (p.type !== 'literal') v[p.type] = Number(p.value)
+  const asUTC = Date.UTC(v.year, v.month - 1, v.day, v.hour, v.minute, v.second)
+  const truncated = Math.floor(date.getTime() / 1000) * 1000
+  return Math.round((asUTC - truncated) / 60000)
+}
+
+export function formatOffset(minutes: number): string {
+  const sign = minutes < 0 ? '-' : '+'
+  const abs = Math.abs(minutes)
+  const h = Math.floor(abs / 60)
+  const m = abs % 60
+  return m === 0 ? `UTC${sign}${h}` : `UTC${sign}${h}:${String(m).padStart(2, '0')}`
+}
+
+/** Format a wall-clock time in minutes-from-midnight (may be 1440 for exclusive end). */
+export function formatMinutes(totalMinutes: number, format: TimeFormat): string {
+  const norm = ((totalMinutes % 1440) + 1440) % 1440
+  const h24 = Math.floor(norm / 60)
+  const m = norm % 60
+  if (format === '24h') {
+    return `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  }
+  const suffix = h24 < 12 ? 'am' : 'pm'
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+  return m === 0 ? `${h12}${suffix}` : `${h12}:${String(m).padStart(2, '0')}${suffix}`
+}
+
+export function formatHour(hour: number, format: TimeFormat): string {
+  return formatMinutes(hour * 60, format)
+}
+
+/** Compact label for a grid cell. Keeps :30 / :45 visible for fractional offsets. */
+export function formatCell(totalMinutes: number, format: TimeFormat): string {
+  const norm = ((totalMinutes % 1440) + 1440) % 1440
+  const h24 = Math.floor(norm / 60)
+  const m = norm % 60
+  if (format === '24h') {
+    return m === 0 ? String(h24).padStart(2, '0') : `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  }
+  const suffix = h24 < 12 ? 'a' : 'p'
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+  return m === 0 ? `${h12}${suffix}` : `${h12}:${String(m).padStart(2, '0')}${suffix}`
+}
+
+export function isAwakeAt(localMinutes: number, wake: number, sleep: number): boolean {
+  const norm = ((localMinutes % 1440) + 1440) % 1440
+  const wakeMin = wake * 60
+  const sleepMin = sleep * 60
+  if (wakeMin === sleepMin) return true // degenerate 24h window
+  if (wakeMin < sleepMin) return norm >= wakeMin && norm < sleepMin
+  // overnight window, e.g. wake 22 -> sleep 6
+  return norm >= wakeMin || norm < sleepMin
+}
+
+/** Group sorted reference-hours (0-23) into contiguous inclusive-start / exclusive-end ranges. */
+export function groupRanges(hours: number[]): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = []
+  for (const h of hours) {
+    const last = ranges[ranges.length - 1]
+    if (last && h === last.end) last.end = h + 1
+    else ranges.push({ start: h, end: h + 1 })
+  }
+  return ranges
+}
+
+export function formatRange(r: { start: number; end: number }, format: TimeFormat): string {
+  return `${formatHour(r.start, format)} — ${formatHour(r.end % 24, format)}`
+}

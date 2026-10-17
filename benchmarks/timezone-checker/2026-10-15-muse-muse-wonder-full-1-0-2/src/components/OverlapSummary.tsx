@@ -1,0 +1,67 @@
+import { formatRanges, type Mode, type TimeFormat } from '../lib/time'
+import type { City } from '../data/cities'
+
+interface Props {
+  mode: Mode
+  format: TimeFormat
+  cities: City[]
+  meetingHours: number[]
+  baseHoursByCityId: Record<string, number[]>
+}
+
+function RangeBadges({ hours, format }: { hours: number[]; format: TimeFormat }) {
+  return (
+    <span className="badges">
+      {formatRanges(hours, format).map((r) => (
+        <span key={r}><span className="badge">{r}</span>{' '}</span>
+      ))}
+    </span>
+  )
+}
+
+export default function OverlapSummary({ mode, format, cities, meetingHours, baseHoursByCityId }: Props) {
+  if (cities.length < 2) return null
+  const ref = cities[0]
+
+  if (mode === 'meeting') {
+    return (
+      <section className="summary" aria-label="Overlap summary">
+        {meetingHours.length === 0 ? (
+          <p className="summary-warn" role="alert">
+            ⚠ No overlap — there is no hour when everyone in {cities.map((c) => c.name).join(', ')} is awake at the same time. Try widening the awake window.
+          </p>
+        ) : (
+          <p className="summary-line">
+            <strong>{meetingHours.length} {meetingHours.length === 1 ? 'hour' : 'hours'} of overlap</strong>
+            <span className="summary-in"> in {ref.name} time:</span>{' '}
+            <RangeBadges hours={meetingHours} format={format} />
+          </p>
+        )}
+      </section>
+    )
+  }
+
+  return (
+    <section className="summary" aria-label="Overlap summary">
+      <p className="summary-title">Overlap with {ref.name} (base), in {ref.name} time:</p>
+      <ul className="summary-list">
+        {cities.slice(1).map((city) => {
+          const hours = baseHoursByCityId[city.id] ?? []
+          return (
+            <li key={city.id} className="summary-row">
+              <span className="summary-city">{ref.name} ↔ {city.name}:</span>
+              {hours.length === 0 ? (
+                <span className="summary-warn-inline" role="alert">⚠ No overlap with {city.name}</span>
+              ) : (
+                <>
+                  <strong>{hours.length} {hours.length === 1 ? 'hour' : 'hours'}</strong>{' '}
+                  <RangeBadges hours={hours} format={format} />
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}

@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>muse-wonder-1.0</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#070608;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#f3ece6}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  .brand{position:fixed;top:18px;left:20px;z-index:10;pointer-events:none}
+  .brand h1{font-size:13px;letter-spacing:.22em;font-weight:600;text-transform:uppercase;color:rgba(255,235,210,.92)}
+  .brand p{font-size:11px;letter-spacing:.08em;color:rgba(255,235,210,.45);margin-top:4px}
+  .hint{position:fixed;right:18px;top:18px;z-index:10;font-size:11px;letter-spacing:.06em;color:rgba(255,240,220,.5);background:rgba(10,8,10,.45);border:1px solid rgba(255,255,255,.08);padding:7px 10px;border-radius:999px;backdrop-filter:blur(10px);pointer-events:none}
+  .panel{position:fixed;left:18px;bottom:18px;z-index:20;width:272px;background:rgba(14,11,14,.72);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:14px 14px 12px;backdrop-filter:blur(16px) saturate(1.2);box-shadow:0 18px 50px rgba(0,0,0,.55)}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .panel-head span{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,240,220,.75);font-weight:700}
+  .power{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+  .power input{display:none}
+  .track{width:44px;height:24px;border-radius:999px;background:#2b2328;border:1px solid rgba(255,255,255,.14);position:relative;transition:.25s;flex:none}
+  .track:after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#8a7f7a;transition:.25s}
+  .power input:checked + .track{background:#ff3b1f;border-color:#ff7a3c;box-shadow:0 0 18px rgba(255,80,30,.55)}
+  .power input:checked + .track:after{left:22px;background:#fff2d8}
+  .power em{font-style:normal;font-size:12px;color:#ffe9c9}
+  .presets{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:10px 0 12px}
+  .preset{height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.14);cursor:pointer;position:relative;overflow:hidden;padding:0}
+  .preset.active{outline:2px solid #fff3d6;outline-offset:1px}
+  .preset i{position:absolute;inset:0}
+  .preset b{position:absolute;left:0;right:0;bottom:3px;font-size:8px;letter-spacing:.04em;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.8);font-weight:700;text-transform:uppercase}
+  .row{margin:9px 0}
+  .row label{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.05em;color:rgba(255,238,215,.78);margin-bottom:5px}
+  .row label output{color:#ffd9a0;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;appearance:none;height:4px;border-radius:99px;background:linear-gradient(90deg,#ff5a2a,#ffb03a);outline:none}
+  input[type=range]::-webkit-slider-thumb{appearance:none;width:15px;height:15px;border-radius:50%;background:#fff3d6;border:2px solid #ff6a2a;box-shadow:0 2px 10px rgba(0,0,0,.5);cursor:pointer}
+  .checks{display:flex;gap:12px;margin-top:10px;flex-wrap:wrap}
+  .checks label{font-size:11px;color:rgba(255,240,220,.8);display:flex;gap:6px;align-items:center;cursor:pointer}
+  .checks input{accent-color:#ff5a2a}
+  @media(max-width:640px){.panel{width:calc(100vw - 24px);left:12px;bottom:12px}.hint{display:none}.brand{left:14px;top:12px}}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div class="brand"><h1>muse-wonder-1.0</h1><p>photoreal lava lamp &mdash; drag to orbit</p></div>
+<div class="hint">Scroll to zoom &middot; Drag to orbit &middot; Right-drag to pan</div>
+
+<div class="panel" id="panel">
+  <div class="panel-head"><span>Lava Lamp</span>
+    <label class="power"><input type="checkbox" id="power" checked><span class="track"></span><em id="powerLabel">On</em></label>
+  </div>
+  <div class="presets" id="presets"></div>
+  <div class="row"><label>Heat / flow <output id="heatOut">1.00&times;</output></label><input type="range" id="heat" min="0.3" max="2.2" step="0.01" value="1"></div>
+  <div class="row"><label>Wax amount <output id="waxOut">100%</output></label><input type="range" id="waxAmt" min="0.55" max="1.6" step="0.01" value="1"></div>
+  <div class="row"><label>Room light <output id="roomOut">35%</output></label><input type="range" id="room" min="0" max="1" step="0.01" value="0.35"></div>
+  <div class="checks">
+    <label><input type="checkbox" id="slow"> Slow motion</label>
+    <label><input type="checkbox" id="orbit"> Auto-orbit</label>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ---------- renderer / scene / camera ---------- */
+const container = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a080a);
+scene.fog = new THREE.FogExp2(0x0a080a, 0.045);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(3.6, 2.6, 4.6);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.65, 0);
+controls.enableDamping = true; controls.dampingFactor = 0.06;
+controls.minDistance = 2.1; controls.maxDistance = 9;
+controls.maxPolarAngle = Math.PI * 0.55; controls.minPolarAngle = 0.12;
+controls.autoRotateSpeed = 0.8;
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+
+/* ---------- procedural textures ---------- */
+function canvasTex(size, draw, repeat){
+  const c=document.createElement('canvas'); c.width=c.height=size;
+  draw(c.getContext('2d'), size);
+  const t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; if(repeat) t.repeat.set(repeat[0],repeat[1]);
+  t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=8; return t;
+}
+const woodTex = canvasTex(512,(g,s)=>{
+  g.fillStyle='#4a3220'; g.fillRect(0,0,s,s);
+  for(let y=0;y<s;y+=3){ const v=Math.sin(y*0.11)*14+Math.sin(y*0.023+2)*20; g.fillStyle=`rgb(${74+v},${50+v*0.6},${30+v*0.35})`; g.fillRect(0,y,s,3); }
+  for(let i=0;i<70;i++){ g.strokeStyle=`rgba(30,18,8,${0.05+Math.random()*0.12})`; g.lineWidth=1+Math.random()*2; g.beginPath(); const y=Math.random()*s; g.moveTo(0,y); g.bezierCurveTo(s*0.3,y+8*(Math.random()-0.5),s*0.7,y+8*(Math.random()-0.5),s,y); g.stroke(); }
+  for(let i=0;i<8;i++){ const x=Math.random()*s,y=Math.random()*s; g.strokeStyle='rgba(25,14,6,.35)'; g.beginPath(); g.ellipse(x,y,10+Math.random()*18,5+Math.random()*7,0,0,7); g.stroke(); }
+},[3,3]);
+const woodRough = canvasTex(512,(g,s)=>{ g.fillStyle='#8a8a8a'; g.fillRect(0,0,s,s); for(let i=0;i<4000;i++){ g.fillStyle=`rgba(${100+Math.random()*80|0},${100+Math.random()*80|0},${100+Math.random()*80|0},.25)`; g.fillRect(Math.random()*s,Math.random()*s,2,8);} },[3,3]);
+woodRough.colorSpace=THREE.NoColorSpace;
+const brushTex = canvasTex(512,(g,s)=>{ g.fillStyle='#7f7f7f'; g.fillRect(0,0,s,s); for(let i=0;i<2600;i++){ const y=Math.random()*s; g.fillStyle=`rgba(${140+Math.random()*90|0},${140+Math.random()*90|0},${140+Math.random()*90|0},.35)`; g.fillRect(0,y,s,1);} },[4,1]);
+brushTex.colorSpace=THREE.NoColorSpace;
+
+/* ---------- room: table, walls, props ---------- */
+const tableMat = new THREE.MeshStandardMaterial({ map:woodTex, roughnessMap:woodRough, roughness:0.72, metalness:0.02 });
+const table = new THREE.Mesh(new THREE.BoxGeometry(16,0.22,10), tableMat);
+table.position.y=-0.11; table.receiveShadow=true; scene.add(table);
+const wallMat = new THREE.MeshStandardMaterial({ color:0x1c171c, roughness:0.95 });
+const backWall = new THREE.Mesh(new THREE.PlaneGeometry(16,8), wallMat);
+backWall.position.set(0,3.9,-3.4); backWall.receiveShadow=true; scene.add(backWall);
+const sideWall = new THREE.Mesh(new THREE.PlaneGeometry(10,8), new THREE.MeshStandardMaterial({ color:0x161216, roughness:0.95 }));
+sideWall.rotation.y=Math.PI/2; sideWall.position.set(-4.6,3.9,0); sideWall.receiveShadow=true; scene.add(sideWall);
+// skirting + picture frame to catch light
+const frame = new THREE.Group();
+const frameMesh = new THREE.Mesh(new THREE.BoxGeometry(1.5,1.05,0.06), new THREE.MeshStandardMaterial({ color:0x2a2018, roughness:0.5, metalness:0.4 }));
+const art = new THREE.Mesh(new THREE.PlaneGeometry(1.3,0.85), new THREE.MeshStandardMaterial({ color:0x3a2b3f, roughness:0.9, emissive:0x120a18, emissiveIntensity:0.4 }));
+art.position.z=0.035; frame.add(frameMesh, art); frame.position.set(-1.9,3.1,-3.36); scene.add(frame);
+// books
+const bookCols=[0x5a2e2e,0x24382e,0x2e3a5a,0x6b5a2a];
+[-2.15,-1.82].forEach((x,i)=>{
+  const b=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.09,0.4), new THREE.MeshStandardMaterial({ color:bookCols[i%4], roughness:0.85 }));
+  b.position.set(x,0.045+i*0.095, -0.9); b.rotation.y=0.15*i-0.1; b.castShadow=b.receiveShadow=true; scene.add(b);
+  const b2=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.08,0.36), new THREE.MeshStandardMaterial({ color:bookCols[(i+2)%4], roughness:0.85 }));
+  b2.position.set(x+0.03,0.135+i*0.095,-0.88); b2.rotation.y=-0.08*i; b2.castShadow=b2.receiveShadow=true; scene.add(b2);
+});
+const mug = new THREE.Group();
+const mugBody = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.14,0.3,32,1,true), new THREE.MeshStandardMaterial({ color:0xd8cfc2, roughness:0.35, side:THREE.DoubleSide }));
+mugBody.position.y=0.15; const mugBot=new THREE.Mesh(new THREE.CircleGeometry(0.14,32), mugBody.material); mugBot.rotation.x=-Math.PI/2; mugBot.position.y=0.005;
+const handle=new THREE.Mesh(new THREE.TorusGeometry(0.1,0.022,12,28,Math.PI), mugBody.material); handle.position.set(0.17,0.16,0); handle.rotation.z=-Math.PI/2;
+mug.add(mugBody,mugBot,handle); mug.position.set(1.95,0,-0.55); mug.traverse(o=>{o.castShadow=true;o.receiveShadow=true}); scene.add(mug);
+// small plant pot
+const pot=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.13,0.26,24), new THREE.MeshStandardMaterial({ color:0x7a4a32, roughness:0.8 }));
+pot.position.set(2.35,0.13,0.7); pot.castShadow=pot.receiveShadow=true; scene.add(pot);
+const leafMat=new THREE.MeshStandardMaterial({ color:0x2e6b34, roughness:0.7 });
+for(let i=0;i<7;i++){ const leaf=new THREE.Mesh(new THREE.ConeGeometry(0.05,0.45,6), leafMat); const a=i/7*Math.PI*2; leaf.position.set(2.35+Math.cos(a)*0.07,0.42,0.7+Math.sin(a)*0.07); leaf.rotation.set(Math.sin(a)*0.5,0,Math.cos(a)*0.5); leaf.castShadow=true; scene.add(leaf); }
+
+/* ---------- lamp dimensions ---------- */
+const GLASS_Y0=0.92, GLASS_Y1=3.02, GLASS_H=GLASS_Y1-GLASS_Y0;
+function vesselRadius(y){
+  const t=THREE.MathUtils.clamp((y-GLASS_Y0)/GLASS_H,0,1);
+  let r=THREE.MathUtils.lerp(0.68,0.315,Math.pow(t,0.92));
+  if(t>0.86){ const u=(t-0.86)/0.14; r*=Math.sqrt(Math.max(0.18,1-u*u*0.72)); }
+  if(t<0.04){ const u=t/0.04; r*=0.82+0.18*u; }
+  return r;
+}
+const lamp = new THREE.Group(); scene.add(lamp);
+const metalMat = new THREE.MeshStandardMaterial({ color:0xd9d4ce, metalness:1.0, roughness:0.32, roughnessMap:brushTex, envMapIntensity:1.4 });
+const darkMetal = new THREE.MeshStandardMaterial({ color:0x8f8a84, metalness:1.0, roughness:0.42, roughnessMap:brushTex, envMapIntensity:1.1 });
+// base: conical lathe
+function latheFrom(pts, mat, seg=72){ const v=pts.map(p=>new THREE.Vector2(p[0],p[1])); const m=new THREE.Mesh(new THREE.LatheGeometry(v,seg), mat); m.castShadow=true; m.receiveShadow=true; return m; }
+const base = latheFrom([[0.001,0],[0.62,0],[0.60,0.04],[0.46,0.18],[0.38,0.55],[0.34,0.82],[0.36,0.90],[0.30,0.94],[0.001,0.94]], metalMat);
+lamp.add(base);
+const baseTrim = latheFrom([[0.615,0.015],[0.625,0.05],[0.615,0.09],[0.60,0.05]], darkMetal); lamp.add(baseTrim);
+// cap
+const cap = latheFrom([[0.001,3.30],[0.20,3.30],[0.30,3.24],[0.335,3.10],[0.325,3.02],[0.28,2.98],[0.001,2.98]], metalMat);
+lamp.add(cap);
+const capTop = new THREE.Mesh(new THREE.SphereGeometry(0.09,24,16), darkMetal); capTop.position.y=3.33; capTop.castShadow=true; lamp.add(capTop);
+// glass vessel (outer lathe with thickness via physical material)
+const glassPts=[]; for(let i=0;i<=36;i++){ const t=i/36; const y=GLASS_Y0+t*GLASS_H; glassPts.push([Math.max(0.012,vesselRadius(y)+0.028), y]); }
+glassPts.push([0.012, GLASS_Y1+0.02]);
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color:0xffffff, metalness:0, roughness:0.06, transmission:1.0, thickness:0.09, ior:1.52,
+  transparent:true, opacity:1, clearcoat:1, clearcoatRoughness:0.06, envMapIntensity:1.6,
+  specularIntensity:1.2, side:THREE.DoubleSide, depthWrite:false
+});
+const glass = new THREE.Mesh(new THREE.LatheGeometry(glassPts.map(p=>new THREE.Vector2(p[0],p[1])), 80), glassMat);
+glass.renderOrder=10; lamp.add(glass);
+// inner liquid volume (tinted, hazy)
+const liquidPts=[]; for(let i=0;i<=28;i++){ const t=i/28; const y=GLASS_Y0+0.015+t*(GLASS_H-0.03); liquidPts.push([Math.max(0.01,vesselRadius(y)-0.005), y]); }
+const liquidMat = new THREE.MeshPhysicalMaterial({ color:0xffc61a, emissive:0xffc61a, emissiveIntensity:0.14, transparent:true, opacity:0.13, roughness:0.15, transmission:0.6, thickness:1.2, ior:1.36, depthWrite:false, side:THREE.DoubleSide, envMapIntensity:0.7 });
+const liquid = new THREE.Mesh(new THREE.LatheGeometry(liquidPts.map(p=>new THREE.Vector2(p[0],p[1])),64), liquidMat);
+liquid.renderOrder=2; lamp.add(liquid);
+// bulb + glow sprite
+const bulbMat = new THREE.MeshStandardMaterial({ color:0xfff1c8, emissive:0xffb03a, emissiveIntensity:3.2, roughness:0.4 });
+const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13,24,18), bulbMat); bulb.position.set(0,1.02,0); bulb.scale.y=1.35; lamp.add(bulb);
+const bulbBase = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.14,20), darkMetal); bulbBase.position.y=0.90; lamp.add(bulbBase);
+// power cord + switch
+const cordMat = new THREE.MeshStandardMaterial({ color:0x141114, roughness:0.75 });
+const cordCurve = new THREE.CatmullRomCurve3([ new THREE.Vector3(0.42,0.10,0.18), new THREE.Vector3(0.95,0.04,0.55), new THREE.Vector3(1.55,0.03,0.45), new THREE.Vector3(2.25,0.03,0.95), new THREE.Vector3(3.1,0.02,0.8) ]);
+const cord = new THREE.Mesh(new THREE.TubeGeometry(cordCurve,64,0.028,10), cordMat); cord.castShadow=cord.receiveShadow=true; scene.add(cord);
+const switchBox = new THREE.Mesh(new THREE.BoxGeometry(0.20,0.07,0.12), new THREE.MeshStandardMaterial({ color:0x1c181c, roughness:0.5 }));
+switchBox.position.set(1.55,0.06,0.45); switchBox.rotation.y=-0.12; switchBox.castShadow=true; scene.add(switchBox);
+const switchBtn = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.035,0.06), new THREE.MeshStandardMaterial({ color:0xff5a2a, emissive:0xff3b1f, emissiveIntensity:0.7, roughness:0.4 }));
+switchBtn.position.set(1.55,0.105,0.45); switchBtn.rotation.y=-0.12; scene.add(switchBtn);
+
+/* ---------- lights ---------- */
+const bulbLight = new THREE.PointLight(0xffa63a, 10, 9, 1.6);
+bulbLight.position.set(0,1.18,0); bulbLight.castShadow=true;
+bulbLight.shadow.mapSize.set(1024,1024); bulbLight.shadow.bias=-0.004; bulbLight.shadow.radius=4;
+scene.add(bulbLight);
+const spill = new THREE.SpotLight(0xff9a3a, 6, 8, 1.05, 0.9, 1.4);
+spill.position.set(0,1.1,0); spill.target.position.set(0,0,0); scene.add(spill, spill.target);
+const rimLight = new THREE.DirectionalLight(0x8fb4ff, 0.25); rimLight.position.set(-3,4,2.5); scene.add(rimLight);
+const roomLight = new THREE.DirectionalLight(0xfff0d8, 0.35); roomLight.position.set(2.5,5,3); roomLight.castShadow=true;
+roomLight.shadow.mapSize.set(1024,1024); roomLight.shadow.camera.left=-4; roomLight.shadow.camera.right=4; roomLight.shadow.camera.top=5; roomLight.shadow.camera.bottom=-2;
+scene.add(roomLight);
+const ambient = new THREE.AmbientLight(0x2a2438, 0.5); scene.add(ambient);
+
+/* ---------- wax simulation (fixed timestep, heat model) ---------- */
+const MAX_BLOBS = 22;
+const PRESETS = [
+  { name:'Classic', wax:new THREE.Color(0xff2213), liquid:new THREE.Color(0xffc61a), bulb:new THREE.Color(0xffa63a) },
+  { name:'Violet',  wax:new THREE.Color(0xc44dff), liquid:new THREE.Color(0x0fd8c8), bulb:new THREE.Color(0xd98cff) },
+  { name:'Emerald', wax:new THREE.Color(0x12e07a), liquid:new THREE.Color(0xffe98a), bulb:new THREE.Color(0x8affb0) },
+  { name:'Ocean',   wax:new THREE.Color(0x2299ff), liquid:new THREE.Color(0xff7ac8), bulb:new THREE.Color(0x7ac8ff) },
+];
+let presetIdx = 0;
+const state = { power:true, heatLevel:1, warmup:1, heat:1.0, waxAmt:1.0, room:0.35, slow:false, time:0 };
+class Blob{
+  constructor(i){
+    this.i=i; this.pos=new THREE.Vector3(); this.vel=0; this.vx=0; this.vz=0;
+    this.baseR=0.125+Math.random()*0.105; this.r=this.baseR; this.temp=Math.random()*0.4;
+    this.seed=Math.random()*100; this.stretch=1; this.active=true; this.pool=false;
+    this.density=0.72+Math.random()*0.55;
+    this.homeA=Math.random()*Math.PI*2; this.homeR=0.05+Math.random()*0.24;
+    this.wanderA=Math.random()*Math.PI*2; this.wanderS=0.2+Math.random()*0.5;
+    this.reset(true);
+  }
+  reset(scatter){
+    const a=Math.random()*Math.PI*2, rad=Math.random()*0.18;
+    this.pos.set(Math.cos(a)*rad, GLASS_Y0+0.22+ (scatter? Math.random()*1.7 : Math.random()*0.25), Math.sin(a)*rad);
+    this.vel=(Math.random()-0.5)*0.05; this.temp=0.25+Math.random()*0.5;
+    if(this.i<4){ this.pool=true; this.pos.set(Math.cos(this.i*1.7)*0.22, GLASS_Y0+0.12+(this.i%2)*0.07, Math.sin(this.i*1.7)*0.22); this.baseR=0.29+Math.random()*0.05; this.temp=0.85; }
+  }
+}
+const blobs=[]; for(let i=0;i<MAX_BLOBS;i++) blobs.push(new Blob(i));
+// stagger initial heights so motion is visible on first load
+blobs.forEach((b,i)=>{ if(!b.pool){ const f=((i*0.618)%1); b.pos.y=GLASS_Y0+0.30+f*1.70 + Math.sin(i*2.3)*0.05; b.pos.x=Math.cos(i*2.1)*0.14; b.pos.z=Math.sin(i*2.1)*0.14; b.temp=0.30+0.55*f; }});
+
+function activeCount(){ return Math.round(THREE.MathUtils.clamp(6 + state.waxAmt*5, 6, MAX_BLOBS)); }
+
+function stepWax(dt){
+  state.time += dt;
+  // warm-up / cool-down envelope
+  const target = state.power ? 1 : 0;
+  const rate = state.power ? 0.22 : 0.10; // first blob after a few seconds from cold
+  state.heatLevel += THREE.MathUtils.clamp(target - state.heatLevel, -rate*dt, rate*dt);
+  if(state.power && state.warmup < 1) state.warmup = Math.min(1, state.warmup + dt*0.14);
+  if(!state.power) state.warmup = Math.max(0, state.warmup - dt*0.08);
+  const heatIn = state.heatLevel * state.heat * (0.35 + 0.65*state.warmup);
+  const n = activeCount();
+  blobs.forEach((b,idx)=>{
+    b.active = idx < n;
+    if(!b.active) return;
+    const y=b.pos.y;
+    // temperature: heated near bulb, cooled near cap
+    if(y < 1.35) b.temp += (0.55*heatIn + 0.25*state.heatLevel) * dt * (1.25 - (y-GLASS_Y0));
+    else if(y > 2.55) b.temp -= dt*0.38;
+    else b.temp -= dt*0.045;
+    // pool blobs stay hot and merged at bottom
+    if(b.pool){ b.temp = THREE.MathUtils.lerp(b.temp, 0.55+0.45*state.heatLevel, dt*0.8); }
+    b.temp = THREE.MathUtils.clamp(b.temp, 0.05, 1.0);
+    // buoyancy from thermal expansion
+    const buoy = (b.temp - 0.47) * 0.55 * b.density * (state.power? (0.4+0.6*state.warmup):0.25);
+    // pool feeds blobs: gentle pulsing growth
+    if(b.pool){
+      const pulse = 1 + Math.sin(state.time*0.7 + b.seed)*0.10*state.heatLevel;
+      b.r = b.baseR * state.waxAmt * pulse * (0.7+0.5*state.heatLevel);
+      b.pos.y = GLASS_Y0 + 0.10 + Math.sin(state.time*0.5+b.seed)*0.015;
+      b.stretch = THREE.MathUtils.lerp(b.stretch, 0.52, dt*3);
+      return;
+    }
+    b.vel += buoy * dt;
+    b.vel *= Math.exp(-dt*0.85); // drag in liquid
+    // wobble / wander
+    b.wanderA += dt * b.wanderS * (0.6+Math.abs(b.vel)*2.0);
+    const wob = 0.028 * (0.5+Math.abs(b.vel)*3.0);
+    b.vx = Math.cos(b.wanderA + b.seed)*wob; b.vz = Math.sin(b.wanderA*0.9 + b.seed)*wob;
+    b.pos.y += b.vel * dt * 1.35;
+    b.pos.x += b.vx * dt; b.pos.z += b.vz * dt;
+    // each blob keeps its own lateral lane (slowly precessing) so they do not all stack on axis
+    b.homeA += dt*0.07*(0.5+b.density*0.5);
+    const hx=Math.cos(b.homeA)*b.homeR, hz=Math.sin(b.homeA)*b.homeR;
+    b.pos.x += (hx-b.pos.x)*dt*0.35; b.pos.z += (hz-b.pos.z)*dt*0.35;
+    // soft repulsion so blobs do not all stack on axis (SDF still merges them visually)
+    for(let j=0;j<blobs.length;j++){ if(j===idx) continue; const o=blobs[j]; if(!o.active||o.pool) continue;
+      const dy=b.pos.y-o.pos.y, dx=b.pos.x-o.pos.x, dz=b.pos.z-o.pos.z; const d2=dx*dx+dy*dy+dz*dz; const minD=(b.r+o.r)*0.80;
+      if(d2>1e-6 && d2<minD*minD){ const d=Math.sqrt(d2); const push=(minD-d)*0.35*dt; b.pos.x+=dx/d*push; b.pos.z+=dz/d*push; b.pos.y+=dy/d*push*0.4; }
+    }
+    // stretch follows vertical speed
+    const targetStretch = THREE.MathUtils.clamp(1 + Math.abs(b.vel)*1.9, 1, 1.85) * (b.vel< -0.02 ? 0.92 : 1);
+    b.stretch = THREE.MathUtils.lerp(b.stretch, targetStretch, dt*4);
+    b.r = b.baseR * (0.74 + state.waxAmt*0.28) * (0.92 + b.temp*0.16);
+    // vessel confinement (follow taper, never clip walls / cap / base)
+    const R = vesselRadius(b.pos.y);
+    const maxRad = Math.max(0.02, R - b.r*0.62);
+    const rad = Math.hypot(b.pos.x, b.pos.z);
+    if(rad > maxRad){ const s=maxRad/Math.max(rad,1e-4); b.pos.x*=s; b.pos.z*=s; }
+    const yMin = GLASS_Y0 + b.r*0.55, yMax = GLASS_Y1 - b.r*0.72;
+    if(b.pos.y < yMin){ b.pos.y=yMin; b.vel=Math.abs(b.vel)*0.25; b.temp=Math.min(1,b.temp+dt*0.4*heatIn); }
+    if(b.pos.y > yMax){ b.pos.y=yMax; b.vel=-Math.abs(b.vel)*0.22; b.temp=Math.max(0.08,b.temp-dt*0.35); }
+    // recycle: cooled sunken blob rejoins pool heat, hot bottom blob detaches upward
+    if(b.pos.y < GLASS_Y0+0.30 && b.temp>0.72 && Math.random()<dt*0.25*heatIn){ b.vel += 0.12+Math.random()*0.1; }
+    if(!state.power){ b.vel = THREE.MathUtils.lerp(b.vel, -0.06, dt*0.7); b.temp=THREE.MathUtils.lerp(b.temp,0.12,dt*0.25); }
+  });
+  // occasional pinch-off: split a small droplet from a fast rising blob
+  if(state.power && Math.random() < dt*0.22){
+    const rising = blobs.filter(b=>b.active && !b.pool && b.vel>0.10 && b.r>0.20);
+    const idle = blobs.find(b=>!b.active);
+    if(rising.length && Math.random()<0.5){
+      const src=rising[(Math.random()*rising.length)|0];
+      // shrink source slightly and boost a neighbour droplet instead of exceeding MAX
+      src.r*=0.94;
+      const near=blobs.find(b=>b.active && !b.pool && b!==src && b.r<0.20);
+      if(near){ near.pos.set(src.pos.x+(Math.random()-0.5)*0.1, src.pos.y-src.r*0.9, src.pos.z+(Math.random()-0.5)*0.1); near.vel=src.vel*0.8; near.temp=src.temp; }
+    }
+  }
+}
+
+/* ---------- raymarched merging wax (smooth-union SDF) ---------- */
+const blobPosArr=[]; const blobMetaArr=[];
+for(let i=0;i<MAX_BLOBS;i++){ blobPosArr.push(new THREE.Vector4(0,-10,0,0.001)); blobMetaArr.push(new THREE.Vector3(1,0.5,i*3.7)); }
+const waxUniforms = {
+  uBlobs:{ value: blobPosArr },
+  uMeta:{ value: blobMetaArr },
+  uWaxColor:{ value: PRESETS[0].wax.clone() },
+  uBulbColor:{ value: PRESETS[0].bulb.clone() },
+  uTime:{ value:0 },
+  uHeat:{ value:1 },
+  uSteps:{ value:52 },
+  uProjAB:{ value:new THREE.Vector2(1,0) },
+};
+const waxVert = /* glsl */`
+  varying vec3 vWorld;
+  void main(){ vec4 wp = modelMatrix * vec4(position,1.0); vWorld = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }
+`;
+const waxFrag = /* glsl */`
+  precision highp float;
+  varying vec3 vWorld;
+  uniform vec4 uBlobs[${MAX_BLOBS}];
+  uniform vec3 uMeta[${MAX_BLOBS}];
+  uniform vec3 uWaxColor; uniform vec3 uBulbColor; uniform float uTime; uniform float uHeat; uniform int uSteps; uniform vec2 uProjAB;
+  float vesselR(float y){
+    float t = clamp((y-0.92)/2.10, 0.0, 1.0);
+    float r = mix(0.68, 0.315, pow(t, 0.92));
+    if(t>0.86){ float u=(t-0.86)/0.14; r*=sqrt(max(0.18, 1.0-u*u*0.72)); }
+    if(t<0.04){ float u=t/0.04; r*=0.82+0.18*u; }
+    return r;
+  }
+  float smin(float a, float b, float k){
+    float h = clamp(0.5+0.5*(b-a)/k, 0.0, 1.0);
+    return mix(b, a, h) - k*h*(1.0-h);
+  }
+  float sdEllipsoid(vec3 p, vec3 r){
+    float k0 = length(p/r); float k1 = length(p/(r*r));
+    return k0*(k0-1.0)/max(k1, 1e-4);
+  }
+  float mapWax(vec3 p, out float outTemp){
+    float d = 1e5; float tempAcc = 0.0; float wAcc = 0.0;
+    for(int i=0;i<${MAX_BLOBS};i++){
+      vec4 B = uBlobs[i]; if(B.w < 0.002) continue;
+      vec3 meta = uMeta[i];
+      vec3 q = p - B.xyz;
+      q.x += sin(q.y*6.0 + uTime*1.4 + meta.z)*0.014;
+      q.z += cos(q.y*5.0 + uTime*1.1 + meta.z*1.7)*0.014;
+      vec3 radii = vec3(B.w*0.94, B.w*meta.x, B.w*0.94);
+      float db = sdEllipsoid(q, radii);
+      float nd = smin(d, db, 0.095);
+      float w = exp(-max(db,0.0)*6.0);
+      tempAcc += meta.y * w; wAcc += w;
+      d = nd;
+    }
+    outTemp = wAcc>0.001 ? tempAcc/wAcc : 0.4;
+    // intersect with vessel interior so wax never clips the glass
+    float radial = length(p.xz);
+    float vessel = max(radial - vesselR(p.y), max(0.90 - p.y, p.y - 3.04));
+    d = max(d, vessel + 0.015);
+    return d;
+  }
+  float mapWax(vec3 p){ float t; return mapWax(p,t); }
+  vec3 calcNormal(vec3 p){
+    float e=0.009; vec2 k=vec2(1.0,-1.0);
+    return normalize( k.xyy*mapWax(p+k.xyy*e) + k.yyx*mapWax(p+k.yyx*e) + k.yxy*mapWax(p+k.yxy*e) + k.xxx*mapWax(p+k.xxx*e) );
+  }
+  vec2 boxHit(vec3 ro, vec3 rd, vec3 c, vec3 h){
+    vec3 m=1.0/rd; vec3 n=m*(ro-c); vec3 k=abs(m)*h;
+    vec3 t1=-n-k; vec3 t2=-n+k;
+    return vec2(max(max(t1.x,t1.y),t1.z), min(min(t2.x,t2.y),t2.z));
+  }
+  void main(){
+    vec3 ro = cameraPosition;
+    vec3 rd = normalize(vWorld - ro);
+    vec3 bc = vec3(0.0, 1.97, 0.0); vec3 bh = vec3(0.80, 1.14, 0.80);
+    vec2 tt = boxHit(ro, rd, bc, bh);
+    if(tt.x > tt.y || tt.y < 0.0) discard;
+    float tNear = max(tt.x, 0.0); float tFar = tt.y;
+    float t = tNear; float hitT = -1.0; float hitTemp = 0.5;
+    // sphere-tracing with bounded steps
+    for(int i=0;i<72;i++){
+      if(i>=uSteps) break;
+      vec3 p = ro + rd*t;
+      float tmp; float d = mapWax(p, tmp);
+      if(d < 0.0012){ hitT=t; hitTemp=tmp; break; }
+      t += clamp(d*0.82, 0.008, 0.09);
+      if(t > tFar) break;
+    }
+    if(hitT < 0.0) discard;
+    vec3 P = ro + rd*hitT;
+    vec3 N = calcNormal(P);
+    vec3 V = normalize(ro - P);
+    vec3 bulbPos = vec3(0.0, 1.10, 0.0);
+    vec3 Lvec = bulbPos - P; float Ldist = length(Lvec); vec3 L = Lvec/max(Ldist,1e-3);
+    // thickness toward bulb (few taps) for subsurface look
+    float thick = 0.0;
+    for(int i=1;i<=5;i++){ vec3 sp = P + L*(float(i)*0.07); if(mapWax(sp) < 0.0) thick += 0.07; }
+    float wrapDiff = clamp((dot(N,L)+0.65)/1.65, 0.0, 1.0);
+    float fres = pow(1.0 - max(dot(N,V),0.0), 3.0);
+    float sss = pow(clamp(dot(V,-L)*0.5+0.5, 0.0, 1.0), 3.0) * exp(-thick*2.6);
+    float bulbGlow = exp(-Ldist*1.35) * (0.32+0.48*hitTemp) * uHeat;
+    vec3 deep = uWaxColor * 0.40;
+    vec3 thin = mix(uWaxColor, vec3(1.0,0.86,0.62), 0.18) * 1.05;
+    vec3 col = mix(deep, thin, clamp(hitTemp*0.45 + sss*0.55 + bulbGlow*0.35, 0.0, 1.0));
+    col *= 0.34 + wrapDiff*0.72;
+    col += uBulbColor * sss * 0.65 * uHeat;
+    col += uWaxColor * bulbGlow * 0.38;
+    col += vec3(1.0,0.96,0.9) * pow(max(dot(reflect(-L,N),V),0.0), 42.0) * 0.32;
+    col = mix(col, col*vec3(0.72,0.62,0.68)+uWaxColor*0.10, fres*0.55); // saturated rim in shadow
+    col += uWaxColor * fres * 0.12 * uHeat;
+    // soft fade at vessel silhouette to hide raymarch edge
+    float alpha = 1.0;
+    gl_FragColor = vec4(col, alpha);
+    // write depth so glass / props composite correctly (projection terms via uniform; fragment stage has no projectionMatrix)
+    vec4 vpos = viewMatrix * vec4(P,1.0);
+    float clipZ = uProjAB.x * vpos.z + uProjAB.y;
+    float ndcDepth = clipZ / max(-vpos.z, 1e-4);
+    gl_FragDepthEXT = (ndcDepth*0.5+0.5);
+  }
+`;
+const waxMat = new THREE.ShaderMaterial({
+  uniforms: waxUniforms, vertexShader: waxVert, fragmentShader: waxFrag,
+  extensions:{ derivatives:true, fragDepth:true },
+  transparent:false, depthWrite:true, depthTest:true, side:THREE.BackSide,
+});
+const waxBox = new THREE.Mesh(new THREE.BoxGeometry(1.60,2.28,1.60), waxMat);
+waxBox.position.set(0,1.97,0); waxBox.renderOrder=4; waxBox.frustumCulled=false;
+scene.add(waxBox);
+function syncWaxUniforms(){
+  for(let i=0;i<MAX_BLOBS;i++){ const b=blobs[i];
+    if(b.active){ blobPosArr[i].set(b.pos.x,b.pos.y,b.pos.z,b.r); blobMetaArr[i].set(b.stretch,b.temp,b.seed); }
+    else blobPosArr[i].set(0,-10,0,0.0001);
+  }
+  waxUniforms.uTime.value = state.time;
+  waxUniforms.uHeat.value = 0.12 + state.heatLevel*0.95;
+  const pe = camera.projectionMatrix.elements;
+  waxUniforms.uProjAB.value.set(pe[10], pe[14]);
+}
+
+/* ---------- post: bloom + grain/vignette (ACES via renderer) ---------- */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.5, 0.78);
+composer.addPass(bloom);
+const gradePass = new ShaderPass({
+  uniforms:{ tDiffuse:{value:null}, uTime:{value:0}, uAspect:{value:innerWidth/innerHeight} },
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader:`
+    varying vec2 vUv; uniform sampler2D tDiffuse; uniform float uTime; uniform float uAspect;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 d = vUv - 0.5; d.x *= uAspect;
+      float vig = smoothstep(0.95, 0.35, length(d)*1.15);
+      c.rgb *= mix(0.72, 1.0, vig);
+      float g = (hash(vUv*vec2(1920.0,1080.0)+fract(uTime)*7.0)-0.5)*0.028;
+      c.rgb += g;
+      gl_FragColor = c;
+    }`
+});
+composer.addPass(gradePass);
+composer.addPass(new OutputPass());
+
+/* ---------- controls wiring ---------- */
+const $=id=>document.getElementById(id);
+const presetsEl=$('presets');
+PRESETS.forEach((p,i)=>{
+  const b=document.createElement('button'); b.className='preset'+(i===0?' active':''); b.title=p.name;
+  b.innerHTML=`<i style="background:linear-gradient(135deg,#${p.wax.getHexString()} 0 55%,#${p.liquid.getHexString()} 55% 100%)"></i><b>${p.name}</b>`;
+  b.addEventListener('click',()=>applyPreset(i)); presetsEl.appendChild(b);
+});
+function applyPreset(i){
+  presetIdx=i; const p=PRESETS[i];
+  waxUniforms.uWaxColor.value.copy(p.wax); waxUniforms.uBulbColor.value.copy(p.bulb);
+  liquidMat.color.copy(p.liquid); liquidMat.emissive.copy(p.liquid); bulbLight.color.copy(p.bulb); spill.color.copy(p.bulb);
+  bulbMat.emissive.copy(p.bulb);
+  document.querySelectorAll('.preset').forEach((el,j)=>el.classList.toggle('active', j===i));
+}
+$('power').addEventListener('change',e=>{
+  state.power=e.target.checked; $('powerLabel').textContent=state.power?'On':'Off';
+  if(state.power){ state.warmup=0; } // wax must warm before first blob rises
+  switchBtn.material.emissiveIntensity = state.power?0.7:0.02;
+});
+$('heat').addEventListener('input',e=>{ state.heat=parseFloat(e.target.value); $('heatOut').textContent=state.heat.toFixed(2)+'\u00D7'; });
+$('waxAmt').addEventListener('input',e=>{ state.waxAmt=parseFloat(e.target.value); $('waxOut').textContent=Math.round(state.waxAmt*100)+'%'; });
+$('room').addEventListener('input',e=>{ state.room=parseFloat(e.target.value); $('roomOut').textContent=Math.round(state.room*100)+'%'; });
+$('slow').addEventListener('change',e=>{ state.slow=e.target.checked; });
+$('orbit').addEventListener('change',e=>{ controls.autoRotate=e.target.checked; });
+applyPreset(0);
+
+/* ---------- flicker from wax occluding the bulb ---------- */
+function bulbOcclusion(){
+  let occ=0;
+  for(const b of blobs){ if(!b.active) continue;
+    const dx=b.pos.x, dz=b.pos.z, dy=b.pos.y-1.15;
+    const d=Math.sqrt(dx*dx+dz*dz+dy*dy*0.6);
+    occ += Math.exp(-d*d*3.5) * b.r*1.4;
+  }
+  return THREE.MathUtils.clamp(occ,0,0.55);
+}
+
+/* ---------- adaptive quality ---------- */
+let fpsAcc=0, fpsN=0, fpsTimer=0;
+function adaptQuality(dt){
+  fpsAcc+=dt; fpsN++; fpsTimer+=dt;
+  if(fpsTimer>2.5){
+    const avg=fpsN/Math.max(fpsAcc,1e-3);
+    if(avg<42 && waxUniforms.uSteps.value>34){ waxUniforms.uSteps.value-=8; renderer.setPixelRatio(Math.max(1.0, renderer.getPixelRatio()-0.15)); composer.setPixelRatio(renderer.getPixelRatio()); }
+    else if(avg>57 && waxUniforms.uSteps.value<52){ waxUniforms.uSteps.value+=4; }
+    fpsAcc=0; fpsN=0; fpsTimer=0;
+  }
+}
+
+/* ---------- main loop (fixed-timestep wax) ---------- */
+const clock=new THREE.Clock();
+let accumulator=0; const FIXED=1/60;
+function animate(){
+  requestAnimationFrame(animate);
+  const rawDt=Math.min(clock.getDelta(), 0.05);
+  const timeScale=state.slow?0.22:1.0;
+  const dt=rawDt*timeScale;
+  accumulator+=dt;
+  let guard=0;
+  while(accumulator>=FIXED && guard<4){ stepWax(FIXED); accumulator-=FIXED; guard++; }
+  if(guard>=4) accumulator=0;
+  syncWaxUniforms();
+  // bulb + room respond to power, heat and wax occlusion (flicker/shift)
+  const occ=bulbOcclusion();
+  const flick=1 - occ*0.55 + Math.sin(state.time*13.7)*0.012*state.heatLevel + Math.sin(state.time*7.3+1.7)*0.01*state.heatLevel;
+  const bulbI=(1.2+8.5*state.heatLevel)*flick;
+  bulbLight.intensity=bulbI; spill.intensity=(0.3+2.8*state.heatLevel)*flick;
+  bulbMat.emissiveIntensity=0.08+2.0*state.heatLevel*flick;
+  liquidMat.emissiveIntensity=0.02+0.13*state.heatLevel;
+  bloom.strength=0.16+0.40*state.heatLevel;
+  const rm=state.room;
+  roomLight.intensity=rm*1.1; rimLight.intensity=0.06+rm*0.5; ambient.intensity=0.12+rm*0.85;
+  scene.environmentIntensity=0.10+rm*0.55;
+  gradePass.uniforms.uTime.value=performance.now()*0.001;
+  controls.update();
+  adaptQuality(rawDt);
+  composer.render();
+}
+animate();
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight);
+  gradePass.uniforms.uAspect.value=innerWidth/innerHeight;
+});
+
+</script>
+</body>
+</html>

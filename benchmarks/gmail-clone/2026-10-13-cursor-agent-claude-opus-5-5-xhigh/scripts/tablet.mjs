@@ -1,0 +1,17 @@
+import { chromium } from "playwright";
+const out = new globalThis.URL("../.shots/", import.meta.url).pathname;
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 820, height: 1000 } });
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+await page.goto("http://localhost:9391/", { waitUntil: "networkidle" });
+await page.waitForSelector("[role=grid] [data-thread-id]");
+await page.screenshot({ path: out + "tab-inbox.png" });
+await page.getByRole("button", { name: "Main menu" }).click();
+await page.waitForTimeout(300);
+await page.screenshot({ path: out + "tab-nav.png" });
+await page.locator("nav a", { hasText: "Starred" }).first().click();
+await page.waitForTimeout(300);
+console.log("hash", await page.evaluate(() => location.hash), "navOpen closed:", !(await page.locator("aside.shadow-e2").count()));
+console.log("errors", errors.length ? errors : "none");
+await browser.close();

@@ -1,0 +1,67 @@
+import { useMemo, useRef, useState, useEffect } from 'react'
+import { CITIES, type City } from '../data/cities'
+
+interface Props {
+  selectedIds: string[]
+  onAdd: (id: string) => void
+}
+
+export default function AddCity({ selectedIds, onAdd }: Props) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const available = CITIES.filter((c) => !selectedIds.includes(c.id))
+    if (!q) return available
+    return available.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.country.toLowerCase().includes(q) || c.region.toLowerCase().includes(q),
+    )
+  }, [query, selectedIds])
+
+  function handleAdd(city: City) {
+    onAdd(city.id)
+    setQuery('')
+    setOpen(false)
+  }
+
+  return (
+    <div className="add-city" ref={wrapperRef}>
+      <button type="button" className="add-city-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        + Add city
+      </button>
+      {open && (
+        <div className="add-city-panel">
+          <input
+            autoFocus
+            className="add-city-search"
+            placeholder="Search by city or country…"
+            aria-label="Search cities"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <ul className="add-city-list">
+            {results.map((city) => (
+              <li key={city.id}>
+                <button type="button" className="add-city-item" onClick={() => handleAdd(city)}>
+                  <span className="add-city-item-name">{city.name}</span>
+                  <span className="add-city-item-meta">{city.country} · {city.region}</span>
+                </button>
+              </li>
+            ))}
+            {results.length === 0 && <li className="add-city-empty">No cities found</li>}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}

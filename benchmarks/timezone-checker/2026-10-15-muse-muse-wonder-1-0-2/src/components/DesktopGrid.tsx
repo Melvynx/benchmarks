@@ -1,0 +1,60 @@
+import { formatHour, formatUtcOffset, type TimeFormat } from '../lib/time'
+import type { RowData } from '../lib/types'
+
+interface Props {
+  rows: RowData[]
+  timeFormat: TimeFormat
+  onPromote: (id: string) => void
+  onRemove: (id: string) => void
+}
+
+export default function DesktopGrid({ rows, timeFormat, onPromote, onRemove }: Props) {
+  const hours = Array.from({ length: 24 }, (_, i) => i)
+  return (
+    <div className="desktop-grid" data-layout="desktop">
+      <div className="grid-header-row">
+        <div className="grid-corner">City / Ref hour →</div>
+        <div className="hour-header">
+          {hours.map((h) => (
+            <div key={h} className="hour-label">{formatHour(h, timeFormat)}</div>
+          ))}
+        </div>
+        <div />
+      </div>
+      {rows.map((row, idx) => (
+        <div key={row.city.id} className="city-row">
+          <div className="city-info">
+            <button
+              type="button"
+              className="city-name-btn"
+              onClick={() => onPromote(row.city.id)}
+              title={idx === 0 ? `${row.city.name} is the reference city` : `Make ${row.city.name} the reference city`}
+              aria-label={idx === 0 ? `${row.city.name} (reference)` : `Promote ${row.city.name} to reference`}
+            >
+              {row.city.name}
+            </button>
+            {idx === 0 && <span className="ref-badge">REF</span>}
+            <span className="city-meta">{row.city.country}</span>
+            <span className="utc-offset">{formatUtcOffset(row.offset)}</span>
+          </div>
+          <div className="cells" role="row" aria-label={`${row.city.name} hours`}>
+            {row.cells.map((cell) => (
+              <div
+                key={cell.refHour}
+                className={`cell cell--${cell.state}`}
+                data-state={cell.state}
+                data-ref-hour={cell.refHour}
+                title={`${row.city.name}: ${cell.label} — ${cell.state}`}
+              >
+                {cell.label}
+              </div>
+            ))}
+          </div>
+          <button type="button" className="remove-btn" onClick={() => onRemove(row.city.id)} aria-label={`Remove ${row.city.name}`} title={`Remove ${row.city.name}`}>
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}

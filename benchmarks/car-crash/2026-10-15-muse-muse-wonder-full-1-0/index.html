@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>muse-wonder-full-1.0</title>
+<style>
+  :root{
+    --bg:#14171c; --panel:#1c2027; --panel2:#232833; --line:#333b49;
+    --ink:#e8ecf2; --dim:#9aa6b8; --accent:#e8a13a; --accent-ink:#1a1408;
+    --good:#57c785; --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,"Helvetica Neue",Helvetica,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto;flex-wrap:wrap}
+  header h1{font-size:17px;font-weight:700;letter-spacing:.2px;margin:0;font-family:var(--mono)}
+  header .sub{font-size:12px;color:var(--dim)}
+  header .spacer{flex:1}
+  button{font-family:var(--sans);font-size:14px;cursor:pointer;border:1px solid var(--line);
+    background:var(--panel2);color:var(--ink);border-radius:6px;padding:8px 16px}
+  button:hover{border-color:#4a5568}
+  button:active{transform:translateY(1px)}
+  #testBtn{background:var(--accent);color:var(--accent-ink);border-color:#b97e24;
+    font-weight:700;font-size:15px;padding:9px 26px;letter-spacing:.4px}
+  #testBtn:hover{background:#f0ae4c}
+  #statusPill{font-family:var(--mono);font-size:12px;padding:5px 10px;border:1px solid var(--line);
+    border-radius:999px;color:var(--dim);background:#171b21;min-width:104px;text-align:center}
+  #statusPill.running{color:var(--accent);border-color:#6b5324}
+  #statusPill.done{color:var(--good);border-color:#2c5c40}
+  main{flex:1;display:flex;min-height:0}
+  #stage{flex:1;position:relative;min-width:0;background:#0e1116}
+  canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+  #hud{position:absolute;left:12px;top:10px;font-family:var(--mono);font-size:12.5px;
+    background:rgba(16,19,24,.82);border:1px solid var(--line);border-radius:6px;
+    padding:8px 12px;line-height:1.65;pointer-events:none;min-width:218px}
+  #hud b{color:#fff;font-weight:600}
+  #hud .k{color:var(--dim);display:inline-block;width:118px}
+  #verdict{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
+    font-family:var(--mono);font-size:13px;background:rgba(16,19,24,.88);
+    border:1px solid #2c5c40;color:var(--good);border-radius:6px;padding:7px 14px;
+    display:none;pointer-events:none;white-space:nowrap}
+  aside{width:302px;flex:0 0 302px;background:var(--panel);border-left:1px solid var(--line);
+    overflow-y:auto;padding:14px 16px 20px}
+  aside h2{font-size:13px;font-weight:700;margin:2px 0 4px;letter-spacing:.3px}
+  aside p.note{font-size:12px;color:var(--dim);line-height:1.5;margin:0 0 12px}
+  .ctl{margin:0 0 14px;padding:10px 11px 9px;background:var(--panel2);border:1px solid var(--line);border-radius:6px}
+  .ctl .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .ctl label{font-size:12.5px;font-weight:600}
+  .ctl .unit{color:var(--dim);font-size:11.5px;font-weight:400}
+  .ctl output{font-family:var(--mono);font-size:13px;color:var(--accent);white-space:nowrap}
+  .ctl input[type=range]{width:100%;margin:9px 0 5px;accent-color:var(--accent);height:20px}
+  .ctl .range{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+  .ctl input[type=number]{width:74px;background:#171b21;color:var(--ink);border:1px solid var(--line);
+    border-radius:4px;font-family:var(--mono);font-size:12.5px;padding:4px 6px}
+  .fixed{font-family:var(--mono);font-size:11.5px;color:var(--dim);line-height:1.8;
+    border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+  .fixed b{color:var(--ink);font-weight:600}
+  .btnrow{display:flex;gap:8px;margin:2px 0 14px}
+  .btnrow button{flex:1}
+  @media (max-width:860px){
+    body{overflow:auto} main{flex-direction:column}
+    #stage{min-height:52vh} aside{width:auto;flex:none;border-left:none;border-top:1px solid var(--line)}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>muse-wonder-full-1.0</h1>
+  <span class="sub">2D rigid-body crash experiment &mdash; car vs. freestanding brick wall</span>
+  <span class="spacer"></span>
+  <span id="statusPill">READY</span>
+  <button id="resetBtn" type="button">Reset</button>
+  <button id="testBtn" type="button">Test &#9654;</button>
+</header>
+<main>
+  <section id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div><span class="k">car speed</span><b id="hudSpeed">0.0 m/s</b></div>
+      <div><span class="k">elapsed</span><b id="hudTime">0.00 s</b></div>
+      <div><span class="k">moving bricks</span><b id="hudMoving">0 / 0</b></div>
+      <div><span class="k">car momentum</span><b id="hudMom">0 kg&middot;m/s</b></div>
+      <div><span class="k">peak impact</span><b id="hudPeak">0 kN</b></div>
+    </div>
+    <div id="verdict"></div>
+  </section>
+  <aside>
+    <h2>Settings</h2>
+    <p class="note">Changing a setting rebuilds the scene with that value only. Press <b>Test</b> to reset and launch; the same settings always produce the same result.</p>
+    <div class="btnrow">
+      <button id="defaultsBtn" type="button">Restore defaults</button>
+      <button id="slowBtn" type="button" aria-pressed="false">Slow motion</button>
+    </div>
+    <div id="controls"></div>
+    <div class="fixed" id="fixedParams"></div>
+  </aside>
+</main>
+<script>
+"use strict";
+/* ============================================================
+   Configuration — mandatory baseline defaults
+   ============================================================ */
+const DEFAULTS = {
+  carSpeed: 22,        // m/s
+  wallCols: 12,        // bricks across
+  wallRows: 8,         // bricks tall
+  wallLayers: 2,       // depth layers
+  brickMass: 2.5       // kg per brick
+};
+const FIXED = {
+  brickW: 0.50, brickH: 0.24,          // m
+  gravity: 9.81,                        // m/s^2
+  brickFriction: 0.72,
+  brickRestitution: 0.18,
+  carMass: 1250,                        // kg
+  carW: 4.2, carH: 1.45,                // m
+  groundFriction: 0.85,
+  scale: 80                             // px per meter (max render scale)
+};
+const RANGES = {
+  carSpeed:   {min:5,  max:45, step:0.5, label:"Car speed",        unit:"m/s", fmt:v=>v.toFixed(1)},
+  wallCols:   {min:4,  max:24, step:1,   label:"Wall columns",     unit:"bricks wide", fmt:v=>String(v|0)},
+  wallRows:   {min:3,  max:16, step:1,   label:"Wall rows",        unit:"bricks tall", fmt:v=>String(v|0)},
+  wallLayers: {min:1,  max:5,  step:1,   label:"Wall depth layers",unit:"layers thick", fmt:v=>String(v|0)},
+  brickMass:  {min:0.5,max:12, step:0.1, label:"Brick mass",       unit:"kg / brick", fmt:v=>v.toFixed(1)}
+};
+const settings = Object.assign({}, DEFAULTS);
+
+/* Deterministic visual-only RNG (never feeds physics initial conditions). */
+function mulberry32(seed){ return function(){ seed|=0; seed=(seed+0x6D2B79F5)|0;
+  let t=Math.imul(seed^(seed>>>15),1|seed); t=(t+Math.imul(t^(t>>>7),61|t))^t;
+  return ((t^(t>>>14))>>>0)/4294967296; }; }
+let fxRng = mulberry32(1234567);
+const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+
+/* ============================================================
+   Rigid-body physics — impulse solver, SAT narrowphase
+   Units: meters, kilograms, seconds. Ground is the plane y=0.
+   ============================================================ */
+let bodies=[], car=null, bricks=[];
+let simTime=0, state="ready", slowMo=false;
+let impactPeakN=0, carCrush=0, carHasHit=false, settleTimer=0, shake=0, carMaxFront=0;
+let particles=[], skidMarks=[], wheelAngle=0;
+const WALL_X=12.5, CAR_START_X=3.4;
+
+function makeBody(x,y,w,h,mass,fric,rest,type){
+  const I = mass*(w*w+h*h)/12;
+  return {x,y,vx:0,vy:0,a:0,w:0,hw:w/2,hh:h/2,mass,invM:mass>0?1/mass:0,
+    I,invI:I>0?1/I:0,fric,rest,type,asleep:false,sleepT:0,shade:0,layer:0,
+    verts:[{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}], minX:0,maxX:0,minY:0,maxY:0};
+}
+function updateVerts(b){
+  const c=Math.cos(b.a), s=Math.sin(b.a), hw=b.hw, hh=b.hh;
+  const lx=[-hw,hw,hw,-hw], ly=[-hh,-hh,hh,hh];
+  b.minX=1e9;b.maxX=-1e9;b.minY=1e9;b.maxY=-1e9;
+  for(let i=0;i<4;i++){
+    const vx=b.x+lx[i]*c-ly[i]*s, vy=b.y+lx[i]*s+ly[i]*c;
+    b.verts[i].x=vx; b.verts[i].y=vy;
+    if(vx<b.minX)b.minX=vx; if(vx>b.maxX)b.maxX=vx;
+    if(vy<b.minY)b.minY=vy; if(vy>b.maxY)b.maxY=vy;
+  }
+  b.ax=c; b.ay=s; b.bx=-s; b.by=c; // local axes in world space
+}
+function wake(b){ if(b.asleep){ b.asleep=false; b.sleepT=0; } }
+function pointInBody(b,px,py,pad){
+  const dx=px-b.x, dy=py-b.y;
+  const lx= dx*b.ax+dy*b.ay, ly=dx*b.bx+dy*b.by;
+  return Math.abs(lx)<=b.hw+pad && Math.abs(ly)<=b.hh+pad;
+}
+/* SAT test. Returns {nx,ny,pen,pts:[{x,y}..]} or null. Normal points a->b. */
+function collideOBB(a,b){
+  const axes=[[a.ax,a.ay],[a.bx,a.by],[b.ax,b.ay],[b.bx,b.by]];
+  let minPen=Infinity, mnx=0, mny=0;
+  const dx=b.x-a.x, dy=b.y-a.y;
+  for(let k=0;k<4;k++){
+    const ux=axes[k][0], uy=axes[k][1];
+    const ra=Math.abs(a.hw*(ux*a.ax+uy*a.ay))+Math.abs(a.hh*(ux*a.bx+uy*a.by));
+    const rb=Math.abs(b.hw*(ux*b.ax+uy*b.ay))+Math.abs(b.hh*(ux*b.bx+uy*b.by));
+    const dist=dx*ux+dy*uy, overlap=ra+rb-Math.abs(dist);
+    if(overlap<0) return null;
+    if(overlap<minPen){ minPen=overlap; const s=dist<0?-1:1; mnx=ux*s; mny=uy*s; }
+  }
+  // Contact points: vertices of either body inside the other.
+  const pts=[];
+  for(const v of a.verts) if(pointInBody(b,v.x,v.y,0.004)) pts.push({x:v.x,y:v.y});
+  for(const v of b.verts) if(pointInBody(a,v.x,v.y,0.004)) pts.push({x:v.x,y:v.y});
+  if(pts.length===0) pts.push({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+  // Keep at most the two most separated points (stable face contacts).
+  let use=pts;
+  if(pts.length>2){
+    let best=-1, bi=0, bj=1;
+    for(let i=0;i<pts.length;i++) for(let j=i+1;j<pts.length;j++){
+      const d=(pts[i].x-pts[j].x)**2+(pts[i].y-pts[j].y)**2;
+      if(d>best){best=d;bi=i;bj=j;}
+    }
+    use=[pts[bi],pts[bj]];
+  }
+  return {nx:mnx, ny:mny, pen:minPen, pts:use};
+}
+function relVelAt(b,px,py,out){
+  const rx=px-b.x, ry=py-b.y;
+  out.x=b.vx - b.w*ry; out.y=b.vy + b.w*rx; out.rx=rx; out.ry=ry;
+}
+const _va={x:0,y:0,rx:0,ry:0}, _vb={x:0,y:0,rx:0,ry:0};
+function applyImpulse(b,jx,jy,px,py){
+  if(b.asleep) return;
+  b.vx+=jx*b.invM; b.vy+=jy*b.invM;
+  b.w += ((px-b.x)*jy-(py-b.y)*jx)*b.invI;
+}
+/* Resolve one contact point. b may be null (ground). Returns normal impulse magnitude. */
+function resolvePoint(a,b,px,py,nx,ny,rest,mu,dt){
+  relVelAt(a,px,py,_va);
+  let rvx=-_va.x, rvy=-_va.y, invMb=0, invIb=0, rbx=0, rby=0;
+  if(b){ relVelAt(b,px,py,_vb); rvx=_vb.x-_va.x; rvy=_vb.y-_va.y;
+    invMb=b.asleep?0:b.invM; invIb=b.asleep?0:b.invI; rbx=_vb.rx; rby=_vb.ry; }
+  const invMa=a.asleep?0:a.invM, invIa=a.asleep?0:a.invI;
+  const vn=rvx*nx+rvy*ny;
+  let jn=0;
+  if(vn<0){
+    const raCn=_va.rx*ny-_va.ry*nx, rbCn=rbx*ny-rby*nx;
+    const eff=invMa+invMb+raCn*raCn*invIa+rbCn*rbCn*invIb;
+    if(eff>0){
+      const e = vn<-1.2 ? rest : 0;
+      jn=-(1+e)*vn/eff;
+      applyImpulse(a,-jn*nx,-jn*ny,px,py);
+      if(b) applyImpulse(b, jn*nx, jn*ny,px,py);
+      // Friction (recompute relative velocity after normal impulse).
+      relVelAt(a,px,py,_va);
+      if(b){ relVelAt(b,px,py,_vb); rvx=_vb.x-_va.x; rvy=_vb.y-_va.y; }
+      else { rvx=-_va.x; rvy=-_va.y; }
+      const tx=-ny, ty=nx, vt=rvx*tx+rvy*ty;
+      const raCt=_va.rx*ty-_va.ry*tx, rbCt=rbx*ty-rby*tx;
+      const effT=invMa+invMb+raCt*raCt*invIa+rbCt*rbCt*invIb;
+      if(effT>0){
+        let jt=-vt/effT; const maxF=mu*jn;
+        jt=clamp(jt,-maxF,maxF);
+        applyImpulse(a,-jt*tx,-jt*ty,px,py);
+        if(b) applyImpulse(b, jt*tx, jt*ty,px,py);
+      }
+    }
+  }
+  return jn;
+}
+function positional(a,b,nx,ny,pen){
+  const slop=0.0015, percent=0.55;
+  const invMa=a.asleep?0:a.invM, invMb=b?(b.asleep?0:b.invM):0;
+  const sum=invMa+invMb; if(sum<=0) return;
+  const corr=Math.max(pen-slop,0)*percent/sum;
+  a.x-=nx*corr*invMa; a.y-=ny*corr*invMa;
+  if(b){ b.x+=nx*corr*invMb; b.y+=ny*corr*invMb; }
+}
+/* ============================================================
+   Scene construction
+   ============================================================ */
+function buildScene(){
+  bodies=[]; bricks=[]; particles=[]; skidMarks=[];
+  simTime=0; impactPeakN=0; carCrush=0; carHasHit=false; settleTimer=0; shake=0; wheelAngle=0; carMaxFront=0;
+  supportCheckTick=0; lastGrid=null; accumulator=0; camX=0; zoomW=0; // full reset => repeatable runs
+  fxRng=mulberry32(1234567);
+  state="ready";
+  // Car: single rigid body; wheels/suspension are visual. Rolling resistance
+  // is modelled with low ground friction until impact (then tyres skid).
+  car=makeBody(CAR_START_X, FIXED.carH/2+0.02, FIXED.carW, FIXED.carH,
+    FIXED.carMass, 0.04, 0.05, "car");
+  car.asleep=true;
+  bodies.push(car);
+  // Bricks: staggered courses; depth layers staggered by half a brick and
+  // nudged in +x so the wall is genuinely thicker in the impact direction.
+  const bw=FIXED.brickW, bh=FIXED.brickH, gap=0.002;
+  const cols=settings.wallCols|0, rows=settings.wallRows|0, layers=settings.wallLayers|0;
+  for(let layer=layers-1; layer>=0; layer--){
+    const layerOff=(layer%2)*(bw/2) + layer*0.055;
+    for(let r=0;r<rows;r++){
+      const rowOff=(r%2)*(bw/2);
+      for(let c=0;c<cols;c++){
+        const x=WALL_X + bw/2 + c*(bw+gap) + rowOff + layerOff;
+        const y=bh/2 + r*(bh+gap);
+        const b=makeBody(x,y,bw,bh,settings.brickMass,
+          FIXED.brickFriction, FIXED.brickRestitution, "brick");
+        b.layer=layer;
+        // Deterministic per-brick tint from index hash (visual only).
+        const h=Math.imul((c*73856093)^(r*19349663)^(layer*83492791),2654435761)>>>0;
+        b.shade=(h%100)/100;
+        b.asleep=true; // perfectly stacked wall starts at rest
+        bricks.push(b); bodies.push(b);
+      }
+    }
+  }
+  for(const b of bodies) updateVerts(b);
+  updateHud(); setStatus("READY","");
+  document.getElementById("verdict").style.display="none";
+}
+function launch(){
+  buildScene();
+  wake(car);
+  car.vx=settings.carSpeed; car.vy=0;
+  state="running";
+  setStatus("RUNNING","running");
+}
+
+/* ============================================================
+   Solver step (fixed dt). Broadphase: uniform grid.
+   Sleeping bodies act as static until woken by a real impact
+   or by losing the support underneath them.
+   ============================================================ */
+const CELL=0.65;
+function buildGrid(){
+  const grid=new Map();
+  for(let i=0;i<bodies.length;i++){
+    const b=bodies[i];
+    const x0=Math.floor(b.minX/CELL), x1=Math.floor(b.maxX/CELL);
+    const y0=Math.floor(b.minY/CELL), y1=Math.floor(b.maxY/CELL);
+    for(let gx=x0;gx<=x1;gx++) for(let gy=y0;gy<=y1;gy++){
+      const key=gx*4096+gy+2048;
+      let arr=grid.get(key); if(!arr){arr=[];grid.set(key,arr);}
+      arr.push(i);
+    }
+  }
+  return grid;
+}
+function candidatePairs(grid){
+  const seen=new Set(), pairs=[];
+  for(const arr of grid.values()){
+    for(let i=0;i<arr.length;i++) for(let j=i+1;j<arr.length;j++){
+      const a=Math.min(arr[i],arr[j]), b=Math.max(arr[i],arr[j]);
+      const key=a*100000+b;
+      if(seen.has(key)) continue; seen.add(key);
+      const A=bodies[a], B=bodies[b];
+      if(A.asleep && B.asleep) continue;
+      if(A.maxX<B.minX||B.maxX<A.minX||A.maxY<B.minY||B.maxY<A.minY) continue;
+      pairs.push([A,B]);
+    }
+  }
+  return pairs;
+}
+function spawnDust(x,y,n,spread){
+  for(let i=0;i<n;i++){
+    if(particles.length>420) return;
+    const a=fxRng()*Math.PI*2, sp=(0.4+fxRng()*1.6)*spread;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.abs(Math.sin(a))*sp*0.8+0.4,
+      life:0.7+fxRng()*0.9,age:0,r:0.05+fxRng()*0.13});
+  }
+}
+function stepPhysics(dt){
+  simTime+=dt;
+  // Integrate forces + positions for awake bodies.
+  for(const b of bodies){
+    if(b.asleep) continue;
+    b.vy-=FIXED.gravity*dt;
+    // Mild angular/linear damping keeps debris settling stable.
+    b.vx*=Math.max(0,1-0.02*dt); b.vy*=Math.max(0,1-0.01*dt);
+    b.w *=Math.max(0,1-(b.type==="car"?2.2:0.25)*dt);
+    if(b.type==="brick"){
+      // Tumbling/rolling losses at ground contact + extra damping once
+      // debris is nearly at rest, so rubble settles instead of creeping.
+      if(b.minY<0.05) b.w*=Math.max(0,1-3.0*dt);
+      if(b.minY<0.03) b.vx*=Math.max(0,1-0.9*dt);
+      const sp0=Math.hypot(b.vx,b.vy);
+      if(sp0<0.6){ const d=Math.max(0,1-2.6*dt); b.vx*=d; b.vy*=d; b.w*=Math.max(0,1-3.5*dt); }
+      const cap=Math.max(34, settings.carSpeed*1.05);
+      if(sp0>cap){ b.vx*=cap/sp0; b.vy*=cap/sp0; } // numerical safety cap
+    }
+    b.x+=b.vx*dt; b.y+=b.vy*dt; b.a+=b.w*dt;
+    if(b.a>Math.PI)b.a-=2*Math.PI; if(b.a<-Math.PI)b.a+=2*Math.PI;
+  }
+  for(const b of bodies) updateVerts(b);
+  lastGrid=buildGrid();
+  const pairs=candidatePairs(lastGrid);
+  const contacts=[];
+  for(const [A,B] of pairs){
+    const hit=collideOBB(A,B);
+    if(hit) contacts.push({A,B,hit});
+  }
+  // Sequential impulse iterations (fewer at very high brick counts).
+  let stepImpulse=0;
+  const ITER=bricks.length>800 ? 5 : 8;
+  for(let iter=0;iter<ITER;iter++){
+    for(const c of contacts){
+      const {A,B,hit}=c;
+      // Wake a sleeping body struck by a moving one.
+      const relSpeed=Math.hypot(B.vx-A.vx,B.vy-A.vy);
+      if((A.asleep||B.asleep) && (relSpeed>0.25 || A.type==="car" || B.type==="car")){
+        if(relSpeed>0.25 || Math.hypot(car.vx,car.vy)>0.5){ wake(A); wake(B); }
+      }
+      const mu=Math.sqrt(A.fric*B.fric);
+      // Restitution only on the first iteration, or it injects energy.
+      // Brick-brick clatter loses extra energy (no mortar, many contacts).
+      const restBase=(A.type==="brick"&&B.type==="brick") ? Math.min(A.rest,B.rest)*0.55 : Math.min(A.rest,B.rest);
+      const rest=iter===0 ? restBase : 0;
+      for(const p of hit.pts){
+        const jn=resolvePoint(A,B,p.x,p.y,hit.nx,hit.ny,rest,mu,dt);
+        if(iter===0) stepImpulse+=jn;
+        if(iter===0 && jn>0 && (A.type==="car"||B.type==="car")){
+          carHasHit=true;
+          car.fric=FIXED.groundFriction; // tyres now skid against ground contact
+          const other=A.type==="car"?B:A;
+          wake(other);
+          if(jn>900){ spawnDust(p.x,Math.max(p.y,0.15),3,1); shake=Math.min(0.35,shake+jn/45000); }
+          carCrush=clamp(carCrush+jn/6000,0,0.42);
+        }
+      }
+    }
+    // Ground contacts (each penetrating vertex).
+    for(const b of bodies){
+      if(b.asleep) continue;
+      const mu=b.type==="car" && !carHasHit ? 0.04 : Math.sqrt(b.fric*FIXED.groundFriction);
+      for(const v of b.verts){
+        if(v.y<0){
+          // Solver normal points from body a toward body b (the ground below).
+          const jn=resolvePoint(b,null,v.x,0,0,-1,iter===0?b.rest*0.5:0,mu,dt);
+          if(iter===0 && jn>2600 && b.type==="brick") spawnDust(v.x,0.06,1,0.5);
+        }
+      }
+    }
+  }
+  // Positional de-overlap.
+  for(const c of contacts) positional(c.A,c.B,c.hit.nx,c.hit.ny,c.hit.pen);
+  for(const b of bodies){
+    if(b.asleep) continue;
+    updateVerts(b);
+    if(b.minY<0) b.y-=b.minY; // lift out of ground plane
+    updateVerts(b);
+  }
+  // Impact force estimate for telemetry (impulse / dt).
+  if(stepImpulse>0) impactPeakN=Math.max(impactPeakN, stepImpulse/dt);
+  // Car wheel spin + skid marks after impact.
+  wheelAngle+=car.vx*dt/0.33;
+  if(carHasHit && Math.abs(car.vx)>1.2 && car.minY<0.08){
+    skidMarks.push({x:car.x-1.35,y:0},{x:car.x+1.35,y:0});
+    if(skidMarks.length>900) skidMarks.splice(0,2);
+  }
+  // Sleep bookkeeping + support check for sleeping bricks.
+  for(const b of bodies){
+    if(b.type==="car") continue;
+    if(!b.asleep){
+      const sp=Math.hypot(b.vx,b.vy);
+      if(sp<0.14 && Math.abs(b.w)<0.18 && b.minY<3){
+        b.sleepT+=dt;
+        if(b.sleepT>0.4){ b.asleep=true; b.vx=b.vy=b.w=0; }
+      } else b.sleepT=0;
+    }
+  }
+  supportCheckTick=(supportCheckTick+1)%6;
+  if(supportCheckTick===0) wakeUnsupported();
+  // Settled detection.
+  if(state==="running"){
+    carMaxFront=Math.max(carMaxFront, car.x+car.hw);
+    let maxSp=Math.hypot(car.vx,car.vy);
+    for(const b of bricks) if(!b.asleep) maxSp=Math.max(maxSp,Math.hypot(b.vx,b.vy));
+    if(carHasHit && maxSp<0.28 && Math.hypot(car.vx,car.vy)<0.08){
+      settleTimer+=dt; if(settleTimer>1.0) finish();
+    } else settleTimer=0;
+    if(simTime>25) finish();
+  }
+  // Dust particles (visual only).
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.age+=dt;
+    if(p.age>p.life){ particles.splice(i,1); continue; }
+    p.vy-=1.1*dt; p.vx*=Math.max(0,1-1.6*dt);
+    p.x+=p.vx*dt; p.y=Math.max(0.03,p.y+p.vy*dt);
+  }
+  shake*=Math.max(0,1-5.5*dt);
+}
+let supportCheckTick=0, lastGrid=null;
+function gridBodies(minX,minY,maxX,maxY,out){
+  if(!lastGrid) return out;
+  const x0=Math.floor(minX/CELL), x1=Math.floor(maxX/CELL);
+  const y0=Math.floor(minY/CELL), y1=Math.floor(maxY/CELL);
+  for(let gx=x0;gx<=x1;gx++) for(let gy=y0;gy<=y1;gy++){
+    const arr=lastGrid.get(gx*4096+gy+2048);
+    if(arr) for(const i of arr) out.add(bodies[i]);
+  }
+  return out;
+}
+function wakeUnsupported(){
+  const near=new Set();
+  for(const b of bricks){
+    if(!b.asleep) continue;
+    if(b.minY<0.03) continue; // resting on ground
+    // Only bricks near current activity can have lost their support.
+    near.clear();
+    gridBodies(b.minX-0.35,b.minY-0.35,b.maxX+0.35,b.maxY+0.35,near);
+    let anyAwake=false;
+    for(const o of near){ if(o!==b && !o.asleep){ anyAwake=true; break; } }
+    if(!anyAwake) continue;
+    // Sample just below both bottom corners.
+    let supported=false;
+    const probes=[{x:b.x-b.hw*0.7,y:b.minY-0.03},{x:b.x+b.hw*0.7,y:b.minY-0.03}];
+    for(const p of probes){
+      for(const o of near){
+        if(o===b) continue;
+        if(p.x>o.minX-0.02&&p.x<o.maxX+0.02&&p.y>o.minY-0.02&&p.y<o.maxY+0.05){ supported=true; break; }
+      }
+      if(supported) break;
+    }
+    if(!supported) wake(b);
+  }
+}
+function finish(){
+  if(state!=="running") return;
+  state="settled";
+  setStatus("SETTLED","done");
+  for(const b of bodies){ b.asleep=true; b.vx=b.vy=b.w=0; } // freeze residual creep
+  // Outcome summary measured from the simulation, not scripted.
+  const maxPen=Math.max(0,carMaxFront-WALL_X);
+  const v=document.getElementById("verdict");
+  v.textContent="Settled in "+simTime.toFixed(1)+" s · max penetration "+maxPen.toFixed(1)+
+    " m past the wall line · car stopped at "+(car.x+car.hw).toFixed(1)+" m";
+  v.style.display="block";
+  updateHud();
+}
+/* ============================================================
+   Rendering — world in meters, y=0 is the ground.
+   Render scale is capped at the mandated 80 px/m and shrinks
+   only as needed to fit the track in the window.
+   ============================================================ */
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+let viewW=0, viewH=0, dpr=1, camX=0, zoomW=0;
+function resize(){
+  const r=cv.parentElement.getBoundingClientRect();
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  viewW=Math.max(320,r.width); viewH=Math.max(240,r.height);
+  cv.width=Math.round(viewW*dpr); cv.height=Math.round(viewH*dpr);
+}
+window.addEventListener("resize",resize);
+function viewTargetWidth(){
+  // Initial framing: start line through the far side of the wall.
+  // A following camera (camX) then keeps a breakthrough in view.
+  return Math.max(24, WALL_X + settings.wallCols*FIXED.brickW + settings.wallLayers*0.3 + 6.5);
+}
+function worldWidth(){ return viewTargetWidth()+camX; }
+function renderScale(){
+  const needH=Math.max(7.5, settings.wallRows*FIXED.brickH+3.4);
+  const w=zoomW>0 ? zoomW : viewTargetWidth();
+  return Math.min(FIXED.scale, viewW/w, viewH/needH);
+}
+function debrisFront(){
+  // 95th-percentile brick right edge: frames the rubble field
+  // without chasing a single outlier brick.
+  if(!bricks.length) return 0;
+  const xs=bricks.map(b=>b.maxX).sort((a,b)=>a-b);
+  return xs[Math.min(xs.length-1, Math.floor(xs.length*0.95))];
+}
+function drawBackground(S,groundY){
+  // Screen-space sky (drawn before the camera transform).
+  const g=ctx.createLinearGradient(0,0,0,groundY);
+  g.addColorStop(0,"#2a3342"); g.addColorStop(0.65,"#3d4a5e"); g.addColorStop(1,"#55647a");
+  ctx.fillStyle=g; ctx.fillRect(0,0,viewW,groundY);
+  ctx.fillStyle="rgba(255,255,255,0.07)";
+  ctx.fillRect(0,groundY-1.1*S,viewW,1.1*S);
+}
+function drawWorldBackdrop(S,groundY){
+  // World-space test-hall posts (drawn inside the camera transform).
+  ctx.fillStyle="rgba(20,26,36,0.35)";
+  const x0=Math.floor(camX/4)*4-4, x1=camX+viewW/S+4;
+  for(let x=x0;x<x1;x+=4){ ctx.fillRect(x*S-3, groundY-4.6*S, 6, 4.6*S); }
+  ctx.fillRect((camX-1)*S,groundY-4.6*S,viewW+2*S,5);
+}
+function drawGround(S,groundY){
+  ctx.fillStyle="#3a3f47"; ctx.fillRect((camX-1)*S,groundY,viewW+2*S,viewH-groundY);
+  ctx.fillStyle="#4a505b"; ctx.fillRect((camX-1)*S,groundY,viewW+2*S,Math.max(3,0.06*S));
+  // Lane line + 1 m ruler ticks with labels every 5 m.
+  ctx.strokeStyle="rgba(255,255,255,0.5)"; ctx.lineWidth=2; ctx.setLineDash([14,12]);
+  ctx.beginPath(); ctx.moveTo((camX-1)*S,groundY+0.55*S); ctx.lineTo((camX+viewW/S+1)*S,groundY+0.55*S); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font=(0.17*S)+"px "+getMono(); ctx.textAlign="center";
+  const mFrom=Math.max(0,Math.floor(camX)-1), mTo=Math.ceil(camX+viewW/S)+1;
+  for(let m=mFrom;m<=mTo;m++){
+    const x=m*S, tall=m%5===0;
+    ctx.strokeStyle="rgba(255,255,255,"+(tall?0.55:0.25)+")"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,groundY+2); ctx.lineTo(x,groundY+(tall?0.22:0.12)*S); ctx.stroke();
+    if(tall){ ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.fillText(m+" m",x,groundY+0.42*S); }
+  }
+  // Wall datum line.
+  ctx.strokeStyle="rgba(232,161,58,0.65)"; ctx.lineWidth=2; ctx.setLineDash([6,6]);
+  ctx.beginPath(); ctx.moveTo(WALL_X*S,groundY); ctx.lineTo(WALL_X*S,groundY-(settings.wallRows*FIXED.brickH+0.7)*S); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle="rgba(232,161,58,0.9)"; ctx.font=(0.18*S)+"px "+getMono(); ctx.textAlign="left";
+  ctx.fillText("wall line",WALL_X*S+6,groundY-(settings.wallRows*FIXED.brickH+0.55)*S);
+  // Skid marks.
+  ctx.fillStyle="rgba(12,12,14,0.55)";
+  for(const s of skidMarks) ctx.fillRect(s.x*S-0.09*S, groundY+1, 0.18*S, Math.max(2,0.045*S));
+}
+function getMono(){ return 'ui-monospace,Menlo,Consolas,monospace'; }
+function drawBrick(b,S,groundY){
+  const depthDim=1-b.layer*0.13;
+  const l=clamp((34+b.shade*14)*depthDim,14,52);
+  ctx.save();
+  ctx.translate(b.x*S, groundY-b.y*S); ctx.rotate(-b.a);
+  const w=b.hw*2*S, h=b.hh*2*S;
+  ctx.fillStyle="hsl(14,52%,"+l+"%)";
+  ctx.strokeStyle="rgba(30,16,10,0.85)"; ctx.lineWidth=Math.max(1,0.02*S);
+  ctx.beginPath(); ctx.rect(-w/2,-h/2,w,h); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="rgba(255,235,210,0.13)"; ctx.fillRect(-w/2,-h/2,w,h*0.28);
+  ctx.fillStyle="rgba(0,0,0,0.16)"; ctx.fillRect(-w/2,h*0.22,w,h*0.28);
+  // Two frog holes, subtle.
+  ctx.fillStyle="rgba(0,0,0,0.18)";
+  ctx.beginPath(); ctx.arc(-w*0.22,0,Math.max(1.2,0.028*S),0,7); ctx.arc(w*0.22,0,Math.max(1.2,0.028*S),0,7); ctx.fill();
+  ctx.restore();
+}
+function drawCar(S,groundY){
+  const b=car; if(!b) return;
+  ctx.save();
+  ctx.translate(b.x*S, groundY-b.y*S); ctx.rotate(-b.a);
+  const W=FIXED.carW*S, H=FIXED.carH*S, crush=carCrush*W*0.55;
+  const front=W/2-crush, rear=-W/2, base=H/2, belt=-H*0.02, roof=-H/2;
+  // Shadow of cabin/body outline: sedan silhouette, nose to the right.
+  ctx.beginPath();
+  ctx.moveTo(rear, base-0.28*S);
+  ctx.lineTo(rear+0.06*S, belt-0.10*S);
+  ctx.lineTo(-W*0.18, belt-0.10*S);
+  ctx.lineTo(-W*0.02, roof+0.10*S);          // rear glass up to roof
+  ctx.lineTo( W*0.20, roof+0.08*S);
+  ctx.lineTo( W*0.34, belt-0.06*S);          // windscreen down
+  ctx.lineTo(front-0.08*S, belt+0.02*S);     // bonnet
+  ctx.quadraticCurveTo(front, belt+0.10*S, front, base-0.30*S);
+  ctx.lineTo(front, base-0.28*S);
+  ctx.lineTo(rear, base-0.28*S);
+  ctx.closePath();
+  const paint=ctx.createLinearGradient(0,roof,0,base);
+  paint.addColorStop(0,"#4f7fb8"); paint.addColorStop(0.55,"#35619c"); paint.addColorStop(1,"#274a7c");
+  ctx.fillStyle=paint; ctx.fill();
+  ctx.strokeStyle="rgba(8,14,24,0.9)"; ctx.lineWidth=Math.max(1.2,0.025*S); ctx.stroke();
+  // Crumple creases on the nose after impact.
+  if(carCrush>0.02){
+    ctx.strokeStyle="rgba(10,16,26,0.65)"; ctx.lineWidth=Math.max(1,0.02*S);
+    for(let i=0;i<4;i++){
+      const x=front-(0.10+i*0.14)*S*(1+carCrush*2);
+      ctx.beginPath(); ctx.moveTo(x,belt+0.02*S); ctx.lineTo(x-0.06*S,base-0.32*S); ctx.stroke();
+    }
+  }
+  // Glasshouse.
+  ctx.beginPath();
+  ctx.moveTo(-W*0.15,belt-0.12*S); ctx.lineTo(-W*0.01,roof+0.16*S);
+  ctx.lineTo(W*0.18,roof+0.14*S); ctx.lineTo(W*0.30,belt-0.10*S); ctx.closePath();
+  ctx.fillStyle="#b9d2e8"; ctx.fill();
+  ctx.strokeStyle="#20344d"; ctx.lineWidth=Math.max(2,0.045*S);
+  ctx.beginPath(); ctx.moveTo(W*0.07,roof+0.14*S); ctx.lineTo(W*0.07,belt-0.11*S); ctx.stroke();
+  // Door shut-lines, handle, lights.
+  ctx.strokeStyle="rgba(10,18,30,0.55)"; ctx.lineWidth=Math.max(1,0.018*S);
+  ctx.strokeRect(-W*0.16,belt-0.08*S,W*0.20,0.62*S);
+  ctx.fillStyle="#f5d67a"; ctx.fillRect(front-0.14*S,belt+0.08*S,0.12*S,0.13*S);
+  ctx.fillStyle="#c23b2e"; ctx.fillRect(rear+0.02*S,belt+0.08*S,0.09*S,0.13*S);
+  ctx.fillStyle="rgba(255,255,255,0.20)"; ctx.fillRect(rear,belt-0.02*S,front-rear,0.07*S);
+  // Wheels.
+  const wr=0.33*S, wy=base-wr+0.02*S;
+  for(const wx of [-W*0.32, W*0.32-crush*0.35]){
+    ctx.fillStyle="#14161a"; ctx.beginPath(); ctx.arc(wx,wy,wr,0,7); ctx.fill();
+    ctx.fillStyle="#9aa3ad"; ctx.beginPath(); ctx.arc(wx,wy,wr*0.52,0,7); ctx.fill();
+    ctx.strokeStyle="#3c424b"; ctx.lineWidth=Math.max(1.5,0.03*S);
+    for(let k=0;k<5;k++){
+      const a=wheelAngle+k*Math.PI*2/5;
+      ctx.beginPath(); ctx.moveTo(wx,wy);
+      ctx.lineTo(wx+Math.cos(a)*wr*0.5, wy+Math.sin(a)*wr*0.5); ctx.stroke();
+    }
+  }
+  // Motion streaks while launching.
+  if(state==="running" && !carHasHit && Math.abs(b.vx)>6){
+    ctx.strokeStyle="rgba(255,255,255,0.35)"; ctx.lineWidth=Math.max(1,0.025*S);
+    for(const off of [-0.30,0.05,0.38]){
+      ctx.beginPath(); ctx.moveTo(rear-0.15*S, off*S);
+      ctx.lineTo(rear-(0.55+Math.abs(b.vx)*0.02)*S, off*S); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+function draw(){
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const S=renderScale();
+  const groundY=viewH-1.15*S;
+  drawBackground(S,groundY);
+  ctx.save();
+  if(shake>0.004){
+    const t=performance.now()*0.09;
+    ctx.translate(Math.sin(t*1.7)*shake*S, Math.cos(t*2.3)*shake*S*0.7);
+  }
+  ctx.translate(-camX*S,0);
+  drawWorldBackdrop(S,groundY);
+  drawGround(S,groundY);
+  // Back depth layers first so the front face reads clearly.
+  const sorted=bricks.slice().sort((p,q)=>q.layer-p.layer);
+  for(const b of sorted) drawBrick(b,S,groundY);
+  drawCar(S,groundY);
+  // Dust.
+  for(const p of particles){
+    const k=1-p.age/p.life;
+    ctx.fillStyle="rgba(196,178,150,"+(0.34*k)+")";
+    ctx.beginPath(); ctx.arc(p.x*S,groundY-p.y*S,p.r*S*(1.6-k*0.6),0,7); ctx.fill();
+  }
+  ctx.restore();
+  // Scale caption.
+  ctx.fillStyle="rgba(255,255,255,0.55)";
+  ctx.font="11px "+getMono(); ctx.textAlign="right";
+  ctx.fillText(S.toFixed(0)+" px/m · "+bodies.length+" bodies", viewW-10, viewH-8);
+}
+
+/* ============================================================
+   Main loop — fixed-step physics (240 Hz substeps) so fast
+   impacts cannot tunnel through a 0.50 m brick.
+   ============================================================ */
+let lastTs=0, accumulator=0;
+const STEP=1/240;
+function frame(ts){
+  requestAnimationFrame(frame);
+  if(!lastTs) lastTs=ts;
+  let dt=Math.min((ts-lastTs)/1000, 0.1); lastTs=ts;
+  const rawDt=dt;
+  if(slowMo) dt*=0.22;
+  if(state==="running"){
+    accumulator+=dt;
+    if(accumulator>0.3) accumulator=0.3; // lag gracefully; step sequence unchanged
+    let n=0;
+    while(accumulator>=STEP && n<28){ stepPhysics(STEP); accumulator-=STEP; n++; }
+    updateHud();
+  }
+  // Dynamic framing: pan + zoom so the car and the rubble field stay
+  // in view; returns to the baseline framing when the scene is reset.
+  if(car){
+    if(!(zoomW>0)) zoomW=viewTargetWidth();
+    let wantLeft=0, wantW=viewTargetWidth();
+    if(state!=="ready"){
+      wantLeft=Math.max(0, Math.min(car.x-car.hw-2.5, camX+rawDt*30));
+      const right=Math.max(viewTargetWidth(), car.x+car.hw+3.5, debrisFront()+2);
+      wantW=Math.max(viewTargetWidth(), right-wantLeft);
+    }
+    const k=Math.min(1, rawDt*2.6);
+    camX+=(wantLeft-camX)*k; zoomW+=(wantW-zoomW)*k;
+    if(Math.abs(wantLeft-camX)<0.01) camX=wantLeft;
+    if(Math.abs(wantW-zoomW)<0.02) zoomW=wantW;
+  }
+  draw();
+}
+
+/* ============================================================
+   UI wiring
+   ============================================================ */
+const $=id=>document.getElementById(id);
+function setStatus(txt,cls){ const p=$("statusPill"); p.textContent=txt; p.className=cls||""; p.id="statusPill"; }
+function movingBrickCount(){
+  let n=0; for(const b of bricks) if(!b.asleep && Math.hypot(b.vx,b.vy)>0.08) n++;
+  return n;
+}
+function updateHud(){
+  if(!car) return;
+  const sp=Math.hypot(car.vx,car.vy);
+  $("hudSpeed").textContent=sp.toFixed(1)+" m/s ("+(sp*3.6).toFixed(0)+" km/h)";
+  $("hudTime").textContent=simTime.toFixed(2)+" s";
+  $("hudMoving").textContent=movingBrickCount()+" / "+bricks.length;
+  $("hudMom").textContent=Math.round(FIXED.carMass*sp).toLocaleString("en-GB")+" kg·m/s";
+  $("hudPeak").textContent=(impactPeakN/1000).toFixed(0)+" kN";
+}
+const ctlRefs={};
+function buildControls(){
+  const host=$("controls"); host.innerHTML="";
+  for(const key of Object.keys(RANGES)){
+    const r=RANGES[key];
+    const div=document.createElement("div"); div.className="ctl";
+    div.innerHTML=
+      '<div class="row"><label for="rng-'+key+'">'+r.label+' <span class="unit">'+r.unit+'</span></label>'+
+      '<output id="out-'+key+'"></output></div>'+
+      '<input type="range" id="rng-'+key+'" min="'+r.min+'" max="'+r.max+'" step="'+r.step+'">'+
+      '<div class="row"><span class="range" style="flex:1"><span>'+r.min+'</span><span>'+r.max+'</span></span>'+
+      '<input type="number" id="num-'+key+'" min="'+r.min+'" max="'+r.max+'" step="'+r.step+'" aria-label="'+r.label+' value"></div>';
+    host.appendChild(div);
+    const rng=div.querySelector("#rng-"+key), num=div.querySelector("#num-"+key), out=div.querySelector("#out-"+key);
+    ctlRefs[key]={rng,num,out};
+    const apply=(raw)=>{
+      let v=clamp(parseFloat(raw), r.min, r.max);
+      if(!isFinite(v)) return;
+      if(r.step>=1) v=Math.round(v);
+      settings[key]=v;
+      rng.value=v; num.value=v; out.textContent=r.fmt(v)+" "+r.unit.split(" ")[0];
+      buildScene(); // rebuild preview with this change only
+    };
+    rng.addEventListener("input",()=>apply(rng.value));
+    num.addEventListener("change",()=>apply(num.value));
+  }
+  syncControls();
+}
+function syncControls(){
+  for(const key of Object.keys(RANGES)){
+    const r=RANGES[key], c=ctlRefs[key]; if(!c) continue;
+    c.rng.value=settings[key]; c.num.value=settings[key];
+    c.out.textContent=r.fmt(settings[key])+" "+r.unit.split(" ")[0];
+  }
+}
+$("fixedParams").innerHTML=
+  "Fixed baseline parameters<br>"+
+  "brick size <b>0.50 × 0.24 m</b> · gravity <b>9.81 m/s²</b><br>"+
+  "brick friction <b>0.72</b> · restitution <b>0.18</b><br>"+
+  "car <b>1,250 kg</b> · <b>4.2 × 1.45 m</b><br>"+
+  "ground friction <b>0.85</b> · scale <b>80 px/m</b> (max)";
+$("testBtn").addEventListener("click",launch);
+$("resetBtn").addEventListener("click",()=>buildScene());
+$("defaultsBtn").addEventListener("click",()=>{
+  Object.assign(settings,DEFAULTS); syncControls(); buildScene();
+});
+$("slowBtn").addEventListener("click",e=>{
+  slowMo=!slowMo;
+  e.currentTarget.setAttribute("aria-pressed",String(slowMo));
+  e.currentTarget.textContent=slowMo?"Normal speed":"Slow motion";
+});
+window.addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT") return;
+  if(e.code==="Space"||e.code==="Enter"){ e.preventDefault(); launch(); }
+  if(e.key==="r"||e.key==="R") buildScene();
+});
+
+/* Boot: show the default car and wall before any test. */
+resize();
+buildControls();
+buildScene();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

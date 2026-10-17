@@ -1,0 +1,59 @@
+export interface City {
+  id: string
+  name: string
+  country: string
+  region: string
+  tz: string
+}
+
+export const CITY_CATALOG: City[] = [
+  // North America
+  { id: 'san-francisco', name: 'San Francisco', country: 'United States', region: 'North America', tz: 'America/Los_Angeles' },
+  { id: 'new-york', name: 'New York', country: 'United States', region: 'North America', tz: 'America/New_York' },
+  { id: 'toronto', name: 'Toronto', country: 'Canada', region: 'North America', tz: 'America/Toronto' },
+  { id: 'mexico-city', name: 'Mexico City', country: 'Mexico', region: 'North America', tz: 'America/Mexico_City' },
+  { id: 'honolulu', name: 'Honolulu', country: 'United States', region: 'North America', tz: 'Pacific/Honolulu' },
+  // South America
+  { id: 'sao-paulo', name: 'São Paulo', country: 'Brazil', region: 'South America', tz: 'America/Sao_Paulo' },
+  { id: 'buenos-aires', name: 'Buenos Aires', country: 'Argentina', region: 'South America', tz: 'America/Argentina/Buenos_Aires' },
+  { id: 'santiago', name: 'Santiago', country: 'Chile', region: 'South America', tz: 'America/Santiago' },
+  { id: 'bogota', name: 'Bogotá', country: 'Colombia', region: 'South America', tz: 'America/Bogota' },
+  // Europe
+  { id: 'london', name: 'London', country: 'United Kingdom', region: 'Europe', tz: 'Europe/London' },
+  { id: 'paris', name: 'Paris', country: 'France', region: 'Europe', tz: 'Europe/Paris' },
+  { id: 'geneva', name: 'Geneva', country: 'Switzerland', region: 'Europe', tz: 'Europe/Zurich' },
+  { id: 'berlin', name: 'Berlin', country: 'Germany', region: 'Europe', tz: 'Europe/Berlin' },
+  { id: 'madrid', name: 'Madrid', country: 'Spain', region: 'Europe', tz: 'Europe/Madrid' },
+  { id: 'rome', name: 'Rome', country: 'Italy', region: 'Europe', tz: 'Europe/Rome' },
+  { id: 'athens', name: 'Athens', country: 'Greece', region: 'Europe', tz: 'Europe/Athens' },
+  { id: 'moscow', name: 'Moscow', country: 'Russia', region: 'Europe', tz: 'Europe/Moscow' },
+  { id: 'reykjavik', name: 'Reykjavik', country: 'Iceland', region: 'Europe', tz: 'Atlantic/Reykjavik' },
+  // Africa
+  { id: 'lagos', name: 'Lagos', country: 'Nigeria', region: 'Africa', tz: 'Africa/Lagos' },
+  { id: 'cairo', name: 'Cairo', country: 'Egypt', region: 'Africa', tz: 'Africa/Cairo' },
+  { id: 'johannesburg', name: 'Johannesburg', country: 'South Africa', region: 'Africa', tz: 'Africa/Johannesburg' },
+  { id: 'nairobi', name: 'Nairobi', country: 'Kenya', region: 'Africa', tz: 'Africa/Nairobi' },
+  // Middle East
+  { id: 'dubai', name: 'Dubai', country: 'United Arab Emirates', region: 'Middle East', tz: 'Asia/Dubai' },
+  { id: 'riyadh', name: 'Riyadh', country: 'Saudi Arabia', region: 'Middle East', tz: 'Asia/Riyadh' },
+  { id: 'tehran', name: 'Tehran', country: 'Iran', region: 'Middle East', tz: 'Asia/Tehran' },
+  // Asia
+  { id: 'mumbai', name: 'Mumbai', country: 'India', region: 'Asia', tz: 'Asia/Kolkata' },
+  { id: 'kathmandu', name: 'Kathmandu', country: 'Nepal', region: 'Asia', tz: 'Asia/Kathmandu' },
+  { id: 'bangkok', name: 'Bangkok', country: 'Thailand', region: 'Asia', tz: 'Asia/Bangkok' },
+  { id: 'singapore', name: 'Singapore', country: 'Singapore', region: 'Asia', tz: 'Asia/Singapore' },
+  { id: 'denpasar', name: 'Denpasar', country: 'Indonesia', region: 'Asia', tz: 'Asia/Makassar' },
+  { id: 'jakarta', name: 'Jakarta', country: 'Indonesia', region: 'Asia', tz: 'Asia/Jakarta' },
+  { id: 'shanghai', name: 'Shanghai', country: 'China', region: 'Asia', tz: 'Asia/Shanghai' },
+  { id: 'tokyo', name: 'Tokyo', country: 'Japan', region: 'Asia', tz: 'Asia/Tokyo' },
+  { id: 'seoul', name: 'Seoul', country: 'South Korea', region: 'Asia', tz: 'Asia/Seoul' },
+  // Oceania
+  { id: 'sydney', name: 'Sydney', country: 'Australia', region: 'Oceania', tz: 'Australia/Sydney' },
+  { id: 'auckland', name: 'Auckland', country: 'New Zealand', region: 'Oceania', tz: 'Pacific/Auckland' },
+]
+
+export const DEFAULT_CITY_IDS = ['san-francisco', 'denpasar', 'geneva']
+
+export function cityById(id: string): City | undefined {
+  return CITY_CATALOG.find((c) => c.id === id)
+}

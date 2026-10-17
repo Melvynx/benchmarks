@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>muse-wonder-full-1.0</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#070605;color:#f3e9dc;font-family:ui-sans-system,system-ui,"Helvetica Neue",Arial,sans-serif}
+#c{position:fixed;inset:0;display:block;width:100%;height:100%}
+#panel{position:fixed;left:16px;bottom:16px;width:248px;padding:14px 14px 12px;background:rgba(14,11,9,.72);backdrop-filter:blur(14px);border:1px solid rgba(255,220,180,.14);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.55);z-index:10}
+#panel h1{font-size:12px;font-weight:600;letter-spacing:.02em;margin:0 0 10px;color:#ffe9c9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:9px 0;font-size:11px;color:#d8c9b4}
+.row label{flex:0 0 74px}.row input[type=range]{flex:1;accent-color:#ff7a2a;height:18px;cursor:pointer}
+.row output{flex:0 0 28px;text-align:right;font-variant-numeric:tabular-nums;color:#ffcf9a}
+.swatches{display:flex;gap:7px;margin:9px 0 3px}
+.sw{width:34px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.22);cursor:pointer;padding:0;position:relative;overflow:hidden}
+.sw span{position:absolute;inset:0 50% 0 0}.sw i{position:absolute;inset:0 0 0 50%}
+.sw.on{outline:2px solid #ffd9a0;outline-offset:1px}
+.tgl{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.chip{font-size:10.5px;padding:5px 9px;border-radius:999px;border:1px solid rgba(255,220,180,.2);background:rgba(255,255,255,.05);color:#d8c9b4;cursor:pointer}
+.chip.on{background:#ff7a2a;border-color:#ff7a2a;color:#1a0e04;font-weight:650}
+.power{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.switch{width:46px;height:24px;border-radius:999px;background:#3a2f26;border:1px solid rgba(255,255,255,.18);cursor:pointer;position:relative;padding:0}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#cbb79e;transition:.25s}
+.switch.on{background:#ff6a1e}.switch.on::after{left:24px;background:#fff3df}
+#state{font-size:10.5px;color:#ffcf9a}
+#hint{position:fixed;right:16px;bottom:14px;font-size:10.5px;color:rgba(240,222,195,.5);z-index:9;text-align:right;line-height:1.5;pointer-events:none}
+#fallback{position:fixed;inset:0;display:none;place-items:center;background:#0b0806;color:#f3e9dc;padding:24px;text-align:center;z-index:50;font-size:14px;line-height:1.6}
+@media(max-width:620px){#panel{width:calc(100% - 32px);left:16px;bottom:12px;padding:11px 12px}.row{margin:6px 0}#hint{display:none}}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="panel">
+  <h1>muse-wonder-full-1.0</h1>
+  <div class="power"><span style="font-size:11px;color:#d8c9b4">Power</span><span id="state">Warming</span><button class="switch on" id="power" aria-label="Power"></button></div>
+  <div class="swatches" id="swatches"></div>
+  <div class="row"><label for="heat">Heat / flow</label><input id="heat" type="range" min="0" max="100" value="62"><output id="heatV">62</output></div>
+  <div class="row"><label for="wax">Wax amount</label><input id="wax" type="range" min="0" max="100" value="58"><output id="waxV">58</output></div>
+  <div class="row"><label for="room">Room light</label><input id="room" type="range" min="0" max="100" value="30"><output id="roomV">30</output></div>
+  <div class="tgl"><button class="chip" id="orbitBtn">Auto-orbit</button><button class="chip" id="slowBtn">Slow motion</button></div>
+</div>
+<div id="hint">Drag to orbit &middot; Scroll to zoom<br>Click the switch on the base</div>
+<div id="fallback"><div>This lava lamp needs WebGL2.<br>Please try a current browser with hardware acceleration enabled.</div></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ---------- renderer / scene ----------
+const canvas = document.getElementById('c');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  if (!renderer.capabilities.isWebGL2) throw new Error('WebGL2 required');
+} catch (e) { document.getElementById('fallback').style.display = 'grid'; throw e; }
+let DPR = Math.min(devicePixelRatio || 1, 1.75);
+renderer.setPixelRatio(DPR);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x090706);
+scene.fog = new THREE.Fog(0x090706, 14, 30);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.06).texture;
+scene.environmentIntensity = 0.35;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 60);
+camera.position.set(4.6, 3.1, 6.4);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 2.25, 0);
+controls.enableDamping = true; controls.dampingFactor = 0.06;
+controls.minDistance = 2.4; controls.maxDistance = 12;
+controls.maxPolarAngle = Math.PI * 0.58; controls.minPolarAngle = Math.PI * 0.08;
+controls.autoRotateSpeed = 0.9;
+
+// ---------- procedural textures ----------
+function canvasTex(w, h, draw, srgb = true) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  draw(cv.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const woodTex = canvasTex(1024, 512, (g, w, h) => {
+  g.fillStyle = '#4a2f1c'; g.fillRect(0, 0, w, h);
+  for (let p = 0; p < 4; p++) {
+    const y0 = p * h / 4;
+    g.fillStyle = ['#54361f', '#472b17', '#5b3a20', '#4d301b'][p]; g.fillRect(0, y0, w, h / 4);
+    for (let i = 0; i < 90; i++) {
+      const y = y0 + Math.random() * h / 4, a = 0.04 + Math.random() * 0.12;
+      g.strokeStyle = Math.random() < 0.5 ? `rgba(20,10,4,${a})` : `rgba(210,150,90,${a * 0.8})`;
+      g.lineWidth = 0.6 + Math.random() * 1.8; g.beginPath(); g.moveTo(0, y);
+      for (let x = 0; x <= w; x += 32) g.lineTo(x, y + Math.sin(x * 0.01 + i) * 2.2);
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, y0, w, 2);
+  }
+  for (let i = 0; i < 7; i++) { // knots
+    const x = Math.random() * w, y = Math.random() * h;
+    for (let r = 9; r > 1; r -= 2) { g.strokeStyle = `rgba(25,12,5,${0.12 + (9 - r) * 0.04})`; g.beginPath(); g.ellipse(x, y, r * 1.7, r, 0.3, 0, 7); g.stroke(); }
+  }
+});
+woodTex.repeat.set(2.2, 1.4);
+const woodBump = canvasTex(512, 256, (g, w, h) => {
+  g.fillStyle = '#808080'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 500; i++) { g.strokeStyle = `rgba(${Math.random() < .5 ? 40 : 210},${Math.random() < .5 ? 40 : 210},${Math.random() < .5 ? 40 : 210},.08)`; const y = Math.random() * h; g.beginPath(); g.moveTo(0, y); g.lineTo(w, y + (Math.random() - .5) * 6); g.stroke(); }
+}, false);
+woodBump.repeat.set(2.2, 1.4);
+const wallTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#2e2a26'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 14000; i++) { const v = 34 + Math.random() * 26; g.fillStyle = `rgb(${v + 8},${v + 3},${v})`; g.fillRect(Math.random() * w, Math.random() * h, 1.6, 1.6); }
+});
+wallTex.repeat.set(3, 2);
+const metalRough = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#6a6a6a'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 2600; i++) { const x = Math.random() * w; g.strokeStyle = `rgba(${Math.random() < .5 ? 70 : 165},${Math.random() < .5 ? 70 : 165},${Math.random() < .5 ? 70 : 165},.16)`; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (Math.random() - .5) * 4, h); g.stroke(); }
+}, false);
+
+// ---------- room ----------
+const table = new THREE.Mesh(
+  new THREE.BoxGeometry(15, 0.42, 9),
+  new THREE.MeshStandardMaterial({ map: woodTex, bumpMap: woodBump, bumpScale: 0.6, roughness: 0.62, metalness: 0.02, envMapIntensity: 0.35 })
+);
+table.position.y = -0.21; table.receiveShadow = true; scene.add(table);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: 0x171310, roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2; floor.position.y = -2.6; floor.receiveShadow = true; scene.add(floor);
+const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, color: 0xb9a894, roughness: 0.96, envMapIntensity: 0.12 });
+const backWall = new THREE.Mesh(new THREE.PlaneGeometry(34, 15), wallMat);
+backWall.position.set(0, 4.4, -4.9); backWall.receiveShadow = true; scene.add(backWall);
+const sideWall = new THREE.Mesh(new THREE.PlaneGeometry(20, 15), wallMat.clone());
+sideWall.rotation.y = Math.PI / 2; sideWall.position.set(-7.5, 4.4, 0); sideWall.receiveShadow = true; scene.add(sideWall);
+
+// props: stacked books, mug, small plant pot, framed print
+function box(w, h, d, color, rough = 0.8) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: rough, envMapIntensity: 0.25 }));
+  m.castShadow = m.receiveShadow = true; return m;
+}
+const book1 = box(1.25, 0.16, 0.92, 0x6e2a22); book1.position.set(-2.55, 0.08, -0.7); book1.rotation.y = 0.24; scene.add(book1);
+const book2 = box(1.08, 0.13, 0.8, 0x24383e); book2.position.set(-2.52, 0.225, -0.68); book2.rotation.y = 0.08; scene.add(book2);
+const book3 = box(0.92, 0.11, 0.68, 0xc7b593); book3.position.set(-2.56, 0.345, -0.7); book3.rotation.y = 0.42; scene.add(book3);
+const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.24, 0.52, 40, 1, true), new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.32, side: THREE.DoubleSide, envMapIntensity: 0.6 }));
+mug.position.set(2.5, 0.26, -0.95); mug.castShadow = mug.receiveShadow = true; scene.add(mug);
+const mugBase = new THREE.Mesh(new THREE.CircleGeometry(0.24, 40), mug.material); mugBase.rotation.x = -Math.PI / 2; mugBase.position.set(2.5, 0.012, -0.95); scene.add(mugBase);
+const mugHandle = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.035, 12, 28, Math.PI), mug.material);
+mugHandle.position.set(2.81, 0.27, -0.95); mugHandle.rotation.z = -Math.PI / 2; mugHandle.castShadow = true; scene.add(mugHandle);
+const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.25, 0.5, 32), new THREE.MeshStandardMaterial({ color: 0x8a4b2f, roughness: 0.85 }));
+pot.position.set(2.9, 0.25, -2.1); pot.castShadow = pot.receiveShadow = true; scene.add(pot);
+const leafMat = new THREE.MeshStandardMaterial({ color: 0x2e5d33, roughness: 0.7, side: THREE.DoubleSide });
+for (let i = 0; i < 9; i++) {
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 6), leafMat);
+  leaf.scale.set(0.32, 1.25, 0.09);
+  const a = i / 9 * Math.PI * 2 + Math.sin(i * 7) * 0.4;
+  leaf.position.set(2.9 + Math.cos(a) * 0.16, 0.85 + Math.sin(i * 3) * 0.1, -2.1 + Math.sin(a) * 0.16);
+  leaf.rotation.set(Math.sin(a) * 0.55, a, Math.cos(a) * 0.55); leaf.castShadow = true; scene.add(leaf);
+}
+
+
+// ---------- lights ----------
+const ambient = new THREE.AmbientLight(0x36415a, 0.32); scene.add(ambient);
+const roomLight = new THREE.DirectionalLight(0xbfd0ff, 0.32);
+roomLight.position.set(-5, 7, 4); roomLight.castShadow = true;
+roomLight.shadow.mapSize.set(1024, 1024);
+roomLight.shadow.camera.left = -6; roomLight.shadow.camera.right = 6; roomLight.shadow.camera.top = 7; roomLight.shadow.camera.bottom = -3;
+roomLight.shadow.bias = -0.0004; scene.add(roomLight);
+const bulbLight = new THREE.PointLight(0xff7a2a, 14, 12, 1.9);
+bulbLight.position.set(0, 1.55, 0); bulbLight.castShadow = true;
+bulbLight.shadow.mapSize.set(1024, 1024); bulbLight.shadow.bias = -0.004; bulbLight.shadow.camera.near = 0.25; bulbLight.shadow.camera.far = 12;
+scene.add(bulbLight);
+const spill = new THREE.PointLight(0xff8a3a, 5, 7, 2); spill.position.set(0, 2.6, 0); scene.add(spill);
+
+// ---------- lamp geometry ----------
+const GLASS_Y0 = 1.02, GLASS_H = 3.05, GLASS_Y1 = GLASS_Y0 + GLASS_H;
+function vesselRadius(y) { // world y -> outer glass radius
+  const t = THREE.MathUtils.clamp((y - GLASS_Y0) / GLASS_H, 0, 1);
+  let r = THREE.MathUtils.lerp(0.94, 0.44, Math.pow(t, 0.78)) * (1 + 0.05 * Math.sin(t * Math.PI));
+  if (t > 0.86) { const k = (t - 0.86) / 0.14; r *= Math.sqrt(Math.max(0, 1 - k * k * 0.92)); }
+  if (t < 0.04) r *= 0.72 + 7 * t;
+  return Math.max(r, 0.02);
+}
+function latheFrom(profile, seg = 72) {
+  return new THREE.LatheGeometry(profile.map(p => new THREE.Vector2(p[0], p[1])), seg);
+}
+// glass: outer up, over the rim, inner down -> real visible thickness
+const glassProfile = [];
+for (let i = 0; i <= 30; i++) { const y = GLASS_Y0 + GLASS_H * i / 30; glassProfile.push([vesselRadius(y), y]); }
+for (let i = 30; i >= 0; i--) { const y = GLASS_Y0 + 0.055 + (GLASS_H - 0.1) * i / 30; glassProfile.push([Math.max(vesselRadius(y) - 0.055, 0.02), y]); }
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff, metalness: 0, roughness: 0.03, ior: 1.5,
+  clearcoat: 1, clearcoatRoughness: 0.04, transparent: true, opacity: 0.07, envMapIntensity: 1.3,
+  specularIntensity: 1.5, side: THREE.FrontSide, depthWrite: false
+});
+const glass = new THREE.Mesh(latheFrom(glassProfile), glassMat);
+glass.renderOrder = 30; scene.add(glass);
+// tinted liquid volume just inside the glass
+const liquidProfile = [];
+for (let i = 0; i <= 26; i++) { const y = GLASS_Y0 + 0.06 + (GLASS_H - 0.16) * i / 26; liquidProfile.push([Math.max(vesselRadius(y) - 0.07, 0.02), y]); }
+liquidProfile.push([0.02, GLASS_Y1 - 0.12]);
+const liquidMat = new THREE.MeshBasicMaterial({
+  color: 0xffc81f, transparent: true, opacity: 0.23, depthWrite: false, side: THREE.BackSide
+});
+const liquid = new THREE.Mesh(latheFrom(liquidProfile), liquidMat);
+liquid.renderOrder = 12; scene.add(liquid);
+
+// brushed metal base + cap
+const metalMat = new THREE.MeshStandardMaterial({
+  color: 0xbdb8ae, metalness: 0.95, roughness: 0.38, roughnessMap: metalRough, envMapIntensity: 0.95, side: THREE.DoubleSide
+});
+const baseProfile = [[0.02, 0], [0.98, 0], [1.04, 0.06], [1.02, 0.16], [0.82, 0.62], [0.7, 0.96], [0.74, 1.02], [0.9, 1.04], [0.9, 1.09], [0.55, 1.09], [0.02, 1.09]];
+const base = new THREE.Mesh(latheFrom(baseProfile), metalMat);
+base.castShadow = base.receiveShadow = true; scene.add(base);
+const baseTrim = new THREE.Mesh(new THREE.TorusGeometry(1.025, 0.028, 14, 80), metalMat);
+baseTrim.rotation.x = Math.PI / 2; baseTrim.position.y = 0.1; baseTrim.castShadow = true; scene.add(baseTrim);
+const capProfile = [[0.02, 0.38], [0.17, 0.35], [0.33, 0.2], [0.45, 0.02], [0.47, -0.1], [0.3, -0.17], [0.02, -0.17]];
+const cap = new THREE.Mesh(latheFrom(capProfile), metalMat);
+cap.position.y = GLASS_Y1 - 0.16; cap.castShadow = cap.receiveShadow = true; scene.add(cap);
+// heating coil hint inside the glass bottom
+const coil = new THREE.Mesh(
+  new THREE.TorusGeometry(0.42, 0.035, 10, 48),
+  new THREE.MeshStandardMaterial({ color: 0x554433, metalness: 0.9, roughness: 0.4, emissive: 0xff4400, emissiveIntensity: 0.7 })
+);
+coil.rotation.x = Math.PI / 2; coil.position.y = GLASS_Y0 + 0.14; scene.add(coil);
+// bulb
+const bulbMat = new THREE.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffb056, emissiveIntensity: 3, roughness: 0.3 });
+const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 18), bulbMat);
+bulb.scale.y = 1.25; bulb.position.y = 1.04; scene.add(bulb);
+const glowSpriteMat = new THREE.SpriteMaterial({
+  map: canvasTex(128, 128, (g, w, h) => { const r = g.createRadialGradient(64, 64, 2, 64, 64, 64); r.addColorStop(0, 'rgba(255,230,190,1)'); r.addColorStop(0.35, 'rgba(255,170,80,.55)'); r.addColorStop(1, 'rgba(255,120,30,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); }),
+  transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85
+});
+const glow = new THREE.Sprite(glowSpriteMat); glow.scale.setScalar(1.4); glow.position.y = 1.38; glow.renderOrder = 25; scene.add(glow);
+
+// physical rocker switch on the base (clickable)
+const switchBase = box(0.2, 0.3, 0.1, 0x141210, 0.45); switchBase.position.set(0.62, 0.52, 0.62); switchBase.rotation.y = Math.PI / 4; switchBase.lookAt(2, 0.52, 2); scene.add(switchBase);
+const rocker = box(0.13, 0.2, 0.07, 0xff7a2a, 0.4); rocker.position.set(0.655, 0.52, 0.655); rocker.lookAt(2, 0.58, 2); rocker.userData.isSwitch = true; scene.add(rocker);
+// power cord off the back of the table + inline switch
+const cordMat = new THREE.MeshStandardMaterial({ color: 0x111010, roughness: 0.62, envMapIntensity: 0.3 });
+const cordPts = [new THREE.Vector3(0, 0.32, -0.9), new THREE.Vector3(-0.3, 0.12, -1.7), new THREE.Vector3(0.5, 0.05, -2.6), new THREE.Vector3(1.7, 0.05, -3.1), new THREE.Vector3(2.9, 0.05, -3.6), new THREE.Vector3(3.6, -0.7, -4.1), new THREE.Vector3(3.9, -2.2, -4.3)];
+const cord = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(cordPts), 90, 0.045, 10), cordMat);
+cord.castShadow = cord.receiveShadow = true; scene.add(cord);
+const inlineSwitch = box(0.34, 0.14, 0.2, 0x1a1714, 0.5); inlineSwitch.position.set(1.7, 0.09, -3.1); inlineSwitch.rotation.y = -0.5; scene.add(inlineSwitch);
+const inlineDial = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.05, 18), new THREE.MeshStandardMaterial({ color: 0xd8c9a8, roughness: 0.5 }));
+inlineDial.position.set(1.7, 0.18, -3.1); inlineDial.castShadow = true; scene.add(inlineDial);
+
+// ---------- wax: raymarched metaball SDF ----------
+const MAXB = 22;
+const waxUniforms = {
+  uBlobs: { value: Array.from({ length: MAXB }, () => new THREE.Vector4(0, -10, 0, 0.001)) },
+  uInfo: { value: Array.from({ length: MAXB }, () => new THREE.Vector3(0.5, 1, 0)) }, // temp, stretch, active
+  uPool: { value: 0.55 }, uTime: { value: 0 }, uPower: { value: 1 },
+  uWax: { value: new THREE.Color(0xd81a08) }, uWaxHot: { value: new THREE.Color(0xff6a14) },
+  uLiquid: { value: new THREE.Color(0xffc81f) }, uBulb: { value: new THREE.Vector3(0, 1.35, 0) },
+  uCam: { value: new THREE.Vector3() }
+};
+const waxVert = `
+varying vec3 vW;
+void main(){ vec4 wp = modelMatrix * vec4(position,1.0); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`;
+const waxFrag = `
+precision highp float;
+varying vec3 vW;
+uniform vec4 uBlobs[${MAXB}]; uniform vec3 uInfo[${MAXB}];
+uniform float uPool, uTime, uPower;
+uniform vec3 uWax, uWaxHot, uLiquid, uBulb, uCam;
+float smin(float a, float b, float k){ float h = clamp(0.5 + 0.5*(b-a)/k, 0.0, 1.0); return mix(b,a,h) - k*h*(1.0-h); }
+float vesselR(float y){
+  float t = clamp((y - ${GLASS_Y0.toFixed(3)}) / ${GLASS_H.toFixed(3)}, 0.0, 1.0);
+  float r = mix(0.94, 0.44, pow(t, 0.78)) * (1.0 + 0.05*sin(t*3.14159));
+  if(t > 0.86){ float k = (t-0.86)/0.14; r *= sqrt(max(0.0, 1.0-k*k*0.92)); }
+  return max(r - 0.085, 0.03);
+}
+float blobSDF(vec3 p, int i){
+  vec3 c = uBlobs[i].xyz; float r = uBlobs[i].w; float st = uInfo[i].y;
+  vec3 q = (p - c) / vec3(1.0, st, 1.0);
+  q.x += sin(p.y*5.0 + uTime*1.7 + float(i)*2.3) * 0.016;
+  q.z += cos(p.y*4.2 + uTime*1.3 + float(i)*1.7) * 0.016;
+  return (length(q) - r) * min(1.0, st);
+}
+float sdf(vec3 p, out float temp){
+  float d = 1e5; temp = 0.5;
+  // warm pool at the bottom: flattened overlapping domes
+  float poolH = 0.10 + uPool * 0.30;
+  for(int i=0;i<5;i++){
+    float fi = float(i);
+    vec3 c = vec3(sin(fi*2.4)*0.34, ${GLASS_Y0.toFixed(3)} + 0.02 + sin(uTime*0.55+fi*1.9)*0.018 + poolH*0.30, cos(fi*2.4)*0.34);
+    vec3 q = (p-c)/vec3(1.0, 0.48, 1.0);
+    float pd = (length(q) - (0.26 + uPool*0.18 + sin(fi*3.1)*0.04)) * 0.48;
+    d = smin(d, pd, 0.30);
+  }
+  float wsum = 0.0;
+  for(int i=0;i<${MAXB};i++){
+    if(uInfo[i].z < 0.5) continue;
+    float bd = blobSDF(p, i);
+    float w = exp(-max(bd,0.0)*7.0); temp += uInfo[i].x * w; wsum += w;
+    d = smin(d, bd, 0.11);
+  }
+  if(wsum > 0.001) temp = (temp - 0.5) / wsum;
+  float wall = length(p.xz) - vesselR(p.y);
+  float capT = p.y - ${(GLASS_Y1 - 0.16).toFixed(3)};
+  float bot = ${(GLASS_Y0 + 0.07).toFixed(3)} - p.y;
+  d = max(d, max(wall, max(capT, bot)));
+  return d;
+}
+vec3 calcNormal(vec3 p){
+  float e = 0.012, tp;
+  vec2 k = vec2(1.0,-1.0);
+  return normalize( k.xyy*sdf(p+k.xyy*e,tp) + k.yyx*sdf(p+k.yyx*e,tp) + k.yxy*sdf(p+k.yxy*e,tp) + k.xxx*sdf(p+k.xxx*e,tp) );
+}
+vec2 boxHit(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax){
+  vec3 inv = 1.0/rd; vec3 t0 = (bmin-ro)*inv, t1 = (bmax-ro)*inv;
+  vec3 tsm = min(t0,t1), tbg = max(t0,t1);
+  return vec2(max(max(tsm.x,tsm.y),tsm.z), min(min(tbg.x,tbg.y),tbg.z));
+}
+void main(){
+  vec3 ro = uCam; vec3 rd = normalize(vW - ro);
+  vec2 tt = boxHit(ro, rd, vec3(-1.15, ${GLASS_Y0.toFixed(3)}, -1.15), vec3(1.15, ${GLASS_Y1.toFixed(3)}, 1.15));
+  if(tt.y < max(tt.x, 0.0)) discard;
+  float t = max(tt.x, 0.0); float temp = 0.5; bool hit = false; float d = 1e5;
+  for(int i=0;i<88;i++){
+    vec3 p = ro + rd*t; d = sdf(p, temp);
+    if(d < 0.0016){ hit = true; break; }
+    t += clamp(d*0.85, 0.004, 0.22);
+    if(t > tt.y) break;
+  }
+  if(!hit) discard;
+  vec3 p = ro + rd*t; float tp; sdf(p, tp); temp = clamp(tp, 0.0, 1.0);
+  vec3 n = calcNormal(p); vec3 v = -rd;
+  vec3 toBulb = uBulb - p; float bulbDist = length(toBulb); vec3 l = toBulb / bulbDist;
+  float atten = 1.0 / (1.0 + bulbDist*bulbDist*0.55);
+  float wrap = clamp((dot(n,l) + 0.38) / 1.38, 0.0, 1.0);
+  float ao = clamp(sdf(p + n*0.20, tp) / 0.20, 0.25, 1.0);
+  float sss = pow(clamp(dot(v, -l)*0.5+0.5, 0.0, 1.0), 2.4) * atten;       // back-lit translucency
+  float thinGlow = atten * (0.35 + temp*0.9) * uPower;
+  float depthTint = clamp(1.25 - atten*0.65 - temp*0.30, 0.15, 1.0);       // thick = darker, saturated
+  vec3 base = mix(uWaxHot, uWax, depthTint);
+  float key = clamp(dot(n, normalize(vec3(-0.45, 0.75, 0.55))), 0.0, 1.0);
+  vec3 col = base * (0.10 + wrap*0.95*atten*1.25*uPower + key*0.22 + 0.06) * ao;
+  col += uWaxHot * (sss*0.55 + thinGlow*0.26);
+  col += uWaxHot * temp * temp * 0.24 * uPower;                            // hot core emissive feel
+  float fres = pow(1.0 - clamp(dot(n,v),0.0,1.0), 3.0);
+  col += mix(uLiquid, vec3(1.0), 0.35) * fres * 0.10;
+  vec3 hv = normalize(l+v);
+  col += vec3(1.0,0.92,0.8) * pow(clamp(dot(n,hv),0.0,1.0), 60.0) * 0.35 * (0.3+0.7*uPower);
+  float haze = clamp((t - tt.x) * 0.16, 0.0, 0.35);                        // slight liquid haze in front
+  col = mix(col, uLiquid*0.5, haze*0.20);
+  col *= 0.34 + 0.66*uPower; // cold wax in a dark lamp reads dark
+  float lum = dot(col, vec3(0.333));
+  col = clamp(mix(vec3(lum), col, 1.4), 0.0, 2.2);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const waxMat = new THREE.ShaderMaterial({ uniforms: waxUniforms, vertexShader: waxVert, fragmentShader: waxFrag, side: THREE.BackSide, depthWrite: false, transparent: true });
+const waxMesh = new THREE.Mesh(new THREE.BoxGeometry(2.3, GLASS_H + 0.1, 2.3), waxMat);
+waxMesh.position.y = GLASS_Y0 + GLASS_H / 2; waxMesh.renderOrder = 18; waxMesh.frustumCulled = false; scene.add(waxMesh);
+
+// ---------- wax simulation (heat model, fixed timestep) ----------
+const state = { on: true, power: 1, warmup: 1, heat: 0.62, waxAmt: 0.58, room: 0.30, slow: false, orbit: false, time: 0 };
+const blobs = [];
+let seed = 1234567;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+for (let i = 0; i < MAXB; i++) {
+  const frac = (i * 0.6180339887) % 1; // golden-ratio scramble: the first N active blobs span the full height
+  const y = GLASS_Y0 + 0.3 + frac * (GLASS_H - 0.7);
+  const maxR = Math.max(vesselRadius(y) - 0.35, 0.05);
+  const a = rnd() * Math.PI * 2, rr = rnd() * maxR * 0.7;
+  const neutral = 0.37 + rnd() * 0.19;
+  const temp0 = THREE.MathUtils.clamp(neutral + Math.sin(i * 2.65) * 0.34 + (0.5 - frac) * 0.22, 0.05, 0.98);
+  blobs.push({
+    x: Math.cos(a) * rr, y, z: Math.sin(a) * rr,
+    vx: 0, vy: (temp0 - neutral) * 0.35, vz: 0,
+    baseR: 0.11 + Math.pow(rnd(), 1.5) * 0.19,
+    temp: temp0, neutral,
+    phase: rnd() * Math.PI * 2, wob: 0.6 + rnd() * 0.9, stretch: 1, active: i < 12,
+    heatK: 0.65 + rnd() * 0.75, coolK: 0.7 + rnd() * 0.7
+  });
+}
+function activeTarget() { return Math.round(THREE.MathUtils.lerp(6, 16, state.waxAmt)); }
+function simStep(dt) {
+  state.time += dt;
+  // power + warmup ramps
+  state.power += ((state.on ? 1 : 0) - state.power) * Math.min(1, dt * 1.6);
+  if (state.on) state.warmup = Math.min(1, state.warmup + dt / 4.2); else state.warmup = Math.max(0, state.warmup - dt / 2.5);
+  const effHeat = state.power * state.warmup * (0.35 + state.heat * 1.35);
+  const nActive = activeTarget();
+  blobs.forEach((b, i) => { b.active = i < nActive; });
+  for (const b of blobs) {
+    if (!b.active) { // parked in the pool, recharging with heat
+      b.y += (GLASS_Y0 + 0.22 - b.y) * dt * 0.8; b.temp = Math.min(1, b.temp + dt * 0.1 * effHeat); b.vy *= 0.95; continue;
+    }
+    const yn = (b.y - GLASS_Y0) / GLASS_H;
+    const nearBulb = Math.exp(-Math.max(b.y - (GLASS_Y0 + 0.1), 0) * 1.9);
+    const nearTop = THREE.MathUtils.smoothstep(yn, 0.62, 1.0);
+    b.temp += (nearBulb * effHeat * 0.34 * b.heatK - (0.028 + nearTop * 0.16) * b.coolK * (0.5 + (1 - state.heat) * 0.8) - (state.on ? 0 : 0.085)) * dt;
+    b.temp = THREE.MathUtils.clamp(b.temp, 0, 1);
+    // buoyancy: hot wax expands and rises, cold wax contracts and sinks
+    const speedScale = 0.34 + state.heat * 0.85;
+    const targetVy = (b.temp - b.neutral) * 0.62 * speedScale * (0.7 + b.baseR * 1.1) - (1 - state.power) * 0.10;
+    b.vy += (targetVy - b.vy) * Math.min(1, dt * (b.vy < 0 && targetVy > 0 ? 0.5 : 0.9));
+    // lateral wobble + gentle convection drift toward/away from centre
+    const wobA = 0.055 * (0.4 + Math.abs(b.vy) * 2.2);
+    b.vx = Math.sin(state.time * b.wob + b.phase) * wobA - b.x * 0.05 * dt * 8;
+    b.vz = Math.cos(state.time * b.wob * 0.83 + b.phase * 1.7) * wobA - b.z * 0.05 * dt * 8;
+    b.x += b.vx * dt; b.z += b.vz * dt; b.y += b.vy * dt;
+    // slow radius breathing so no two cycles look alike
+    b.phase += dt * 0.013 * Math.sin(state.time * 0.11 + b.y);
+    // pinch-off: a fast large riser sheds volume; a slow small sinker regains it in the pool
+    if (b.vy > 0.17 && b.baseR > 0.3) b.baseR = Math.max(0.17, b.baseR - dt * 0.012);
+    if (b.y < GLASS_Y0 + 0.45 && b.temp > 0.6) b.baseR = Math.min(0.4, b.baseR + dt * 0.01);
+    // confine to vessel taper
+    const rNow = b.baseR * (0.84 + b.temp * 0.3);
+    const maxOff = Math.max(vesselRadius(b.y) - 0.09 - rNow * 0.82, 0.01);
+    const off = Math.hypot(b.x, b.z);
+    if (off > maxOff) { b.x *= maxOff / off; b.z *= maxOff / off; }
+    const yLo = GLASS_Y0 + 0.12 + rNow * 0.35, yHi = GLASS_Y1 - 0.22 - rNow * 0.5;
+    if (b.y < yLo) { b.y = yLo; b.vy = Math.abs(b.vy) * 0.12; }
+    if (b.y > yHi) { b.y = yHi; b.vy = -Math.abs(b.vy) * 0.12; }
+    const targetStretch = 1 + THREE.MathUtils.clamp(Math.abs(b.vy) * 1.5, 0, 0.75) + Math.sin(state.time * 2.1 + b.phase * 4) * 0.05;
+    b.stretch += (targetStretch - b.stretch) * Math.min(1, dt * 3);
+  }
+  // gentle mutual nudging so neighbours merge instead of stacking
+  for (let i = 0; i < blobs.length; i++) for (let j = i + 1; j < blobs.length; j++) {
+    const a = blobs[i], c = blobs[j]; if (!a.active || !c.active) continue;
+    const dx = c.x - a.x, dy = c.y - a.y, dz = c.z - a.z, d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 < 0.30 && d2 > 1e-6) { const d = Math.sqrt(d2), push = (0.55 - d) * 0.20 * dt / d; a.x -= dx * push; c.x += dx * push; a.y -= dy * push * 0.9; c.y += dy * push * 0.9; }
+  }
+}
+function pushUniforms() {
+  for (let i = 0; i < MAXB; i++) {
+    const b = blobs[i];
+    const r = b.baseR * (0.84 + b.temp * 0.3) * (0.68 + state.waxAmt * 0.45);
+    waxUniforms.uBlobs.value[i].set(b.x, b.active ? b.y : GLASS_Y0 + 0.16, b.z, Math.max(r, 0.01));
+    waxUniforms.uInfo.value[i].set(b.temp, b.active ? b.stretch : 0.55, 1); // inactive blobs sit flattened in the pool
+  }
+  waxUniforms.uPool.value += (((0.25 + state.waxAmt * 0.6) * (state.on ? 0.75 : 1.35)) - waxUniforms.uPool.value) * 0.02;
+  waxUniforms.uTime.value = state.time;
+  waxUniforms.uPower.value = state.power * (0.35 + state.warmup * 0.65);
+  waxUniforms.uCam.value.copy(camera.position);
+}
+
+// ---------- presets + controls ----------
+const PRESETS = [
+  { name: 'Classic', wax: 0xd81a08, hot: 0xff6a14, liquid: 0xffc81f, glow: 0xff7a2a },
+  { name: 'Violet deep', wax: 0x7b1fd4, hot: 0xe879f9, liquid: 0x1d4ed8, glow: 0xa04dff },
+  { name: 'Emerald', wax: 0x0aa84f, hot: 0x7dff9a, liquid: 0x0e6f8e, glow: 0x2fe07a },
+  { name: 'Sunset', wax: 0xe85d04, hot: 0xffd166, liquid: 0xc2185b, glow: 0xff8a3a },
+  { name: 'Arctic', wax: 0xe8f4ff, hot: 0x9fdcff, liquid: 0x1440a0, glow: 0x7cc4ff }
+];
+const target = { wax: new THREE.Color(PRESETS[0].wax), hot: new THREE.Color(PRESETS[0].hot), liquid: new THREE.Color(PRESETS[0].liquid), glow: new THREE.Color(PRESETS[0].glow) };
+const swWrap = document.getElementById('swatches');
+PRESETS.forEach((p, i) => {
+  const b = document.createElement('button');
+  b.className = 'sw' + (i === 0 ? ' on' : ''); b.title = p.name; b.setAttribute('aria-label', p.name);
+  b.innerHTML = `<span style="background:#${p.wax.toString(16).padStart(6, '0')}"></span><i style="background:#${p.liquid.toString(16).padStart(6, '0')}"></i>`;
+  b.onclick = () => {
+    document.querySelectorAll('.sw').forEach(s => s.classList.remove('on')); b.classList.add('on');
+    target.wax.set(p.wax); target.hot.set(p.hot); target.liquid.set(p.liquid); target.glow.set(p.glow);
+  };
+  swWrap.appendChild(b);
+});
+const $ = id => document.getElementById(id);
+function bindSlider(id, out, fn) {
+  const el = $(id);
+  const go = () => { $(out).textContent = el.value; fn(el.value / 100); };
+  el.addEventListener('input', go); go();
+}
+bindSlider('heat', 'heatV', v => state.heat = v);
+bindSlider('wax', 'waxV', v => state.waxAmt = v);
+bindSlider('room', 'roomV', v => state.room = v);
+function setPower(on) {
+  if (on && !state.on) state.warmup = 0; // cold start: wax must re-melt before the first blob rises
+  state.on = on;
+  $('power').classList.toggle('on', on);
+  rocker.material.color.set(on ? 0xff7a2a : 0x6b5a48);
+}
+$('power').onclick = () => setPower(!state.on);
+$('orbitBtn').onclick = e => { state.orbit = !state.orbit; controls.autoRotate = state.orbit; e.currentTarget.classList.toggle('on', state.orbit); };
+$('slowBtn').onclick = e => { state.slow = !state.slow; e.currentTarget.classList.toggle('on', state.slow); };
+// click the physical rocker switch on the base
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let downXY = null;
+canvas.addEventListener('pointerdown', e => downXY = [e.clientX, e.clientY]);
+canvas.addEventListener('pointerup', e => {
+  if (!downXY || Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 5) return;
+  ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ptr, camera);
+  if (ray.intersectObjects([rocker, switchBase, inlineSwitch], false).length) setPower(!state.on);
+});
+
+// ---------- post-processing ----------
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(DPR);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.4, 0.5, 0.78);
+composer.addPass(bloom);
+const filmPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      float vig = smoothstep(1.25, 0.35, length(vUv - 0.5) * 1.6);
+      c.rgb *= mix(0.72, 1.0, vig);
+      c.rgb += (hash(vUv * vec2(1920.0,1080.0) + fract(uTime)*7.0) - 0.5) * 0.032;
+      gl_FragColor = c;
+    }`
+});
+composer.addPass(filmPass);
+composer.addPass(new OutputPass());
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- main loop: fixed-step sim, adaptive quality ----------
+const clock = new THREE.Clock();
+let acc = 0, frames = 0, fpsTimer = 0;
+const stateEl = $('state');
+function bulbOcclusion() {
+  let occ = 0;
+  for (const b of blobs) if (b.active) occ += Math.exp(-((b.y - 1.4) ** 2) * 3.2) * Math.exp(-(b.x * b.x + b.z * b.z) * 4) * b.baseR * 2.2;
+  return THREE.MathUtils.clamp(occ, 0, 0.55);
+}
+renderer.setAnimationLoop(() => {
+  const dtReal = Math.min(clock.getDelta(), 0.05);
+  const dt = dtReal * (state.slow ? 0.22 : 1);
+  acc += dt;
+  const STEP = 1 / 60; let n = 0;
+  while (acc >= STEP && n < 4) { simStep(STEP); acc -= STEP; n++; }
+  if (n === 4) acc = 0;
+  pushUniforms();
+
+  // smooth colour-preset crossfade
+  const k = 1 - Math.exp(-dtReal * 2.2);
+  waxUniforms.uWax.value.lerp(target.wax, k); waxUniforms.uWaxHot.value.lerp(target.hot, k);
+  waxUniforms.uLiquid.value.lerp(target.liquid, k);
+  liquidMat.color.lerp(target.liquid, k);
+  bulbLight.color.lerp(target.glow, k); spill.color.lerp(target.glow, k);
+  bulbMat.emissive.lerp(target.hot, k);
+
+  // lamp-driven lighting: flickers as wax crosses the bulb
+  const occ = bulbOcclusion();
+  const flick = 1 - occ * 0.7 + Math.sin(state.time * 23.7) * 0.012 + Math.sin(state.time * 7.3) * 0.02;
+  const p = state.power * (0.25 + state.warmup * 0.75);
+  bulbLight.intensity = 11 * p * flick;
+  spill.intensity = 2.6 * p * (1 - occ * 0.4);
+  bulbMat.emissiveIntensity = 3.2 * p * flick + 0.02;
+  coil.material.emissiveIntensity = 0.9 * p;
+  glowSpriteMat.opacity = 0.2 * p * (1 - occ * 0.5);
+  glow.scale.setScalar(1.35 + 0.18 * Math.sin(state.time * 1.8) + occ * 0.3);
+  bloom.strength = 0.16 + 0.26 * p;
+  ambient.intensity = 0.05 + state.room * 0.85;
+  roomLight.intensity = state.room * 1.5;
+  scene.environmentIntensity = 0.12 + state.room * 0.7;
+  stateEl.textContent = !state.on ? 'Off — cooling' : state.warmup < 0.98 ? 'Warming…' : 'Flowing';
+
+  controls.update();
+  filmPass.uniforms.uTime.value = state.time;
+  composer.render();
+
+  // adaptive resolution: keep frame rate stable on weaker GPUs
+  frames++; fpsTimer += dtReal;
+  if (fpsTimer > 1.5) {
+    const fps = frames / fpsTimer; frames = 0; fpsTimer = 0;
+    if (fps < 42 && DPR > 0.8) { DPR = Math.max(0.8, DPR - 0.2); renderer.setPixelRatio(DPR); composer.setPixelRatio(DPR); onResizeFix(); }
+    else if (fps > 58 && DPR < Math.min(devicePixelRatio || 1, 1.75)) { DPR += 0.15; renderer.setPixelRatio(DPR); composer.setPixelRatio(DPR); onResizeFix(); }
+  }
+});
+function onResizeFix() { renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); }
+</script>
+</body>
+</html>
+
+
+
+
+

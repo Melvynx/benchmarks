@@ -1,0 +1,84 @@
+import { useMemo, useRef, useState } from 'react'
+import { CITY_CATALOG, type City } from '../data/cities'
+import { formatUtcOffset, getUtcOffsetMinutes } from '../lib/time'
+
+interface Props {
+  selectedIds: string[]
+  onAdd: (id: string) => void
+}
+
+export default function CityPicker({ selectedIds, onAdd }: Props) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [highlight, setHighlight] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const available = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return CITY_CATALOG.filter((c) => !selectedIds.includes(c.id)).filter(
+      (c) => !q || c.name.toLowerCase().includes(q) || c.country.toLowerCase().includes(q) || c.region.toLowerCase().includes(q),
+    )
+  }, [query, selectedIds])
+
+  const offsets = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const c of CITY_CATALOG) map.set(c.id, formatUtcOffset(getUtcOffsetMinutes(c.tz)))
+    return map
+  }, [])
+
+  function add(city: City) {
+    onAdd(city.id)
+    setQuery('')
+    setHighlight(0)
+    inputRef.current?.focus()
+  }
+
+  return (
+    <div className="city-picker">
+      <label className="picker-label" htmlFor="city-search">Add a city</label>
+      <div className="picker-box">
+        <input
+          ref={inputRef}
+          id="city-search"
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls="city-listbox"
+          aria-label="Search cities by name or country"
+          placeholder="Search by city or country…"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); setHighlight(0) }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHighlight((h) => Math.min(h + 1, available.length - 1)) }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)) }
+            else if (e.key === 'Enter' && open && available[highlight]) { e.preventDefault(); add(available[highlight]) }
+            else if (e.key === 'Escape') setOpen(false)
+          }}
+        />
+        <span className="picker-count">{available.length} available</span>
+      </div>
+      {open && (
+        <ul className="picker-list" id="city-listbox" role="listbox" aria-label="Available cities">
+          {available.length === 0 && <li className="picker-empty">No cities match “{query}”.</li>}
+          {available.map((city, i) => (
+            <li key={city.id} role="option" aria-selected={i === highlight}>
+              <button
+                type="button"
+                className={i === highlight ? 'picker-item highlighted' : 'picker-item'}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setHighlight(i)}
+                onClick={() => add(city)}
+              >
+                <span className="picker-city">{city.name}</span>
+                <span className="picker-meta">{city.country} · {city.region}</span>
+                <span className="picker-offset">{offsets.get(city.id)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}

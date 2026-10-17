@@ -1,0 +1,120 @@
+import type { City } from '../data/cities';
+import { formatCellHour, formatHour, formatOffset, getOffsetMinutes, type TimeFormat } from '../lib/time';
+
+export interface CellInfo { localHour: number; dayShift: number; awake: boolean; overlap: boolean; }
+
+interface GridProps {
+  cities: City[];
+  matrix: CellInfo[][]; // [cityIndex][refHour]
+  format: TimeFormat;
+  now: Date;
+  currentRefHour: number;
+  onPromote: (id: string) => void;
+  onRemove: (id: string) => void;
+}
+
+function cellClass(cell: CellInfo): string {
+  if (!cell.awake) return 'cell cell-sleep';
+  return cell.overlap ? 'cell cell-overlap' : 'cell cell-awake';
+}
+
+function CityLabel({ city, isRef, now, onPromote }: { city: City; isRef: boolean; now: Date; onPromote: (id: string) => void }) {
+  return (
+    <div className="city-label">
+      <button
+        type="button"
+        className="city-name"
+        title={isRef ? 'Reference city' : `Make ${city.name} the reference city`}
+        onClick={() => onPromote(city.id)}
+      >
+        {city.name}
+      </button>
+      <span className="city-sub">
+        {city.country}
+        {isRef && <span className="ref-badge">REF</span>}
+      </span>
+      <span className="city-offset">{formatOffset(getOffsetMinutes(city.tz, now))}</span>
+    </div>
+  );
+}
+
+export function DesktopGrid({ cities, matrix, format, now, currentRefHour, onPromote, onRemove }: GridProps) {
+  return (
+    <div className="grid-wrap desktop-grid" role="table" aria-label="Timezone overlap grid">
+      <div className="d-row d-header" role="row">
+        <div className="d-corner">City</div>
+        {Array.from({ length: 24 }, (_, h) => (
+          <div key={h} className={`d-hour${h === currentRefHour ? ' is-now' : ''}`} role="columnheader" title={formatHour(h, format)}>
+            {formatCellHour(h, format)}
+          </div>
+        ))}
+        <div className="d-corner-end" aria-hidden="true" />
+      </div>
+      {cities.map((city, ci) => (
+        <div key={city.id} className="d-row" role="row">
+          <CityLabel city={city} isRef={ci === 0} now={now} onPromote={onPromote} />
+          {matrix[ci].map((cell, h) => (
+            <div
+              key={h}
+              role="cell"
+              className={`${cellClass(cell)}${h === currentRefHour ? ' is-now-col' : ''}`}
+              title={`${city.name}: ${formatHour(cell.localHour, format)}${cell.dayShift !== 0 ? (cell.dayShift > 0 ? ' (next day)' : ' (previous day)') : ''}`}
+            >
+              <span className="cell-hour">{formatCellHour(cell.localHour, format)}</span>
+              {cell.dayShift !== 0 && <span className="cell-shift">{cell.dayShift > 0 ? '+1' : '−1'}</span>}
+            </div>
+          ))}
+          <button
+            type="button"
+            className="remove-btn"
+            aria-label={`Remove ${city.name}`}
+            title={`Remove ${city.name}`}
+            onClick={() => onRemove(city.id)}
+            disabled={cities.length <= 1}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function MobileGrid({ cities, matrix, format, now, currentRefHour, onPromote, onRemove }: GridProps) {
+  return (
+    <div className="grid-wrap mobile-grid" role="table" aria-label="Timezone overlap grid">
+      <div className="m-header" style={{ gridTemplateColumns: `52px repeat(${cities.length}, 1fr)` }}>
+        <div className="m-corner">{cities[0] ? formatCellHour(currentRefHour, format) : ''}</div>
+        {cities.map((city, ci) => (
+          <div key={city.id} className="m-city">
+            <button type="button" className="city-name m-name" onClick={() => onPromote(city.id)} title={ci === 0 ? 'Reference city' : `Make ${city.name} the reference`}>
+              {city.name}
+            </button>
+            <span className="m-offset">{formatOffset(getOffsetMinutes(city.tz, now))}</span>
+            {ci === 0 && <span className="ref-badge">REF</span>}
+            <button type="button" className="remove-btn m-remove" aria-label={`Remove ${city.name}`} onClick={() => onRemove(city.id)} disabled={cities.length <= 1}>×</button>
+          </div>
+        ))}
+      </div>
+      {Array.from({ length: 24 }, (_, h) => (
+        <div
+          key={h}
+          className={`m-row${h === currentRefHour ? ' is-now-row' : ''}`}
+          style={{ gridTemplateColumns: `52px repeat(${cities.length}, 1fr)` }}
+          role="row"
+        >
+          <div className="m-hour-label">{formatCellHour(h, format)}</div>
+          {cities.map((city, ci) => {
+            const cell = matrix[ci][h];
+            return (
+              <div key={city.id} role="cell" className={cellClass(cell)} title={`${city.name}: ${formatHour(cell.localHour, format)}`}>
+                <span className="cell-hour">{formatCellHour(cell.localHour, format)}</span>
+                {cell.dayShift !== 0 && <span className="cell-shift">{cell.dayShift > 0 ? '+1' : '−1'}</span>}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}

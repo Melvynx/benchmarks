@@ -1,0 +1,16 @@
+import { chromium } from "playwright";
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const page = await ctx.newPage();
+await page.goto("http://localhost:9391/#inbox", { waitUntil: "networkidle" });
+await page.waitForSelector("[role=grid] [data-thread-id]");
+await ctx.setOffline(true);
+await page.waitForTimeout(400);
+console.log("online flag:", await page.evaluate(() => navigator.onLine), "chip:", await page.getByText("Offline", { exact: true }).isVisible());
+await page.locator("[role=grid] [data-thread-id] [data-subject]").first().click();
+await page.waitForTimeout(300);
+console.log("chip in thread view:", await page.getByText("Offline", { exact: true }).isVisible());
+await ctx.setOffline(false);
+await page.waitForTimeout(300);
+console.log("chip after reconnect:", await page.getByText("Offline", { exact: true }).isVisible());
+await browser.close();

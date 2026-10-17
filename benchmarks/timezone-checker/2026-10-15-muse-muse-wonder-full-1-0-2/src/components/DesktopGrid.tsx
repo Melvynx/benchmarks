@@ -1,0 +1,61 @@
+import type { EnrichedCity } from '../lib/grid'
+import { cellClass, cellStateLabel } from '../lib/grid'
+import { formatHour, type TimeFormat } from '../lib/time'
+
+interface Props {
+  cities: EnrichedCity[]
+  format: TimeFormat
+  nowHour: number | null
+  onPromote: (id: string) => void
+  onRemove: (id: string) => void
+}
+
+export default function DesktopGrid({ cities, format, nowHour, onPromote, onRemove }: Props) {
+  const hours = Array.from({ length: 24 }, (_, i) => i)
+  return (
+    <div className="grid-wrap desktop-grid" data-layout="desktop">
+      <table className="tz-table" aria-label="Timezone overlap grid">
+        <thead>
+          <tr>
+            <th scope="col" className="city-col">City / reference hour →</th>
+            {hours.map((h) => (
+              <th key={h} scope="col" className={h === nowHour ? 'hour-head now' : 'hour-head'} title={h === nowHour ? 'Current hour in reference city' : undefined}>
+                {formatHour(h, format)}
+                {h === nowHour && <span className="now-dot" aria-label="now">●</span>}
+              </th>
+            ))}
+            <th scope="col"><span className="sr-only">Remove</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {cities.map(({ city, offsetLabel, currentTime, isRef, cells }) => (
+            <tr key={city.id} className={isRef ? 'city-row ref-row' : 'city-row'} data-city={city.name}>
+              <th scope="row" className="city-cell">
+                <button type="button" className="city-name" onClick={() => onPromote(city.id)} title={isRef ? 'Reference city' : `Make ${city.name} the reference city`} aria-label={isRef ? `${city.name}, reference city` : `Make ${city.name} the reference city`}>
+                  {city.name}
+                </button>
+                {isRef && <span className="ref-badge">REF</span>}
+                <span className="city-sub">{city.country}</span>
+                <span className="city-meta">{offsetLabel} · {currentTime}</span>
+              </th>
+              {cells.map((cell) => (
+                <td
+                  key={cell.refHour}
+                  className={`${cellClass(cell)}${cell.refHour === nowHour ? ' now-col' : ''}`}
+                  data-state={cellStateLabel(cell)}
+                  data-hour={cell.refHour}
+                  title={`${city.name}: ${cell.label} — ${cellStateLabel(cell)}`}
+                >
+                  {cell.label}
+                </td>
+              ))}
+              <td className="remove-cell">
+                <button type="button" className="remove-btn" onClick={() => onRemove(city.id)} aria-label={`Remove ${city.name}`} title={`Remove ${city.name}`}>×</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}

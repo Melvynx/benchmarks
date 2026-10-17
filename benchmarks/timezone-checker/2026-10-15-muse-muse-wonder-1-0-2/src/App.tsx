@@ -1,0 +1,224 @@
+import { useEffect, useMemo, useState } from 'react'
+import { CITIES, CITY_MAP, DEFAULT_CITY_IDS } from './data/cities'
+import { formatMinutes, getOffsetMinutes, isAwake, localMinutesForRefHour, type Mode, type TimeFormat } from './lib/time'
+import type { RowData } from './lib/types'
+import AddCity from './components/AddCity'
+import SettingsPanel from './components/SettingsPanel'
+import OverlapSummary from './components/OverlapSummary'
+import DesktopGrid from './components/DesktopGrid'
+import MobileGrid from './components/MobileGrid'
+
+const STORAGE_KEY = 'timezone-overlap-checker:v1'
+
+interface PersistedState {
+  cityIds: string[]
+  mode: Mode
+  wake: number
+  sleep: number
+  timeFormat: TimeFormat
+}
+
+function loadState(): PersistedState {
+  const fallback: PersistedState = { cityIds: DEFAULT_CITY_IDS, mode: 'meeting', wake: 7, sleep: 23, timeFormat: '12h' }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as Partial<PersistedState>
+    const cityIds = Array.isArray(parsed.cityIds)
+      ? parsed.cityIds.filter((id): id is string => typeof id === 'string' && CITY_MAP.has(id))
+      : []
+    return {
+      cityIds: cityIds.length > 0 ? [...new Set(cityIds)] : fallback.cityIds,
+      mode: parsed.mode === 'base' ? 'base' : 'meeting',
+      wake: typeof parsed.wake === 'number' && parsed.wake >= 0 && parsed.wake <= 23 ? parsed.wake : 7,
+      sleep: typeof parsed.sleep === 'number' && parsed.sleep >= 0 && parsed.sleep <= 23 ? parsed.sleep : 23,
+      timeFormat: parsed.timeFormat === '24h' ? '24h' : '12h',
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => setMobile(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    window.addEventListener('resize', update)
+    return () => {
+      mq.removeEventListener('change', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [])
+  return mobile
+}
+
+export default function App() {
+  const [initial] = useState<PersistedState>(loadState)
+  const [cityIds, setCityIds] = useState<string[]>(initial.cityIds)
+  const [mode, setMode] = useState<Mode>(initial.mode)
+  const [wake, setWake] = useState(initial.wake)
+  const [sleep, setSleep] = useState(initial.sleep)
+  const [timeFormat, setTimeFormat] = useState<TimeFormat>(initial.timeFormat)
+  const isMobile = useIsMobile()
+
+  useEffect(() => {
+    try {
+      const state: PersistedState = { cityIds, mode, wake, sleep, timeFormat }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    } catch {
+      // storage unavailable
+    }
+  }, [cityIds, mode, wake, sleep, timeFormat])
+
+  const cities = useMemo(() => cityIds.map((id) => CITY_MAP.get(id)!).filter(Boolean), [cityIds])
+  const reference = cities[0]
+
+  const offsets = useMemo(() => {
+    const now = new Date()
+    const map = new Map<string, number>()
+    for (const c of CITIES) map.set(c.id, getOffsetMinutes(c.timezone, now))
+    return map
+  }, [])
+
+  const refOffset = reference ? (offsets.get(reference.id) ?? 0) : 0
+
+  // awake matrix: [cityId][refHour] => boolean
+  const awakeMatrix = useMemo(() => {
+    const map = new Map<string, boolean[]>()
+    for (const city of cities) {
+      const off = offsets.get(city.id) ?? 0
+      const arr: boolean[] = []
+      for (let h = 0; h < 24; h++) {
+        const local = localMinutesForRefHour(h, refOffset, off)
+        arr.push(isAwake(local, wake, sleep))
+      }
+      map.set(city.id, arr)
+    }
+    return map
+  }, [cities, offsets, refOffset, wake, sleep])
+
+  const meetingOverlap = useMemo(() => {
+    if (cities.length === 0) return []
+    const result: number[] = []
+    for (let h = 0; h < 24; h++) {
+      if (cities.every((c) => awakeMatrix.get(c.id)?.[h])) result.push(h)
+    }
+    return result
+  }, [cities, awakeMatrix])
+
+  const baseOverlaps = useMemo(() => {
+    const map = new Map<string, number[]>()
+    if (!reference) return map
+    const refAwake = awakeMatrix.get(reference.id) ?? []
+    for (const city of cities.slice(1)) {
+      const arr: number[] = []
+      const cityAwake = awakeMatrix.get(city.id) ?? []
+      for (let h = 0; h < 24; h++) {
+        if (refAwake[h] && cityAwake[h]) arr.push(h)
+      }
+      map.set(city.id, arr)
+    }
+    return map
+  }, [cities, reference, awakeMatrix])
+
+  const rows: RowData[] = useMemo(() => {
+    return cities.map((city, idx) => {
+      const off = offsets.get(city.id) ?? 0
+      const cells = Array.from({ length: 24 }, (_, h) => {
+        const localMinutes = localMinutesForRefHour(h, refOffset, off)
+        const awake = awakeMatrix.get(city.id)?.[h] ?? false
+        let isOverlap = false
+        if (awake) {
+          if (mode === 'meeting') isOverlap = meetingOverlap.includes(h)
+          else if (idx === 0) isOverlap = true
+          else isOverlap = (baseOverlaps.get(city.id) ?? []).includes(h)
+        }
+        return {
+          refHour: h,
+          localMinutes,
+          label: formatMinutes(localMinutes, timeFormat),
+          awake,
+          isOverlap,
+          state: (!awake ? 'sleeping' : isOverlap ? 'overlap' : 'awake') as 'sleeping' | 'awake' | 'overlap',
+        }
+      })
+      return { city, offset: off, cells }
+    })
+  }, [cities, offsets, refOffset, awakeMatrix, mode, meetingOverlap, baseOverlaps, timeFormat])
+
+  function addCity(id: string) {
+    setCityIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+  }
+  function removeCity(id: string) {
+    setCityIds((prev) => (prev.length <= 1 ? prev : prev.filter((c) => c !== id)))
+  }
+  function promoteCity(id: string) {
+    setCityIds((prev) => {
+      if (!prev.includes(id) || prev[0] === id) return prev
+      return [id, ...prev.filter((c) => c !== id)]
+    })
+  }
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="topbar-inner">
+          <div>
+            <h1>muse-wonder-1.0</h1>
+            <p className="subtitle">Timezone overlap checker — find hours when everyone is awake.</p>
+          </div>
+          <div className="mode-toggle" role="group" aria-label="Mode">
+            <button type="button" className={mode === 'meeting' ? 'mode-btn active' : 'mode-btn'} onClick={() => setMode('meeting')} aria-pressed={mode === 'meeting'}>Meeting Mode</button>
+            <button type="button" className={mode === 'base' ? 'mode-btn active' : 'mode-btn'} onClick={() => setMode('base')} aria-pressed={mode === 'base'}>Base Mode</button>
+          </div>
+        </div>
+        <p className="mode-desc">
+          {mode === 'meeting'
+            ? 'Meeting Mode: one shared window when every city is awake at the same time.'
+            : `Base Mode: each city is compared only against ${reference?.name ?? 'the reference'}.`}
+        </p>
+      </header>
+
+      <main className="main">
+        <section className="controls card">
+          <div className="controls-row">
+            <AddCity selectedIds={cityIds} onAdd={addCity} />
+            <span className="controls-hint">Click a city name to make it the reference. All hours are anchored to the reference city.</span>
+          </div>
+          <SettingsPanel wake={wake} sleep={sleep} timeFormat={timeFormat} onWake={setWake} onSleep={setSleep} onFormat={setTimeFormat} />
+          <div className="legend" aria-label="Legend">
+            <span className="legend-item"><span className="swatch swatch--overlap" /> Overlap</span>
+            <span className="legend-item"><span className="swatch swatch--awake" /> Awake</span>
+            <span className="legend-item"><span className="swatch swatch--sleeping" /> Sleeping</span>
+            <span className="legend-note">Awake window: {timeFormat === '12h' ? '' : ''}{wake}–{sleep} applies to every city.</span>
+          </div>
+        </section>
+
+        <OverlapSummary mode={mode} cities={cities} meetingOverlap={meetingOverlap} baseOverlaps={baseOverlaps} timeFormat={timeFormat} referenceName={reference?.name ?? ''} />
+
+        <section className="grid-card card" aria-label="Timezone grid">
+          {reference && (
+            <p className="grid-caption">
+              Columns are hours in <strong>{reference.name}</strong> ({timeFormat === '12h' ? '12-hour' : '24-hour'}). Each cell shows the local time in that city.
+            </p>
+          )}
+          {isMobile ? (
+            <MobileGrid rows={rows} timeFormat={timeFormat} onPromote={promoteCity} onRemove={removeCity} />
+          ) : (
+            <DesktopGrid rows={rows} timeFormat={timeFormat} onPromote={promoteCity} onRemove={removeCity} />
+          )}
+        </section>
+
+        <p className="hint">
+          {mode === 'meeting' ? 'Green cells = everyone awake' : `Green cells = overlapping with ${reference?.name ?? 'reference'}`}
+        </p>
+        {mode === 'base' && <p className="hint secondary">In Base Mode each row highlights its own overlap with the reference city, so rows can differ.</p>}
+      </main>
+
+      <footer className="footer">Offsets use the current date, so daylight saving time is handled automatically. Fractional offsets (e.g. India, Nepal) are supported.</footer>
+    </div>
+  )
+}
