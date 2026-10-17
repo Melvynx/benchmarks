@@ -19,12 +19,12 @@ BENCHMARK_ID=""
 STANDALONE=0
 
 usage() {
-  echo "Usage: $0 --model MODEL --harness codex|ccx|cc|cckimi|cursor-agent|opencode --tasks TASK[,TASK...] [--effort LEVEL] [--benchmark-id ID] [--dry-run|--smoke]"
+  echo "Usage: $0 --model MODEL --harness codex|ccx|cc|cckimi|cursor-agent|opencode|muse --tasks TASK[,TASK...] [--effort LEVEL] [--benchmark-id ID] [--dry-run|--smoke]"
 }
 
 task_type() {
   case "$1" in
-    video-generation|3d-sponge-bob|3d-car-crash|air-conditioning-understanding|bouncing-ball|car-crash|distributed-systems-playground|elysian-taste-challenge|lava-lamp-3d|little-red-riding-hood-film|living-identity-system|one-button-boss-fight|orbital-rescue-digital-twin|pentest|rocket-launch|the-last-signal) echo standalone-html ;;
+    video-generation|3d-sponge-bob|3d-car-crash|air-conditioning-understanding|bouncing-ball|car-crash|distributed-systems-playground|elysian-taste-challenge|lava-lamp-3d|little-red-riding-hood-film|living-identity-system|one-button-boss-fight|orbital-rescue-digital-twin|pentest|rocket-launch|tesla-roadster|the-last-signal) echo standalone-html ;;
     cowdie|earthquake-explorer|figma-clone|gmail-clone|simulation-life|timezone-checker|youtube-thumbnail) echo web-app ;;
     saveit-now-landing|thumbfast) echo cloned-web-app ;;
     openclaw-benchmark) echo cli ;;
@@ -56,6 +56,7 @@ task_wording() {
     saveit-now-landing) echo "Redesign the supplied SaveIt.now landing page using the bundled campaign artwork and product brief." ;;
     simulation-life) echo "Build an interactive artificial-life simulation with observable agents, controls, and emergent behavior." ;;
     thumbfast) echo "Implement the supplied feature request in the seeded Thumbfast repository and integrate it with existing product flows. Read the repository instructions before editing." ;;
+    tesla-roadster) echo "Recreate Tesla's "The Ramp" Roadster stunt as a high-fidelity, physics-driven 3D scene where a failed run breaks the car, matched to the bundled reference footage." ;;
     the-last-signal) echo "Create The Last Signal as a short interactive visual story in three acts with two distinct endings." ;;
     timezone-checker) echo "Build a responsive timezone overlap planner for comparing cities, working hours, and shared availability." ;;
     youtube-thumbnail) echo "Build a polished YouTube thumbnail editor with image, text, layout, and export workflows." ;;
@@ -88,6 +89,7 @@ prompt_slug() {
     saveit-now-landing) echo saveit-now-landing ;;
     simulation-life) echo ecosystem-evolution-simulator ;;
     thumbfast) echo thumbfast-drawing-inspiration-editor ;;
+    tesla-roadster) echo tesla-roadster-stunt-show ;;
     the-last-signal) echo the-last-signal ;;
     timezone-checker) echo timezone-checker ;;
     youtube-thumbnail) echo youtube-thumbnail-generator ;;
@@ -167,7 +169,7 @@ claim_port() {
 }
 
 list_tasks() {
-  for task in video-generation 3d-sponge-bob 3d-car-crash air-conditioning-understanding bouncing-ball car-crash cowdie distributed-systems-playground earthquake-explorer elysian-taste-challenge figma-clone gmail-clone lava-lamp-3d little-red-riding-hood-film living-identity-system one-button-boss-fight orbital-rescue-digital-twin pentest rocket-launch saveit-now-landing simulation-life thumbfast the-last-signal timezone-checker youtube-thumbnail openclaw-benchmark; do
+  for task in video-generation 3d-sponge-bob 3d-car-crash air-conditioning-understanding bouncing-ball car-crash cowdie distributed-systems-playground earthquake-explorer elysian-taste-challenge figma-clone gmail-clone lava-lamp-3d little-red-riding-hood-film living-identity-system one-button-boss-fight orbital-rescue-digital-twin pentest rocket-launch saveit-now-landing simulation-life thumbfast tesla-roadster the-last-signal timezone-checker youtube-thumbnail openclaw-benchmark; do
     printf '%-20s %s\n' "$task" "$(task_type "$task")"
   done
 }
@@ -197,7 +199,7 @@ valid_benchmark_id "$BENCHMARK_ID" || {
 }
 
 [[ -n "$MODEL" && -n "$HARNESS" ]] || { usage >&2; exit 2; }
-[[ "$HARNESS" == codex || "$HARNESS" == ccx || "$HARNESS" == cc || "$HARNESS" == cckimi || "$HARNESS" == cursor-agent || "$HARNESS" == opencode ]] || { echo "Unsupported harness: $HARNESS" >&2; exit 2; }
+[[ "$HARNESS" == codex || "$HARNESS" == ccx || "$HARNESS" == cc || "$HARNESS" == cckimi || "$HARNESS" == cursor-agent || "$HARNESS" == opencode || "$HARNESS" == muse ]] || { echo "Unsupported harness: $HARNESS" >&2; exit 2; }
 [[ -n "$TASKS" || "$SMOKE" == 1 ]] || { echo "--tasks is required unless --smoke is used" >&2; exit 2; }
 # A run whose cost the comparison UI cannot show is not a usable benchmark.
 if [[ "$SMOKE" != 1 ]] && ! node --experimental-strip-types --no-warnings -e '
@@ -255,7 +257,7 @@ mkdir -p "$ROOT/.benchmark-output-locks"
 case "$HARNESS" in
   codex|ccx) port_base=9100 ;;
   cc) port_base=9200 ;;
-  cckimi|cursor-agent|opencode) port_base=9300 ;;
+  cckimi|cursor-agent|opencode|muse) port_base=9300 ;;
 esac
 
 if [[ "$SMOKE" == 1 ]]; then TASKS="harness-smoke"; fi
@@ -356,6 +358,7 @@ for index in "${!task_list[@]}"; do
   fi
   if [[ "$DRY_RUN" == 0 && "$task" == thumbfast ]]; then cp -R "$BENCHMARKS_DIR/thumbfast/base-repo/." "$work_dir/"; fi
   if [[ "$DRY_RUN" == 0 && "$task" == saveit-now-landing ]]; then cp -R "$BENCHMARKS_DIR/saveit-now-landing/base-repo/." "$work_dir/"; fi
+  if [[ "$DRY_RUN" == 0 && "$task" == tesla-roadster ]]; then cp -R "$BENCHMARKS_DIR/tesla-roadster/base-repo/." "$work_dir/"; fi
   if [[ "$DRY_RUN" == 0 && "$task" == openclaw-benchmark ]]; then
     for seed_item in package.json tsconfig.json src benchmarks; do
       cp -R "$BENCHMARKS_DIR/openclaw-benchmark/$seed_item" "$work_dir/"
@@ -477,6 +480,19 @@ $checks_line"
         [[ -s "$session_file" ]] || : > "$session_file"
       fi
       ;;
+    muse)
+      session_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+      printf '%s\n' "$session_id" > "$session_file"
+      printf '%q ' muse exec --json --model "$MODEL" --reasoning-effort "$EFFORT" --session-id "$session_id" --yolo "$prompt" > "$command_file"
+      printf '\n' >> "$command_file"
+      if [[ "$DRY_RUN" == 0 ]]; then
+        (cd "$work_dir" && bash "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?
+        if [[ -s "$transcript" ]]; then "$JQ_BIN" -r 'select(.payload_type == "run.terminal.completed") | .payload.text // empty' "$transcript" | tail -1 > "$final" || true; fi
+        # stdout carries only lifecycle events; tool calls and per-call token usage live in the session log.
+        muse_session_dir="$(find "$HOME/.local/share/muse/sessions" -mindepth 4 -maxdepth 4 -type d -name "$session_id" 2>/dev/null | head -1)"
+        if [[ -n "$muse_session_dir" ]]; then cp -R "$muse_session_dir" "$data_dir/muse-session"; fi
+      fi
+      ;;
   esac
 
   if [[ "$DRY_RUN" == 0 ]]; then
@@ -506,6 +522,7 @@ $checks_line"
       [[ -n "$opencode_bin" ]] || opencode_bin="$HOME/.opencode/bin/opencode"
       printf '%q ' "$opencode_bin" run --session "$session_id" --auto > "$resume_file"
       ;;
+    muse) printf '%q ' muse resume "$session_id" > "$resume_file" ;;
   esac
   printf '\n' >> "$resume_file"
   printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' 'jq . "$dir/transcript.jsonl"' > "$view_file"
@@ -529,11 +546,13 @@ $checks_line"
   transcript_analysis_json=null
   session_usage_json=null
   if [[ "$DRY_RUN" == 0 ]]; then
-    if [[ "$transcript_valid" == true ]]; then
-      transcript_analysis_json="$(python3 "$TRANSCRIPT_ANALYZER" "$transcript" --compact)" || {
+    analysis_source="$transcript"
+    [[ "$HARNESS" == muse ]] && analysis_source="$data_dir/muse-session/session.jsonl"
+    if [[ "$transcript_valid" == true && -s "$analysis_source" ]]; then
+      transcript_analysis_json="$(python3 "$TRANSCRIPT_ANALYZER" "$analysis_source" --compact)" || {
         transcript_analysis_json='{"status":"unavailable","reason":"transcript analyzer failed"}'
       }
-      session_usage_json="$(python3 "$SESSION_USAGE_ANALYZER" "$transcript" --compact)" || {
+      session_usage_json="$(python3 "$SESSION_USAGE_ANALYZER" "$analysis_source" --compact)" || {
         session_usage_json='{"status":"unavailable","schema_version":1,"reason":"session usage analyzer failed"}'
       }
     else
@@ -545,6 +564,11 @@ $checks_line"
   "$JQ_BIN" -n --arg benchmark_id "$BENCHMARK_ID" --arg run_id "$(basename "$run_dir")" --arg task "$task" --arg model "$MODEL" --arg harness "$HARNESS" --arg effort "$EFFORT" --arg type "$type" --arg app_name "$app_name" --arg app_path "$app_dir" --arg status "$status" --arg prompt_catalog_dir "$prompt_catalog_dir" --arg prompt_source "$prompt_source" --arg prompt_public_url "$prompt_public_url" --arg package_manager pnpm --argjson port "$port_json" --argjson model_timing "$model_timing_json" --argjson transcript_analysis "$transcript_analysis_json" --argjson session_usage "$session_usage_json" '{benchmark_id:$benchmark_id,run_id:$run_id,task:$task,model:$model,harness:$harness,effort:$effort,type:$type,app_name:$app_name,app_path:$app_path,port:$port,prompt_catalog_dir:$prompt_catalog_dir,prompt_source:$prompt_source,prompt_public_url:$prompt_public_url,package_manager:$package_manager,model_timing:$model_timing,transcript_analysis:$transcript_analysis,session_usage:$session_usage,status:$status}' > "$data_dir/metadata.json"
   "$JQ_BIN" -n --arg status "$status" --argjson exit_code "$exit_code" --argjson transcript_valid "$transcript_valid" --argjson completion_evidence_found "$completion_evidence_found" --argjson session_captured "$session_captured" '{status:$status,harness_exit_code:$exit_code,transcript_jsonl_valid:$transcript_valid,completion_evidence_found:$completion_evidence_found,session_id_captured:$session_captured,app_build_verified:false,app_runtime_verified:false}' > "$data_dir/verification.json"
 done
+
+if [[ "$HARNESS" == cursor-agent && "$DRY_RUN" == 0 && "$SMOKE" == 0 ]]; then
+  python3 "$ROOT/.agents/skills/run-benchmark/scripts/recover-cursor-usage.py" --wait 180 "$run_dir" ||
+    echo "Cursor billing-ledger usage was not recovered; result.usage may under-count reconnected sessions" >&2
+fi
 
 "$JQ_BIN" -n --arg benchmark_id "$BENCHMARK_ID" --arg run_id "$(basename "$run_dir")" --arg model "$MODEL" --arg harness "$HARNESS" --arg effort "$EFFORT" --arg output_name "$app_name" --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg tasks "$TASKS" '{benchmark_id:$benchmark_id,run_id:$run_id,model:$model,harness:$harness,effort:$effort,output_name:$output_name,tasks:($tasks|split(",")),created_at:$created_at}' > "$run_dir/run.json"
 echo "Benchmark ID: $BENCHMARK_ID"

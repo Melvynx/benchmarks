@@ -41,6 +41,20 @@ delivered_app_path() {
   printf '%s\n' "$app_path"
 }
 
+# A first attempt that died before answering is superseded by the fresh-session
+# rerun that delivered the app; its own evidence stays in metadata.json.
+delivered_fresh_iteration() {
+  local data_dir="$1" iteration dir
+  [[ -d "$data_dir/iterations" ]] || return 0
+  for iteration in $(cd "$data_dir/iterations" && printf '%s\n' * | sort -rn); do
+    dir="$data_dir/iterations/$iteration"
+    "$JQ_BIN" -e '.status == "harness-verified" and .fresh_session == true' "$dir/metadata.json" >/dev/null 2>&1 || continue
+    [[ -s "$dir/final.txt" && -s "$dir/session-id.txt" ]] && "$JQ_BIN" -e . "$dir/transcript.jsonl" >/dev/null 2>&1 || continue
+    printf '%s\n' "$iteration"
+    return 0
+  done
+}
+
 for run_dir in "$@"; do
   [[ -f "$run_dir/run.json" ]] || { echo "Missing run.json: $run_dir" >&2; exit 1; }
   while IFS= read -r data_dir; do
@@ -69,12 +83,14 @@ for run_dir in "$@"; do
       while lsof -nP -iTCP:"$verify_port" -sTCP:LISTEN >/dev/null 2>&1 || ! mkdir "$ROOT/.benchmark-verification-port-locks/$verify_port" 2>/dev/null; do verify_port=$((verify_port + 1)); done
       (cd "$app_path" && python3 -m http.server "$verify_port" --bind 127.0.0.1) > "$data_dir/runtime.log" 2>&1 &
       server_pid=$!
-      trap 'stop_server "$server_pid"' EXIT
+      verify_lock="$ROOT/.benchmark-verification-port-locks/$verify_port"
+      trap 'stop_server "$server_pid"; rmdir "$verify_lock" 2>/dev/null' EXIT
       for _ in 1 2 3 4 5 6 7 8 9 10; do
         if probe /index.html "$verify_port"; then runtime_ok=true; break; fi
         sleep 1
       done
       stop_server "$server_pid"
+      rmdir "$verify_lock" 2>/dev/null || true
       trap - EXIT
       build_ok=true
     elif [[ "$type" == web-app || "$type" == cloned-web-app ]]; then
@@ -110,5 +126,15 @@ for run_dir in "$@"; do
     tmp="$verification.tmp"
     "$JQ_BIN" --argjson build "$build_ok" --argjson runtime "$runtime_ok" '.app_build_verified=$build | .app_runtime_verified=$runtime' "$verification" > "$tmp"
     mv "$tmp" "$verification"
+    delivered_iteration="$(delivered_fresh_iteration "$data_dir")"
+    if [[ -n "$delivered_iteration" ]] && ! "$JQ_BIN" -e '.status == "harness-verified"' "$verification" >/dev/null; then
+      "$JQ_BIN" --argjson iteration "$delivered_iteration" \
+        --argjson exit_code "$("$JQ_BIN" '.harness_exit_code // null' "$data_dir/iterations/$delivered_iteration/metadata.json")" \
+        '.first_attempt = {status, harness_exit_code, completion_evidence_found}
+         | .status = "harness-verified" | .harness_exit_code = $exit_code
+         | .transcript_jsonl_valid = true | .completion_evidence_found = true | .session_id_captured = true
+         | .delivered_iteration = $iteration' "$verification" > "$tmp"
+      mv "$tmp" "$verification"
+    fi
   done < <(find "$run_dir/data" -mindepth 1 -maxdepth 1 -type d | sort)
 done

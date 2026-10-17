@@ -146,6 +146,8 @@ export function harnessLabel(harness: string) {
       return "Cursor Agent"
     case "opencode":
       return "OpenCode"
+    case "muse":
+      return "Muse Code"
     default:
       return harness
   }

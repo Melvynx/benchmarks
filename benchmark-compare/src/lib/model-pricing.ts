@@ -9,6 +9,7 @@ const XAI_PRICING_URL = "https://docs.x.ai/developers/pricing"
 const CURSOR_GROK_PRICING_URL = "https://cursor.com/grok"
 const META_PRICING_URL = "https://ai.developer.meta.com/docs/pricing-rate-limits"
 const GEMINI_37_FLASH_INTRO_UNTIL = "2026-12-31"
+const GEMINI_4_ARGON_INTRO_UNTIL = "2026-11-30"
 
 type TokenRates = {
   input: number
@@ -205,6 +206,31 @@ function geminiFlashPricing(label: string, usageDate: string) {
   } satisfies ModelPricing
 }
 
+function gemini4ArgonPricing(usageDate: string) {
+  const introductory = usageDate <= GEMINI_4_ARGON_INTRO_UNTIL
+  const input = introductory ? 2 : 4
+  return {
+    label: introductory
+      ? "Gemini 4 Argon · introductory pricing"
+      : "Gemini 4 Argon",
+    sourceLabel: "Google official pricing",
+    sourceUrl: GOOGLE_PRICING_URL,
+    rates: {
+      input,
+      cacheRead: introductory ? 0.1 : 0.2,
+      cacheWrite: input,
+      output: introductory ? 10 : 20,
+    },
+    note: introductory
+      ? "Introductory Google API rates through November 30, 2026. Implicit caching only, billed at 5% of input; output includes thinking tokens. Aggregate transcripts cannot reveal Cursor reseller margins."
+      : "Standard Google API rates from December 1, 2026. Implicit caching only, billed at 5% of input; output includes thinking tokens. Aggregate transcripts cannot reveal Cursor reseller margins.",
+  } satisfies ModelPricing
+}
+
+function isGemini4Argon(normalized: string) {
+  return /^gemini-4-argon(?:-|$)/.test(normalized)
+}
+
 function isGemini37Flash(normalized: string) {
   return (
     normalized === "gemini-3.7-flash" ||
@@ -248,6 +274,21 @@ function museSparkPricing(normalized: string) {
   } satisfies ModelPricing
 }
 
+function museWonderPricing() {
+  return {
+    label: "Muse Wonder 1.0",
+    sourceLabel: "Meta official pricing",
+    sourceUrl: META_PRICING_URL,
+    rates: {
+      input: 4,
+      cacheRead: 0.2,
+      cacheWrite: 4,
+      output: 20,
+    },
+    note: "Standard Meta Model API rates. Cached input is $0.20/MTok with no write premium. Muse Code reminder subagents run on Muse Spark 1.3; per-model session costs price them at Spark rates.",
+  } satisfies ModelPricing
+}
+
 function normalizePricingModel(model: string) {
   let normalized = model.toLowerCase().trim().replace(/\s+/g, "-")
   if (normalized.startsWith("cursor-")) {
@@ -273,11 +314,20 @@ export function getModelPricing(
 
   const normalized = normalizePricingModel(model)
 
+  if (isGemini4Argon(normalized)) return gemini4ArgonPricing(usageDate)
   if (isGemini38Flash(normalized))
     return geminiFlashPricing("Gemini 3.8 Flash", usageDate)
   if (isGemini37Flash(normalized))
     return geminiFlashPricing("Gemini 3.7 Flash", usageDate)
   if (isMuseSparkStandard(normalized)) return museSparkPricing(normalized)
+  if (/^muse-wonder-1[.-]0$/.test(normalized)) return museWonderPricing()
+  if (/^muse-wonder-full-1[.-]0$/.test(normalized)) {
+    const pricing = museWonderPricing()
+    pricing.label = "Muse Wonder Full 1.0 · estimated at Muse Wonder rates"
+    pricing.note =
+      "Muse Wonder Full is subscription-only (Muse Code Power and Maximum plans) and has no published token price. Costs use Muse Wonder 1.0 API rates as an assumed equivalent; token counts are exact."
+    return pricing
+  }
   if (normalized === "gpt-6.1-sol" || normalized === "gpt-6-1-sol") {
     const pricing = openAiPricing("GPT-6.1 Sol", 2, 10)
     pricing.rates.cacheRead = 0.1

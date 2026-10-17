@@ -17,7 +17,7 @@ prompt="$(cat "$2")"
 
 metadata="$data_dir/metadata.json"
 harness="$($JQ_BIN -r .harness "$metadata")"
-[[ "$fresh_session" == false || "$harness" == codex ]] || { echo "Fresh sessions currently require the Codex harness" >&2; exit 2; }
+[[ "$fresh_session" == false || "$harness" == codex || "$harness" == cursor-agent ]] || { echo "Fresh sessions currently require the Codex or Cursor Agent harness" >&2; exit 2; }
 model="$($JQ_BIN -r .model "$metadata")"
 effort="$($JQ_BIN -r .effort "$metadata")"
 app_dir="$($JQ_BIN -r .app_path "$metadata")"
@@ -83,6 +83,11 @@ case "$harness" in
     fi
     ;;
   cursor-agent)
+    if [[ "$fresh_session" == true ]]; then
+      session_id="$(cd "$work_dir" && cursor-agent create-chat | tr -d '[:space:]')"
+      [[ -n "$session_id" ]] || { echo "cursor-agent create-chat returned no chat id" >&2; exit 1; }
+      printf '%s\n' "$session_id" > "$iter_dir/session-id.txt"
+    fi
     printf '%q ' cursor-agent --resume "$session_id" --model "$model" --print --force --trust --output-format stream-json "$prompt" > "$command_file"
     ;;
   ccx|cc|cckimi)
@@ -106,7 +111,7 @@ else
 fi
 completed_ms="$(python3 -c 'import time; print(int(time.time() * 1000))')"
 completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-if [[ "$fresh_session" == true && -s "$transcript" ]]; then
+if [[ "$fresh_session" == true && "$harness" == codex && -s "$transcript" ]]; then
   session_id="$($JQ_BIN -r 'select(.type == "thread.started") | .thread_id' "$transcript" | head -1)"
   printf '%s\n' "$session_id" > "$iter_dir/session-id.txt"
 fi
@@ -136,4 +141,8 @@ status=failed
   '{iteration:$iteration,session_id:$session_id,status:$status,harness_exit_code:$exit_code,app_path:$app_path,fresh_session:$fresh_session,
     model_timing:{started_at:$started_at,completed_at:$completed_at,duration_ms:$duration_ms},
     session_usage:$session_usage,transcript_analysis:$transcript_analysis}' > "$iter_dir/metadata.json"
+if [[ "$harness" == cursor-agent ]]; then
+  python3 "$SCRIPT_DIR/recover-cursor-usage.py" --wait 180 "$(dirname "$(dirname "$data_dir")")" ||
+    echo "Cursor billing-ledger usage was not recovered; result.usage may under-count reconnected sessions" >&2
+fi
 echo "$iter_dir $status"

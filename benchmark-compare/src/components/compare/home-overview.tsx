@@ -202,7 +202,7 @@ function LatestRun({
               label={`${task} by ${entry.model}`}
               canPreview={entry.hasPreview}
             />
-            <span className="absolute bottom-2 left-2 inline-flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-full bg-background/90 px-2 py-0.5 text-[11px] font-medium ring-1 ring-foreground/10 backdrop-blur">
+            <span className="absolute bottom-2 left-2 inline-flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-full bg-background/90 px-2 py-0.5 text-[11px] font-medium ring-1 ring-foreground/10">
               <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: lane.color }} />
               <span className="truncate">{shortModel(entry.model)}</span>
               {chipEffort(lane) && <span className="shrink-0 text-muted-foreground">{chipEffort(lane)}</span>}

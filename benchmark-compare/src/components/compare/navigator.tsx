@@ -139,7 +139,7 @@ export function Navigator({
         {tab === "runs" &&
           days.map(([day, dayGroups]) => (
             <section key={day} aria-label={formatDay(day)}>
-              <h3 className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-sidebar/95 px-4 pt-3 pb-1.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
+              <h3 className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-sidebar/95 px-4 pt-3 pb-1.5 text-[11px] font-medium text-muted-foreground">
                 <span>
                   <span className="text-foreground">{formatDay(day)}</span>
                   {day !== "unknown" && (

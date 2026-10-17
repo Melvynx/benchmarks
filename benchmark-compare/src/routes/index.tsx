@@ -1,4 +1,9 @@
-import { Link, createFileRoute, useRouter } from "@tanstack/react-router"
+import {
+  Link,
+  createFileRoute,
+  replaceEqualDeep,
+  useRouter,
+} from "@tanstack/react-router"
 import {
   ActivityIcon,
   CheckIcon,
@@ -62,9 +67,9 @@ import {
   laneKey,
   shortModel,
 } from "@/lib/benchmark-groups"
-import type { BenchmarkGroup } from "@/lib/benchmark-groups"
+import type { BenchmarkGroup, Comparison } from "@/lib/benchmark-groups"
 import type { BenchmarkEntry } from "@/lib/benchmarks.server"
-import { getBenchmarkCatalog } from "@/lib/catalog"
+import { getBenchmarkCatalog, getComparisonCatalog } from "@/lib/catalog"
 import {
   configLabel,
   formatAbsoluteDay,
@@ -90,8 +95,22 @@ const comparisonSearchParams = {
   ),
 }
 
+type Catalog = { entries: BenchmarkEntry[]; comparisons: Comparison[] }
+
+let previousCatalog: Catalog | undefined
+
 export const Route = createFileRoute("/")({
-  loader: () => getBenchmarkCatalog(),
+  loader: async () => {
+    const [entries, comparisons] = await Promise.all([
+      getBenchmarkCatalog(),
+      getComparisonCatalog(),
+    ])
+    const catalog = { entries, comparisons }
+    if (typeof window === "undefined") return catalog
+    // The page refetches every 15s: reuse unchanged entries so memoized views skip work.
+    previousCatalog = replaceEqualDeep(previousCatalog, catalog)
+    return previousCatalog
+  },
   component: BenchmarkCompare,
 })
 
@@ -140,7 +159,7 @@ function BenchmarkCompare() {
 }
 
 function Workspace() {
-  const entries = Route.useLoaderData()
+  const { entries, comparisons } = Route.useLoaderData()
   const { setOpenMobile } = useSidebar()
   const [compare, setCompare] = useQueryState(
     "compare",
@@ -169,7 +188,7 @@ function Workspace() {
   const compareMode = useCompareMode()
 
   const entryById = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries])
-  const groups = useMemo(() => buildBenchmarkGroups(entries), [entries])
+  const groups = useMemo(() => buildBenchmarkGroups(entries, comparisons), [entries, comparisons])
   const groupById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups])
   const navGroups = useMemo(
     () => groups.filter((group) => isComparable(group) || group.running > 0),
@@ -305,6 +324,8 @@ function Workspace() {
   const laneColor = useMemo(() => {
     const colors = new Map<string, string>()
     for (const group of groups) {
+      // Comparisons reuse apps; their recorded run owns the color.
+      if (group.comparison) continue
       for (const lane of group.lanes) {
         for (const entry of lane.entries) colors.set(entry.id, lane.color)
       }
@@ -564,6 +585,7 @@ function Workspace() {
               {view === "run" && selectedGroup ? (
                 <RunOverview
                   group={selectedGroup}
+                  history={entries}
                   picks={picks}
                   pickFull={picks.length >= MAX_COMPARED}
                   onOpen={(id) => openApps([id])}

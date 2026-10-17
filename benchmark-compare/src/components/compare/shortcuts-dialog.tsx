@@ -25,7 +25,7 @@ const SECTIONS: Array<{ title: string; keys: Array<[string[], string]> }> = [
   {
     title: "Comparing",
     keys: [
-      [["1", "–", "4"], "Focus one app, again to restore"],
+      [["1", "–", "6"], "Focus one app, again to restore"],
       [["←", "→"], "Previous or next task, same models"],
       [["S"], "Auto-scroll every app"],
       [["R"], "Reload every app"],

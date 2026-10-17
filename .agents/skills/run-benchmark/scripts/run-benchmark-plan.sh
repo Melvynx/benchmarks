@@ -15,7 +15,7 @@ fi
 [[ "$PLAN" == *.md ]] || { echo "Benchmark plan must be a Markdown file" >&2; exit 2; }
 [[ -z "$DRY_RUN" || "$DRY_RUN" == --dry-run ]] || { echo "Unknown option: $DRY_RUN" >&2; exit 2; }
 
-all_tasks="video-generation,3d-sponge-bob,3d-car-crash,air-conditioning-understanding,bouncing-ball,car-crash,cowdie,distributed-systems-playground,earthquake-explorer,elysian-taste-challenge,figma-clone,gmail-clone,lava-lamp-3d,little-red-riding-hood-film,living-identity-system,one-button-boss-fight,orbital-rescue-digital-twin,pentest,rocket-launch,saveit-now-landing,simulation-life,thumbfast,the-last-signal,timezone-checker,youtube-thumbnail,openclaw-benchmark"
+all_tasks="video-generation,3d-sponge-bob,3d-car-crash,air-conditioning-understanding,bouncing-ball,car-crash,cowdie,distributed-systems-playground,earthquake-explorer,elysian-taste-challenge,figma-clone,gmail-clone,lava-lamp-3d,little-red-riding-hood-film,living-identity-system,one-button-boss-fight,orbital-rescue-digital-twin,pentest,rocket-launch,saveit-now-landing,simulation-life,thumbfast,tesla-roadster,the-last-signal,timezone-checker,youtube-thumbnail,openclaw-benchmark"
 rows=0
 enabled_rows=0
 pids=()

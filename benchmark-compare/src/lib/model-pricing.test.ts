@@ -369,6 +369,30 @@ describe("model pricing", () => {
     })
   })
 
+  it("maps Gemini 4 Argon effort IDs to introductory, then standard Google rates", () => {
+    for (const model of [
+      "gemini-4-argon",
+      "gemini-4-argon-medium",
+      "gemini-4-argon-high",
+    ]) {
+      expect(getModelPricing(model, "2026-10-14")?.rates).toEqual({
+        input: 2,
+        cacheRead: 0.1,
+        cacheWrite: 2,
+        output: 10,
+      })
+    }
+    expect(getModelPricing("gemini-4-argon-high", "2026-10-14")?.label).toBe(
+      "Gemini 4 Argon · introductory pricing"
+    )
+    expect(getModelPricing("gemini-4-argon-medium", "2026-12-01")?.rates).toEqual({
+      input: 4,
+      cacheRead: 0.2,
+      cacheWrite: 4,
+      output: 20,
+    })
+  })
+
   it("estimates the recorded Gemini 3.7 Flash runs at introductory Google rates", () => {
     const earthquake = estimateModelCost(
       "gemini-3.7-flash-high",
@@ -425,6 +449,24 @@ describe("model pricing", () => {
     expect(
       getModelPricing("muse-spark-1.3-contributor", "2026-09-09")
     ).toBeNull()
+  })
+
+  it("uses official Muse Wonder 1.0 standard rates", () => {
+    expect(getModelPricing("muse-wonder-1.0", "2026-10-15")?.rates).toEqual({
+      input: 4,
+      cacheRead: 0.2,
+      cacheWrite: 4,
+      output: 20,
+    })
+    expect(getModelPricing("muse-wonder-1-0-xhigh", "2026-10-15")?.label).toBe(
+      "Muse Wonder 1.0"
+    )
+  })
+
+  it("prices Muse Wonder Full at Muse Wonder rates and labels the estimate", () => {
+    const pricing = getModelPricing("muse-wonder-full-1.0", "2026-10-15")
+    expect(pricing?.rates).toEqual({ input: 4, cacheRead: 0.2, cacheWrite: 4, output: 20 })
+    expect(pricing?.label).toContain("estimated")
   })
 
   it("estimates a Muse Spark run at Meta standard rates", () => {

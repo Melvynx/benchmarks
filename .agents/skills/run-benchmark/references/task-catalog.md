@@ -26,6 +26,7 @@ Canonical names are stable CLI identifiers. Historical directories remain unchan
 | `saveit-now-landing` | cloned SaaS landing page | `benchmarks/saveit-now-landing/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/saveit-now-landing` |
 | `simulation-life` | web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/ecosystem-evolution-simulator` |
 | `thumbfast` | cloned SaaS app | `benchmarks/thumbfast/base-repo` | Canonical: `https://benchmark.melvynx.dev/prompts/thumbfast-drawing-inspiration-editor` |
+| `tesla-roadster` | standalone HTML/Three.js | `benchmarks/tesla-roadster/base-repo` (reference clip and frames) | Canonical: `https://benchmark.melvynx.dev/prompts/tesla-roadster-stunt-show` |
 | `the-last-signal` | standalone HTML/interactive story | empty | Canonical: `https://benchmark.melvynx.dev/prompts/the-last-signal` |
 | `timezone-checker` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/timezone-checker` |
 | `youtube-thumbnail` | package web app | empty | Canonical: `https://benchmark.melvynx.dev/prompts/youtube-thumbnail-generator` |
@@ -35,6 +36,7 @@ Canonical names are stable CLI identifiers. Historical directories remain unchan
 
 - `standalone HTML/*`: create an entry HTML file with inline or local assets; no dev server or port.
 - `package web app` and `web app`: create a self-contained app in the task `app/` directory and bind its dev/preview server to the assigned port.
+- `tesla-roadster`: copy the seed's `references/` clip and frames into the working directory; the deliverable is still one standalone `index.html` with no port.
 - `cloned SaaS app`: copy the seed into `app/`, preserve repository instructions, and use the assigned port.
 - `CLI evaluation suite`: copy the seed into `app/`, run its documented command, and do not allocate a port.
 

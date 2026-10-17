@@ -255,7 +255,7 @@ export function CompareView({
     if (key === "Escape") {
       if (focused) setFocusedId(null)
       else onBack()
-    } else if (/^[1-4]$/.test(key)) {
+    } else if (/^[1-6]$/.test(key)) {
       const entry = entries[Number(key) - 1] as BenchmarkEntry | undefined
       if (entry && entries.length > 1) toggleFocus(entry.id)
     } else if (key === "s" || key === "S") {
@@ -445,7 +445,7 @@ export function CompareView({
           className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
           disabled={entries.length >= MAX_COMPARED}
           onClick={() => onAddApp(sharedTask ?? "")}
-          title={entries.length >= MAX_COMPARED ? "Four apps is the limit" : "Add any app (⌘K)"}
+          title={entries.length >= MAX_COMPARED ? `${MAX_COMPARED} apps is the limit` : "Add any app (⌘K)"}
         >
           <PlusIcon data-icon="inline-start" />
           Add app
@@ -480,6 +480,11 @@ export function CompareView({
                   <span className="truncate text-sm font-medium" title={entry.model}>
                     {entry.model}
                   </span>
+                  {chipEffort(entry) && (
+                    <span className="shrink-0 rounded border px-1 text-[11px] text-muted-foreground">
+                      {chipEffort(entry)}
+                    </span>
+                  )}
                   <span className="panel-harness truncate text-xs text-muted-foreground">
                     {!sharedTask && `${entry.task} · `}
                     {configLabel(entry)}

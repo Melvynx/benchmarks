@@ -181,7 +181,7 @@ function parseTranscript(file: string) {
   const cached = parsedCache.get(file)
   if (cached?.signature === signature) return cached
   const text = readFileSync(file, "utf8")
-  const sessionLine = text.match(/^.*"type"\s*:\s*"thread.started".*$/m)?.[0]
+  const sessionLine = lineContaining(text, /"type"\s*:\s*"thread.started"/)
   let sessionId: string | null = null
   try { sessionId = sessionLine ? JSON.parse(sessionLine).thread_id ?? null : null } catch {}
   const result = {
@@ -194,20 +194,48 @@ function parseTranscript(file: string) {
   return result
 }
 
+/** A `^.*x.*$`/m scan backtracks over every line; locate the match, then cut its line. */
+function lineContaining(text: string, pattern: RegExp) {
+  const match = pattern.exec(text)
+  if (!match) return undefined
+  const start = text.lastIndexOf("\n", match.index) + 1
+  const end = text.indexOf("\n", match.index)
+  return text.slice(start, end === -1 ? undefined : end)
+}
+
+const replayCache = new Map<
+  string,
+  { signature: string; replay: ReturnType<typeof replayCursorTranscript> }
+>()
+function cachedCursorReplay(file: string) {
+  const stat = statSync(file)
+  const signature = `${stat.size}:${stat.mtimeMs}`
+  const cached = replayCache.get(file)
+  if (cached?.signature === signature) return cached.replay
+  const replay = replayCursorTranscript(readFileSync(file, "utf8"))
+  replayCache.set(file, { signature, replay })
+  return replay
+}
+
 function isCharacterEstimate(usage: SessionUsage | null) {
   return Boolean(
     usage?.source && /estimated|thinking-deltas|scaled-from/.test(usage.source)
   )
 }
 
+const BILLING_LEDGER_SOURCE = "cursor-dashboard.usage-events"
+
 function reliableUsage(file: string, local: Metadata) {
-  const parsed = parseTranscript(file)
-  if (parsed.usage) return parsed.usage
+  let recovered: SessionUsage | null = null
   try {
     const evidence = JSON.parse(readFileSync(join(dirname(file), "usage-evidence.json"), "utf8"))
-    const recovered = parsePersistedSessionUsage(evidence.session_usage)
-    if (recovered && !isCharacterEstimate(recovered) && recovered.status !== "unavailable") return recovered
+    recovered = parsePersistedSessionUsage(evidence.session_usage)
   } catch { /* No recovered token evidence for this attempt. */ }
+  // Cursor's result.usage restarts after a reconnect; its billing ledger covers the whole invocation.
+  if (recovered?.source === BILLING_LEDGER_SOURCE && recovered.status !== "unavailable") return recovered
+  const parsed = parseTranscript(file)
+  if (parsed.usage) return parsed.usage
+  if (recovered && !isCharacterEstimate(recovered) && recovered.status !== "unavailable") return recovered
   const persisted = parsePersistedSessionUsage(local.session_usage)
   // Character counts are not billing records. Keep them in the original metadata,
   // but never silently price them as measured tokens.
@@ -315,7 +343,7 @@ export function replayCursorTranscript(text: string) {
 function cursorReplayCost(file: string, model: string, date: string) {
   const pricing = getModelPricing(model, date)
   if (!pricing?.label.startsWith("Claude")) return null
-  const { calls, outputCharacters } = replayCursorTranscript(readFileSync(file, "utf8"))
+  const { calls, outputCharacters } = cachedCursorReplay(file)
   if (!calls) return null
   const units = calls * CURSOR_UNITS_PER_CALL + outputCharacters * CURSOR_UNITS_PER_OUTPUT_CHAR
   return { costUsd: (units * pricing.rates.input) / 1_000_000, calls, outputCharacters, pricing }

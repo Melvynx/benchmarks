@@ -262,7 +262,149 @@ def reconstruct_interrupted_cursor_usage(
     }
 
 
+# Meta per-MTok rates (input, cached input, output); cached input has no write premium.
+MUSE_RATES = {
+    "muse-wonder-1.0": (4.0, 0.2, 20.0),
+    "muse-spark-1.3": (1.25, 0.15, 4.25),
+    # Subscription-only, no published token price: priced at Muse Wonder API rates.
+    "muse-wonder-full-1.0": (4.0, 0.2, 20.0),
+}
+MUSE_ESTIMATED_RATE_MODELS = {"muse-wonder-full-1.0"}
+MUSE_WEB_SEARCH_USD = 2.50 / 1000
+
+
+def is_muse_session_log(path: Path) -> bool:
+    try:
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            head = [handle.readline() for _ in range(5)]
+    except OSError:
+        return False
+    for line in head:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        stream = record.get("stream") if isinstance(record, dict) else None
+        if isinstance(stream, dict) and stream.get("kind") == "session" and "record_type" in record:
+            return True
+    return False
+
+
+def analyze_muse(path: Path) -> dict[str, Any]:
+    """Sum every model call in a Muse Code session log, including reminder subagents."""
+    per_model: dict[str, dict[str, float]] = {}
+    calls = 0
+    api_ms = 0
+    tool_calls: dict[str, int] = {}
+    subagent_tool_calls: dict[str, int] = {}
+    subagent_sessions = sorted(path.parent.glob("subagent/**/session.jsonl"))
+    for log in [path, *subagent_sessions]:
+        is_subagent = log != path
+        for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            event = (record.get("payload") or {}).get("event") if isinstance(record, dict) else None
+            if not isinstance(event, dict):
+                continue
+            if event.get("kind") == "assistant_tool_calls_committed":
+                counter = subagent_tool_calls if is_subagent else tool_calls
+                for call in event.get("tool_calls") or []:
+                    name = str(call.get("name") or "unknown") if isinstance(call, dict) else "unknown"
+                    counter[name] = counter.get(name, 0) + 1
+                continue
+            if event.get("kind") != "model_completed":
+                continue
+            usage = event.get("usage") if isinstance(event.get("usage"), dict) else {}
+            totals = per_model.setdefault(
+                str(event.get("model") or "unknown"),
+                {"input": 0, "cache_read": 0, "cache_write": 0, "output": 0, "reasoning": 0, "calls": 0},
+            )
+            totals["input"] += number(usage.get("input_tokens")) or 0
+            totals["cache_read"] += number(usage.get("cache_read_tokens")) or 0
+            totals["cache_write"] += number(usage.get("cache_write_tokens")) or 0
+            totals["output"] += number(usage.get("output_tokens")) or 0
+            totals["reasoning"] += number(usage.get("reasoning_tokens")) or 0
+            totals["calls"] += 1
+            calls += 1
+            api_ms += number(event.get("duration_ms")) or 0
+    if not calls:
+        return {"status": "unavailable", "schema_version": 1, "reason": "no model_completed records in muse session log"}
+
+    def total(key: str) -> int:
+        return int(sum(values[key] for values in per_model.values()))
+
+    cost = 0.0
+    priced = True
+    model_usage: dict[str, Any] = {}
+    for model, values in per_model.items():
+        rates = MUSE_RATES.get(model)
+        model_cost = None
+        if rates:
+            uncached = values["input"] - values["cache_read"]
+            model_cost = (uncached * rates[0] + values["cache_read"] * rates[1] + values["output"] * rates[2]) / 1_000_000
+            cost += model_cost
+        else:
+            priced = False
+        model_usage[model] = {
+            "inputTokens": int(values["input"] - values["cache_read"]),
+            "cacheReadInputTokens": int(values["cache_read"]),
+            "cacheCreationInputTokens": int(values["cache_write"]),
+            "outputTokens": int(values["output"]),
+            "reasoningOutputTokens": int(values["reasoning"]),
+            "calls": int(values["calls"]),
+            "costUSD": model_cost,
+            # "list" keeps the comparison UI on this per-model total; rateSource flags borrowed rates.
+            "costBasis": "list" if rates else "unknown",
+            "rateSource": "muse-wonder-1.0 API rates (no official price)" if model in MUSE_ESTIMATED_RATE_MODELS else "Meta official",
+        }
+
+    web_searches = tool_calls.get("web_search", 0) + subagent_tool_calls.get("web_search", 0)
+    token_cost = cost
+    cost += web_searches * MUSE_WEB_SEARCH_USD
+    estimated_models = sorted(set(per_model) & MUSE_ESTIMATED_RATE_MODELS)
+
+    # Muse input_tokens already includes cached input, as with Codex.
+    processed_input = total("input")
+    output_tokens = total("output")
+    return {
+        "cost_breakdown": {
+            "token_cost_usd": round(token_cost, 6) if priced else None,
+            "web_search_queries": web_searches,
+            "web_search_cost_usd": round(web_searches * MUSE_WEB_SEARCH_USD, 6),
+            "estimated_rate_models": estimated_models,
+            "rates_per_mtok": {model: MUSE_RATES.get(model) for model in per_model},
+        },
+        "tool_calls": dict(sorted(tool_calls.items(), key=lambda item: -item[1])),
+        "subagent_tool_calls": dict(sorted(subagent_tool_calls.items(), key=lambda item: -item[1])),
+        "subagent_sessions": len(subagent_sessions),
+        "status": "complete",
+        "schema_version": 1,
+        "source": "muse-session.model_completed.usage",
+        "input_tokens": processed_input - total("cache_read"),
+        "processed_input_tokens": processed_input,
+        "cached_input_tokens": total("cache_read"),
+        "cache_creation_input_tokens": total("cache_write"),
+        "output_tokens": output_tokens,
+        "reasoning_output_tokens": total("reasoning"),
+        "total_tokens": processed_input + output_tokens,
+        "total_cost_usd": round(cost, 6) if priced else None,
+        "duration_ms": None,
+        "duration_api_ms": int(api_ms),
+        "num_turns": calls,
+        "service_tier": None,
+        "speed": None,
+        "inference_geo": None,
+        "server_tool_use": None,
+        "model_usage": model_usage,
+        "raw_usage": None,
+    }
+
+
 def analyze(path: Path) -> dict[str, Any]:
+    if is_muse_session_log(path):
+        return analyze_muse(path)
     last_result: dict[str, Any] | None = None
     last_completed: dict[str, Any] | None = None
     last_result_timing: dict[str, Any] | None = None

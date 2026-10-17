@@ -212,6 +212,40 @@ describe("transcript accounting", () => {
     expect(ledger.estimatedCostUsd).toBeNull()
   })
 
+  it("prefers the Cursor billing ledger over a result.usage that restarted after a reconnect", () => {
+    const root = mkdtempSync(join(tmpdir(), "benchmark-ledger-"))
+    const directory = join(root, "run", "data", "task")
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, "metadata.json"), JSON.stringify({
+      model: "claude-opus-5-5-xhigh",
+      harness: "cursor-agent",
+      model_timing: { started_at: "2026-10-13T00:00:00Z", completed_at: "2026-10-13T00:01:00Z", duration_ms: 60000 },
+    }))
+    writeFileSync(join(directory, "transcript.jsonl"), JSON.stringify({
+      type: "result",
+      usage: { inputTokens: 0, outputTokens: 100_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    }))
+    expect(readTranscriptAccounting(directory).costUsd).toBe(2)
+    writeFileSync(join(directory, "usage-evidence.json"), JSON.stringify({
+      source: "cursor-dashboard.usage-events",
+      session_usage: {
+        schema_version: 1,
+        status: "complete",
+        source: "cursor-dashboard.usage-events",
+        input_tokens: 0,
+        processed_input_tokens: 0,
+        cached_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 300_000,
+        total_tokens: 300_000,
+        total_cost_usd: 6,
+      },
+    }))
+    const ledger = readTranscriptAccounting(directory)
+    expect(ledger.costUsd).toBe(6)
+    expect(ledger.tokens).toBe(300_000)
+  })
+
   it("counts an iteration snapshot that copies the top-level transcript once", () => {
     const root = mkdtempSync(join(tmpdir(), "benchmark-copy-"))
     const directory = join(root, "run", "data", "task")

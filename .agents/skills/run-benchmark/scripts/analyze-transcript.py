@@ -176,7 +176,53 @@ def extract_cursor_agent(record: dict[str, Any]) -> Iterable[tuple[str, str, str
     return [("tool", cursor_tool_name(kind), cursor_tool_text(tool_call.get(kind)))]
 
 
+MUSE_TOOL_ALIASES = {
+    "write_file": "write",
+    "edit_file": "edit",
+    "apply_patch": "edit",
+    "read_file": "read",
+    "list_dir": "glob",
+    "list_directory": "glob",
+    "search": "grep",
+}
+
+
+def extract_muse(record: dict[str, Any]) -> Iterable[tuple[str, str, str]]:
+    if record.get("payload_type") != "runtime.session":
+        return []
+    event = (record.get("payload") or {}).get("event")
+    if not isinstance(event, dict):
+        return []
+    kind = event.get("kind")
+    if kind == "assistant_message_committed":
+        return [("text", "", str(event.get("text") or ""))]
+    if kind == "reasoning_committed":
+        return [("thinking", "", str(event.get("text") or ""))]
+    if kind != "assistant_tool_calls_committed":
+        return []
+    extracted = []
+    for call in event.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
+        name = str(call.get("name") or "")
+        args = call.get("args")
+        try:
+            parsed = json.loads(args) if isinstance(args, str) else args
+        except json.JSONDecodeError:
+            parsed = args
+        if isinstance(parsed, dict):
+            text = " ".join(str(parsed[key]) for key in ("command", "path", "pattern", "query", "url") if parsed.get(key))
+            text = text or compact_json(parsed)
+        else:
+            text = str(parsed or "")
+        extracted.append(("tool", MUSE_TOOL_ALIASES.get(name, name), text))
+    return extracted
+
+
 def extract_segments(record: dict[str, Any]) -> Iterable[tuple[str, str, str]]:
+    muse = list(extract_muse(record))
+    if muse:
+        return muse
     cursor = list(extract_cursor_agent(record))
     if cursor:
         return cursor

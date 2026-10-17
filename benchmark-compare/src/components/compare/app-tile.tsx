@@ -100,7 +100,7 @@ export function AppTile({
             className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/0 opacity-0 transition-[opacity,background-color] duration-150 group-hover/tile:bg-background/25 group-hover/tile:opacity-100"
             aria-hidden="true"
           >
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-background/90 px-3 py-1.5 text-xs font-medium shadow-lg ring-1 ring-foreground/10 backdrop-blur">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-background/90 px-3 py-1.5 text-xs font-medium shadow-lg ring-1 ring-foreground/10">
               {bodyPicks ? (
                 picked ? (
                   <>
@@ -121,24 +121,24 @@ export function AppTile({
           {(badges.length > 0 || running || rank !== undefined) && (
             <span className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-1">
               {rank !== undefined && (
-                <span className="inline-flex items-center rounded-full bg-background/90 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums ring-1 ring-foreground/10 backdrop-blur">
+                <span className="inline-flex items-center rounded-full bg-background/90 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums ring-1 ring-foreground/10">
                   #{rank}
                 </span>
               )}
               {running && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium text-sky-300 ring-1 ring-sky-400/30 backdrop-blur">
+                <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium text-sky-300 ring-1 ring-sky-400/30">
                   <span className="size-1.5 animate-pulse rounded-full bg-sky-400" />
                   Running
                 </span>
               )}
               {badges.includes("fastest") && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-400/30 backdrop-blur">
+                <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-400/30">
                   <ZapIcon className="size-2.5" aria-hidden="true" />
                   Fastest
                 </span>
               )}
               {badges.includes("cheapest") && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-400/30 backdrop-blur">
+                <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-400/30">
                   <CoinsIcon className="size-2.5" aria-hidden="true" />
                   Cheapest
                 </span>
@@ -211,9 +211,9 @@ export function AppTile({
         aria-label={`Pick ${label} for comparison`}
         disabled={pickDisabled}
         onClick={onTogglePick}
-        title={pickDisabled ? "Four apps is the comparison limit" : picked ? "Unpick" : "Pick for comparison"}
+        title={pickDisabled ? "Six apps is the comparison limit" : picked ? "Unpick" : "Pick for comparison"}
         className={cn(
-          "absolute top-2 left-2 flex size-6 items-center justify-center rounded-md border font-mono text-[11px] font-semibold shadow-sm backdrop-blur transition-[opacity,background-color,border-color] focus-visible:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed",
+          "absolute top-2 left-2 flex size-6 items-center justify-center rounded-md border font-mono text-[11px] font-semibold shadow-sm transition-[opacity,background-color,border-color] focus-visible:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed",
           picked
             ? "border-primary bg-primary text-primary-foreground"
             : "border-foreground/25 bg-background/80 text-muted-foreground hover:border-primary hover:text-foreground",
@@ -231,7 +231,7 @@ export function AppTile({
         rel="noreferrer"
         title="Open in a new tab"
         aria-label={`Open ${label} in a new tab`}
-        className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-md border border-foreground/15 bg-background/80 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity group-hover/tile:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-md border border-foreground/15 bg-background/80 text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover/tile:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
       >
         <ExternalLinkIcon className="size-3.5" />
       </a>

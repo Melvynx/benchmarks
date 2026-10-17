@@ -406,7 +406,7 @@ function runNameMatchesIdentity(
 
 function identityFromRunDirectory(runName: string) {
   const stripped = runName.replace(/^\d{8}T\d{6}Z-/, "").replace(/-\d+$/, "")
-  const harnesses = ["cursor-agent", "opencode", "codex", "ccx", "cc"]
+  const harnesses = ["cursor-agent", "opencode", "muse", "codex", "ccx", "cc"]
   const harness = harnesses.find((value) => stripped.endsWith(`-${value}`))
   if (!harness) return null
   return {
@@ -601,7 +601,7 @@ function metadataByAppPath(root: string, benchmarkIds: Map<string, string>) {
 
 function inferIdentity(result: string) {
   const name = result.replace(/^\d{4}-\d{2}-\d{2}-?/, "")
-  const prefixes = ["cursor-agent", "codex", "ccx", "cc"]
+  const prefixes = ["cursor-agent", "muse", "codex", "ccx", "cc"]
   const prefix = prefixes.find((value) => name.startsWith(`${value}-`))
   if (prefix) return { harness: prefix, model: name.slice(prefix.length + 1) }
 
@@ -700,6 +700,10 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
       const activeDuration = activeSegments.length
         ? activeSegments.reduce((total, duration) => total + duration, 0)
         : null
+      // The ledger replays every transcript in the attempt chain: build it once.
+      const accounting = runEvidence
+        ? readTranscriptAccounting(runEvidence.directory)
+        : undefined
       entries.push({
         id,
         task: task.name,
@@ -709,10 +713,11 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
         harness: identity.harness,
         effort: runEvidence?.effort || "unknown",
         status: runEvidence?.status || "unknown",
-        durationMs: withIterationDuration(
-          activeDuration ?? runEvidence?.durationMs ?? null,
-          runEvidence?.directory
-        ),
+        durationMs:
+          accounting?.durationMs ??
+          activeDuration ??
+          runEvidence?.durationMs ??
+          null,
         benchmarkId:
           runEvidence?.benchmarkId ||
           runEvidence?.runId ||
@@ -729,13 +734,8 @@ export function getBenchmarkEntries(): BenchmarkEntry[] {
             : null,
         source: outputDirectory === distDirectory ? "build" : "standalone",
         url: `/view/${id.split("/").map(encodeURIComponent).join("/")}/`,
-        costUsd: catalogCostUsd(
-          identity.model,
-          identity.harness,
-          date,
-          runEvidence?.directory
-        ),
-        accounting: runEvidence ? readTranscriptAccounting(runEvidence.directory) : undefined,
+        costUsd: accounting?.costUsd ?? null,
+        accounting,
         startedAt: entryStartedAt(runEvidence),
         thumbnail: existsSync(join(process.cwd(), "public", "thumbs", `${id.replaceAll("/", "__")}.webp`))
           ? `/thumbs/${id.replaceAll("/", "__")}.webp`
@@ -884,10 +884,6 @@ function aggregateUsage(steps: UsageStep[]): SessionUsage | null {
         )
   }
   return total
-}
-
-function catalogCostUsd(_model: string, _harness: string, _date: string, directory: string | undefined) {
-  return directory ? readTranscriptAccounting(directory).costUsd : null
 }
 
 function readModelReview(directory: string) {

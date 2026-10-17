@@ -16,7 +16,7 @@ export const LANE_COLORS = [
 ]
 
 /** Panels one comparison shows side by side. */
-export const MAX_COMPARED = 4
+export const MAX_COMPARED = 6
 
 export type Lane = {
   key: string
@@ -40,8 +40,20 @@ export type Lane = {
   unknownCosts: number
 }
 
+/** A saved selection of existing apps, shown as a run without rerunning any model. */
+export type Comparison = {
+  id: string
+  title: string
+  createdAt: string
+  /** Catalog entry IDs (`<task>/<result>`). */
+  apps: string[]
+}
+
 export type BenchmarkGroup = {
   id: string
+  /** Set for curated comparisons; recorded runs derive their title from tasks. */
+  title: string | null
+  comparison: boolean
   /** Epoch milliseconds of the earliest recorded start, null when undated. */
   startedAtMs: number | null
   day: string
@@ -137,57 +149,84 @@ function timestampFromId(id: string) {
   return Date.UTC(year, month - 1, day, hour, minute, second)
 }
 
-export function buildBenchmarkGroups(entries: BenchmarkEntry[]) {
+export function buildBenchmarkGroups(
+  entries: BenchmarkEntry[],
+  comparisons: Comparison[] = []
+) {
   const byId = new Map<string, BenchmarkEntry[]>()
   for (const entry of entries) {
     byId.set(entry.benchmarkId, [...(byId.get(entry.benchmarkId) ?? []), entry])
   }
 
-  const groups: BenchmarkGroup[] = [...byId.entries()].map(([id, groupEntries]) => {
-    const starts = groupEntries
-      .map((entry) => (entry.startedAt ? Date.parse(entry.startedAt) : NaN))
-      .filter((value) => Number.isFinite(value))
-    const startedAtMs = timestampFromId(id) ?? (starts.length ? Math.min(...starts) : null)
-    const dayFromEntries = groupEntries.find((entry) => entry.date !== "unknown")?.date
-    const durations = groupEntries
-      .map((entry) => entry.durationMs)
-      .filter((value): value is number => value !== null)
-    const thumbnails = new Map<string, string>()
-    for (const entry of groupEntries) {
-      if (entry.thumbnail && !thumbnails.has(entry.task))
-        thumbnails.set(entry.task, entry.thumbnail)
-    }
-    return {
-      id,
-      startedAtMs,
-      day:
-        startedAtMs !== null
-          ? new Date(startedAtMs).toISOString().slice(0, 10)
-          : dayFromEntries ?? "unknown",
-      tasks: [...new Set(groupEntries.map((entry) => entry.task))].sort(),
-      lanes: buildLanes(groupEntries),
-      entries: groupEntries,
-      completed: groupEntries.filter((entry) => isSuccess(entry.status)).length,
-      failed: groupEntries.filter((entry) => isFailure(entry.status)).length,
-      running: groupEntries.filter((entry) => isRunning(entry.status)).length,
-      totalCostUsd: sumOrNull(groupEntries.map((entry) => entry.costUsd)),
-      totalDurationMs: sumOrNull(groupEntries.map((entry) => entry.durationMs)),
-      wallDurationMs: (() => {
-        const ledgers = groupEntries.flatMap((entry) => entry.accounting ? [entry.accounting] : [])
-        const begin = ledgers.flatMap((item) => item.startedAt ? [Date.parse(item.startedAt)] : [])
-        const end = ledgers.flatMap((item) => item.completedAt ? [Date.parse(item.completedAt)] : item.startedAt ? [Date.now()] : [])
-        return begin.length && end.length ? Math.max(...end) - Math.min(...begin) : durations.length ? Math.max(...durations) : null
-      })(),
-      thumbnails: [...thumbnails.entries()].map(([task, src]) => ({ task, src })),
-    }
+  const recorded = [...byId.entries()].map(([id, groupEntries]) =>
+    buildGroup(id, groupEntries, null)
+  )
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]))
+  const curated = comparisons.flatMap((comparison) => {
+    // Lanes key on benchmarkId, so members adopt the comparison's ID inside it.
+    const members = comparison.apps.flatMap((app) => {
+      const entry = entryById.get(app)
+      return entry ? [{ ...entry, benchmarkId: comparison.id }] : []
+    })
+    return members.length ? [buildGroup(comparison.id, members, comparison)] : []
   })
 
-  return groups.sort(
+  return [...recorded, ...curated].sort(
     (left, right) =>
       (right.startedAtMs ?? 0) - (left.startedAtMs ?? 0) ||
       right.day.localeCompare(left.day) ||
       right.id.localeCompare(left.id)
   )
+}
+
+function buildGroup(
+  id: string,
+  groupEntries: BenchmarkEntry[],
+  comparison: Comparison | null
+): BenchmarkGroup {
+  const starts = groupEntries
+    .map((entry) => (entry.startedAt ? Date.parse(entry.startedAt) : NaN))
+    .filter((value) => Number.isFinite(value))
+  const createdAtMs = comparison ? Date.parse(comparison.createdAt) : NaN
+  const startedAtMs = Number.isFinite(createdAtMs)
+    ? createdAtMs
+    : timestampFromId(id) ?? (starts.length ? Math.min(...starts) : null)
+  const dayFromEntries = groupEntries.find((entry) => entry.date !== "unknown")?.date
+  const durations = groupEntries
+    .map((entry) => entry.durationMs)
+    .filter((value): value is number => value !== null)
+  const thumbnails = new Map<string, string>()
+  for (const entry of groupEntries) {
+    if (entry.thumbnail && !thumbnails.has(entry.task))
+      thumbnails.set(entry.task, entry.thumbnail)
+  }
+  return {
+    id,
+    title: comparison?.title ?? null,
+    comparison: comparison !== null,
+    startedAtMs,
+    day:
+      startedAtMs !== null
+        ? new Date(startedAtMs).toISOString().slice(0, 10)
+        : dayFromEntries ?? "unknown",
+    tasks: [...new Set(groupEntries.map((entry) => entry.task))].sort(),
+    lanes: buildLanes(groupEntries),
+    entries: groupEntries,
+    completed: groupEntries.filter((entry) => isSuccess(entry.status)).length,
+    failed: groupEntries.filter((entry) => isFailure(entry.status)).length,
+    running: groupEntries.filter((entry) => isRunning(entry.status)).length,
+    totalCostUsd: sumOrNull(groupEntries.map((entry) => entry.costUsd)),
+    totalDurationMs: sumOrNull(groupEntries.map((entry) => entry.durationMs)),
+    wallDurationMs: (() => {
+      // Reused apps ran at unrelated times, so only the slowest one is meaningful.
+      if (comparison) return durations.length ? Math.max(...durations) : null
+      const ledgers = groupEntries.flatMap((entry) => entry.accounting ? [entry.accounting] : [])
+      const begin = ledgers.flatMap((item) => item.startedAt ? [Date.parse(item.startedAt)] : [])
+      const end = ledgers.flatMap((item) => item.completedAt ? [Date.parse(item.completedAt)] : item.startedAt ? [Date.now()] : [])
+      return begin.length && end.length ? Math.max(...end) - Math.min(...begin) : durations.length ? Math.max(...durations) : null
+    })(),
+    thumbnails: [...thumbnails.entries()].map(([task, src]) => ({ task, src })),
+  }
 }
 
 /** A comparison group is only worth listing when it holds more than one run. */
@@ -196,6 +235,7 @@ export function isComparable(group: BenchmarkGroup) {
 }
 
 export function groupTitle(group: BenchmarkGroup) {
+  if (group.title) return group.title
   if (group.tasks.length === 1) return group.tasks[0]
   return `${group.tasks.length} tasks`
 }

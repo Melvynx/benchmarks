@@ -22,6 +22,7 @@ const legacyYoutubeResults = new Set([
 const taskExceptions = new Map([
   ["saveit-now-landing", new Set(["base-repo"])],
   ["thumbfast", new Set(["base-repo"])],
+  ["tesla-roadster", new Set(["base-repo"])],
   [
     "openclaw-benchmark",
     new Set(["benchmarks", "results", "src", "package.json", "tsconfig.json"]),

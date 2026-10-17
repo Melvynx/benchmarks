@@ -1,11 +1,28 @@
 ---
 name: run-benchmark
-description: Run reproducible coding-model benchmarks from a model name, CLI harness, and task list. Use when creating, executing, resuming, or verifying benchmark runs with Codex, Claudex via ccx, Claude Code, Cursor Agent, or OpenCode in this repository.
+description: Run reproducible coding-model benchmarks from a model name, CLI harness, and task list, or build comparison pages from results that already exist. Use when creating, executing, resuming, verifying, or comparing benchmark runs with Codex, Claudex via ccx, Claude Code, Cursor Agent, or OpenCode in this repository.
 ---
 
 # Run Benchmark
 
 Create one independently resumable session per task. Put the app in `benchmarks/<task>/<YYYY-MM-DD>-<harness>-<model>/` (with `-2`, `-3`, and so on for repeated identical runs) and final/global evidence in `runs/<run-id>/data/`. Every invocation gets a unique `benchmark_id`; a Markdown plan generates it once and shares it across every enabled model/task run so the comparison UI can recover the exact benchmark group.
+
+## Reuse first
+
+When asked to compare models, build a comparison page from existing apps. Do not invoke any model unless the user explicitly asks for a run or rerun ("lance", "rerun", "relance", "run again"). Report missing cells instead of filling them.
+
+```bash
+.agents/skills/run-benchmark/scripts/create-comparison.mjs \
+  --models 'claude-opus-5-5:xhigh,gemini-4-argon@cursor-agent:high' \
+  --tasks all \
+  --title 'Opus 5.5 vs Gemini 4 Argon'
+```
+
+- Model spec: `<model>[@<harness>][:<effort>]`. A trailing effort in the name (`gemini-4-argon-high`) is an effort filter. Names are normalized across harness drift (`claude-opus-5.5-300k-extra-high` matches `claude-opus-5-5:xhigh`).
+- Per task and model it picks the newest verified app; `--allow-failed` falls back to failed/terminated ones, `--require-all` keeps only tasks every model covers, `--apps task/result,...` lists apps by hand, `--dry-run` prints the selection.
+- It writes `comparisons/cmp-<UTC>-<slug>.json` (`id`, `title`, `created_at`, `apps`) and prints `http://127.0.0.1:9080/?run=<id>`. It reads the catalog from the Portly-managed workbench and starts it if needed.
+- An app may belong to any number of comparisons; manifests only reference `benchmarks/<task>/<result>` IDs and never copy or modify run evidence.
+- If cells are missing and the user then asks to fill them, run only those task/model pairs, then recreate the comparison.
 
 ## Workflow
 

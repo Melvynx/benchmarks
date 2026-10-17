@@ -86,7 +86,8 @@ describe("run thumbnails", () => {
     writeFileSync(join(root, "thumbnail.webp"), "secret")
 
     const found = getRunThumbnail("20260725T100320Z-cc", "car-crash")
-    expect(await found?.text()).toBe("RIFF-webp")
+    expect(await found?.read().text()).toBe("RIFF-webp")
+    expect(found?.etag).toMatch(/^"[0-9a-z]+-[0-9a-z]+"$/)
     expect(getRunThumbnail("..", "..")).toBeNull()
     expect(getRunThumbnail("20260725T100320Z-cc", "../../..")).toBeNull()
   })

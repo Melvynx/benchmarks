@@ -183,6 +183,9 @@ PY
       "$JQ_BIN" -e --arg model "$model" 'select(.type=="system" and .subtype=="init" and .model==$model)' "$data_dir/transcript.jsonl" >/dev/null || fail "transcript model mismatch: $data_dir"
     elif [[ "$harness" == opencode ]]; then
       "$JQ_BIN" -e 'select(.sessionID != null)' "$data_dir/transcript.jsonl" >/dev/null || fail "transcript session missing: $data_dir"
+    elif [[ "$harness" == muse ]]; then
+      "$JQ_BIN" -e --arg model "$model" 'select(.payload_type=="run.model.configured" and .payload.model_id==$model)' "$data_dir/transcript.jsonl" >/dev/null || fail "transcript model mismatch: $data_dir"
+      [[ -s "$data_dir/muse-session/session.jsonl" ]] || fail "muse session log missing: $data_dir"
     fi
     port="$($JQ_BIN -r '.port // empty' "$data_dir/metadata.json")"
     if [[ -n "$port" ]]; then

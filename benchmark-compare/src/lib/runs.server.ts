@@ -288,7 +288,7 @@ function scanRuns(root: string, now: number): RawRun[] {
         const latest = [...(entry.accounting?.transcripts ?? [])].sort((a, b) => (b.completedAt ?? b.startedAt ?? "").localeCompare(a.completedAt ?? a.startedAt ?? ""))[0]
         const transcript = latest ? join(root, "runs", latest.transcript) : task.transcript
         const transcriptStat = existsSync(transcript) ? statSync(transcript) : null
-        return [{ ...task, model: entry.model, effort: entry.effort, done: ["harness-verified", "verified", "terminated"].includes(entry.status), stale: false, verification: entry.status, appPath: resolve(root, entry.appPath), durationMs: entry.durationMs ?? task.durationMs, transcript, transcriptBytes: entry.accounting?.transcripts.reduce((sum, item) => sum + item.bytes, 0) ?? task.transcriptBytes, transcriptMtimeMs: transcriptStat?.mtimeMs ?? task.transcriptMtimeMs, thumbnail: entry.thumbnail }]
+        return [{ ...task, model: entry.model, effort: entry.effort, done: ["harness-verified", "verified", "terminated", "failed", "interrupted"].includes(entry.status), stale: false, verification: entry.status, appPath: resolve(root, entry.appPath), durationMs: entry.durationMs ?? task.durationMs, transcript, transcriptBytes: entry.accounting?.transcripts.reduce((sum, item) => sum + item.bytes, 0) ?? task.transcriptBytes, transcriptMtimeMs: transcriptStat?.mtimeMs ?? task.transcriptMtimeMs, thumbnail: entry.thumbnail }]
       })
     }
   }
@@ -476,7 +476,11 @@ export function getRunThumbnail(runId: string, task: string) {
     `.${normalize(`/${runId}/data/${task}/${THUMBNAIL_FILE}`)}`
   )
   if (!file.startsWith(`${runsDir}${sep}`) || !existsSync(file)) return null
-  return new Blob([readFileSync(file)])
+  const stats = statSync(file)
+  return {
+    etag: `"${stats.size.toString(36)}-${Math.trunc(stats.mtimeMs).toString(36)}"`,
+    read: () => new Blob([readFileSync(file)]),
+  }
 }
 
 /** The group a "watch the current benchmark" entry point should land on. */

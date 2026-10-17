@@ -51,6 +51,7 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 - Exclude JSON transport records, encrypted thinking signatures, and duplicated tool results. Record the method and measurement basis so percentages are not presented as exact wall-clock time.
 - Set `transcript_analysis` to `null` for prepared dry runs or to an explicit `unavailable` result when the transcript is missing or invalid.
 - Persist terminal token and session accounting under `session_usage` in task `metadata.json`: input, processed input, output, cache read/creation, reasoning, total tokens, cost, API duration, turn count, service tier, raw usage, and per-model usage whenever the harness exposes them. Codex input already includes cached input and must not be double-counted; Claude Code and Cursor processed input includes their separate cache fields.
+- Cursor's `result.usage` restarts after a mid-turn reconnect and under-counts the session. Cursor Agent runs and iterations call `scripts/recover-cursor-usage.py`, which writes the account billing ledger (every request billed to the session's conversation id) to `usage-evidence.json` beside each transcript; the comparison UI prices that ledger in preference to `result.usage`. Re-run it on `runs/<run-id>...` when a run predates it or the ledger had not landed yet.
 - Set `session_usage` to `null` for prepared dry runs or to an explicit `unavailable` result when no terminal usage record can be extracted.
 
 ## Harness commands
@@ -59,7 +60,7 @@ Use these rules whenever creating, executing, resuming, or reviewing a model ben
 - Claudex: `ccx -p --model <gpt-5.6-sol|gpt-5.6-terra|gpt-5.6-luna> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `ccx --resume <session-id>`.
 - Claude: `cc -p --model <claude-model> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `cc --resume <session-id>`. Never use `cc` for GPT models.
 - Kimi through Claude Code: `cckimi -p --model <kimi-model> --effort <effort> --permission-mode bypassPermissions --output-format stream-json --verbose --session-id <uuid> <prompt>`; resume with `cckimi --resume <session-id>`.
-- Cursor: create a chat with `cursor-agent create-chat`, then use `cursor-agent --resume <chat-id> --model <model> --print --force --trust --output-format stream-json <prompt>`; resume with `cursor-agent --resume <chat-id>`.
+- Cursor: create a chat with `cursor-agent create-chat`, then use `cursor-agent --resume <chat-id> --model <model> --print --force --trust --output-format stream-json <prompt>`; resume with `cursor-agent --resume <chat-id>`. Print mode waits on any dev server the model left running: after 10 minutes without transcript output, SIGTERM only the dev-server processes whose cwd is that session's isolated workspace, never the harness, and record the timestamps in the plan notes.
 - OpenCode: `opencode run --format json --auto --model <provider/model> <prompt>`; resume with `opencode run --session <session-id> --auto`. Capture `sessionID` and the last `text` event from the JSONL stream.
 
 ## Proof
