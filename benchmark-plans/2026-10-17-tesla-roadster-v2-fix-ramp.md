@@ -1,0 +1,9 @@
+The ramp does not match the footage yet. Look again at `references/22-wide-inverted-at-lip-high.jpg`, then `02-wide-ramp-start.jpg`, `06-wide-hanging-inverted.jpg`, `14-close-inverted-at-lip.jpg`, and `23-aerial-ramp-profile.jpg`, and rebuild the ramp to match them.
+
+- Make the ramp much taller and bigger. In frame `22` the whole car is a small shape at the top: the ramp is roughly ten car lengths tall, about 40 m. Scale the running surface width and the truss with it.
+- The running surface is one full, continuous curve. It starts flat at ground level, bends up through vertical, and keeps bending over the top until the upper section is almost horizontal, like a ceiling facing the ground. Its pitch at the top reaches about 160 to 170°.
+- That upper, almost horizontal section is the platform where the car hangs upside down before it lets go. Make it long enough to hold the whole car, as in frames `14` and `22`.
+- The curvature changes smoothly along the whole length. No straight pieces joined by kinks or facets.
+- The steel truss behind the surface holds up the full height, including the overhanging top.
+
+Then retune the physics, the flight controller, the camera presets, and the default settings for the new ramp. With the defaults, the car must climb it, hang upside down on the almost horizontal top section for about 2 seconds, release, roll upright on the jets, brake its fall, and land cleanly at the foot of the ramp. The three failure scenarios must still fail and break the car. Keep everything else that already works, and keep the result in `index.html`.

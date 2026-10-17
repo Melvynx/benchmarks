@@ -25,6 +25,12 @@ AFTER_MS = 180_000
 
 
 def access_token():
+    # Linux cursor-agent stores its login in a file instead of the macOS keychain.
+    auth_file = Path.home() / ".config" / "cursor" / "auth.json"
+    if sys.platform != "darwin" and auth_file.is_file():
+        token = (json.loads(auth_file.read_text()).get("accessToken") or "").strip()
+        if token:
+            return token
     result = subprocess.run(
         ["security", "find-generic-password", "-s", "cursor-access-token", "-a", "cursor-user", "-w"],
         capture_output=True, text=True,

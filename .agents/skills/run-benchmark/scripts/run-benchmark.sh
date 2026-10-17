@@ -441,7 +441,8 @@ $checks_line"
     cc)
       session_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
       printf '%s\n' "$session_id" > "$session_file"
-      printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' 'unalias cc 2>/dev/null || true' 'cc() { claude --dangerously-skip-permissions "$@"; }' > "$command_file"
+      # Claude Code refuses --dangerously-skip-permissions as root unless IS_SANDBOX=1 (Linux VPS runs).
+      printf '%s\n' '#!/usr/bin/env zsh' 'source "$HOME/.zshrc" >/dev/null 2>&1' 'unalias cc 2>/dev/null || true' '(( EUID == 0 )) && export IS_SANDBOX=1' 'cc() { claude --dangerously-skip-permissions "$@"; }' > "$command_file"
       printf '%q ' cc -p --model "$MODEL" --effort "$EFFORT" --permission-mode bypassPermissions --output-format stream-json --verbose --session-id "$session_id" "$prompt" >> "$command_file"
       printf '\n' >> "$command_file"
       if [[ "$DRY_RUN" == 0 ]]; then (cd "$work_dir" && zsh "$command_file") > "$transcript" 2> "$stderr_log" || exit_code=$?; fi

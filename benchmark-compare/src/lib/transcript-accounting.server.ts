@@ -496,6 +496,44 @@ function incrementalCodexUsage(items: TranscriptCost[]) {
   })
 }
 
+function modelUsageOutputTokens(usage: SerializableUsage | null) {
+  if (!usage?.model_usage || typeof usage.model_usage !== "object") return null
+  let total = 0
+  for (const entry of Object.values(usage.model_usage as Record<string, unknown>)) {
+    const value = entry && typeof entry === "object" ? (entry as Record<string, unknown>).outputTokens : null
+    if (typeof value === "number") total += value
+  }
+  return total
+}
+
+// A resumed Claude Code session restores its running bill: total_cost_usd and
+// modelUsage then cover every earlier invocation, while usage covers only this one.
+function incrementalClaudeCost(items: TranscriptCost[]) {
+  const previous = new Map<string, number>()
+  return items.map((item) => {
+    if (!item.harness.startsWith("cc") || !item.sessionId || item.reportedCostUsd === null) return item
+    const before = previous.get(item.sessionId)
+    previous.set(item.sessionId, item.reportedCostUsd)
+    const sessionOutput = modelUsageOutputTokens(item.usage)
+    const ownOutput = item.usage?.output_tokens ?? null
+    if (
+      before === undefined ||
+      sessionOutput === null ||
+      ownOutput === null ||
+      sessionOutput <= ownOutput ||
+      item.reportedCostUsd < before
+    )
+      return item
+    const costUsd = item.reportedCostUsd - before
+    return {
+      ...item,
+      reportedCostUsd: costUsd,
+      costUsd,
+      note: `${item.note} Resumed Claude Code costs are cumulative; this row uses the incremental difference.`,
+    }
+  })
+}
+
 function sumKnown(values: Array<number | null>) {
   const known = values.filter(
     (value): value is number => value !== null && Number.isFinite(value)
@@ -597,5 +635,5 @@ export function readTranscriptAccounting(
       (a.startedAt ?? "").localeCompare(b.startedAt ?? "") ||
       a.transcript.localeCompare(b.transcript)
   )
-  return summarizeTranscripts(incrementalCodexUsage(ordered))
+  return summarizeTranscripts(incrementalClaudeCost(incrementalCodexUsage(ordered)))
 }

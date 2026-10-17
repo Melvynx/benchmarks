@@ -1,0 +1,1 @@
+Reconstructed on 2026-10-17 by replaying the session's file writes (one cat heredoc plus Python edits) from the Codex rollout up to the end of the one-shot run (03:05:50Z). Byte size matches the original (48096) observed at 03:05Z before the fix-ramp iteration overwrote the app.

@@ -1,0 +1,50 @@
+# "The Ramp": reference footage
+
+`the-ramp.mp4` is Tesla's official clip "The Ramp | Roadster" (https://www.youtube.com/watch?v=7p5LxFdc-Qg, 1920x1080, 23.976 fps, 45.6 s), filmed at night at the SpaceX rocket test site in McGregor, Texas, during the Roadster reveal on October 15-16, 2026. Tesla describes it as "the first live demo during the Roadster event".
+
+The JPEG files are stills from that clip, in story order. Times are clip time in seconds.
+
+## What happens
+
+The same stunt is shown from several angles:
+
+| Clip time | Event |
+|---|---|
+| 0-1 s | Behind the car, which is stopped at the foot of the ramp. |
+| 2-7 s | Wide side shot: the car drives up the curve, through vertical, toward the lip. |
+| 7-9.5 s | The car sits near the lip, past vertical and upside down, held to the surface by fan downforce. |
+| 9.5-10.5 s | It leaves the lip belly-up and falls away from the ramp. Attitude jets fire and roll it back toward wheels-down. |
+| 10.5-11.5 s | Downward jets brake the fall. Touchdown on four wheels at the foot of the ramp. |
+| 11.5-16 s | A large white smoke cloud spreads out. The car drives out of the smoke and away. |
+| 17-25 s | Closer angle of the lip, the release, the roll, the low hover on downward jets, and the touchdown. |
+| 27-30 s | Drone shot looking down past the lip at the rolling car and its jets. |
+| 31-45 s | High aerial: the hook profile of the ramp and its truss tower, and cars on the lit approach. |
+
+## Frames
+
+| File | Time | What it shows |
+|---|---|---|
+| `01-rear-at-ramp-foot.jpg` | 0.5 | Car from behind at the foot of the ramp. Concrete-grey running surface with stains, a white centre line, red LED strips on both edges, the truss frame on the right. Full-width red tail light bar, `RDSTR` plate, round nozzles in the dark rear diffuser. |
+| `02-wide-ramp-start.jpg` | 2.5 | Wide side shot: the ramp alone in the dark, rising from flat into a tall hook. Red strip lights on the ground. |
+| `03-wide-climb-curve.jpg` | 4.0 | Car on the lower curve. |
+| `04-wide-climb-vertical.jpg` | 5.5 | Car on the vertical section. |
+| `05-wide-near-lip.jpg` | 6.5 | Car nearly at the lip. |
+| `06-wide-hanging-inverted.jpg` | 8.0 | Car near the lip, past vertical, upside down. |
+| `07-wide-leaving-lip.jpg` | 9.5 | The car has left the lip. |
+| `08-wide-falling-inverted.jpg` | 10.0 | Falling beside the ramp, still belly-up. |
+| `09-wide-jets-rolling.jpg` | 10.5 | Jets firing as the car rolls upright. |
+| `10-wide-jets-braking.jpg` | 11.0 | Low above the ground, wheels down, downward jets braking the fall. |
+| `11-wide-touchdown.jpg` | 11.5 | Touchdown, smoke starting to burst outward. |
+| `12-wide-smoke-cloud.jpg` | 12.5 | Wide white smoke cloud at the foot of the ramp. |
+| `13-wide-driving-out-of-smoke.jpg` | 14.0 | The car drives out of the cloud, headlights on. |
+| `14-close-inverted-at-lip.jpg` | 17.5 | Closer: the car upside down at the lip, truss behind. |
+| `15-close-leaving-lip.jpg` | 18.5 | The car tipping off the lip. |
+| `16-close-airborne-roll.jpg` | 19.5 | Mid-roll beside the ramp with a sideways jet. |
+| `17-close-side-and-down-jets.jpg` | 20.5 | One sideways jet and one downward jet, pale cyan, fading within a few metres. |
+| `18-close-low-hover.jpg` | 21.5 | Low hover on downward jets, wheels down. |
+| `19-close-touchdown.jpg` | 22.5 | Touchdown at the foot of the ramp, smoke bursting out. |
+| `20-close-smoke-cloud.jpg` | 24.0 | The cloud expanding beside the ramp. |
+| `21-drone-top-down-roll.jpg` | 27.5 | Drone above the lip looking down: the car rolling in the air with three jets, the ramp's red edge lights below. |
+| `22-wide-inverted-at-lip-high.jpg` | 29.0 | Wide: the car hanging at the top of the hook, the ramp's full height visible. |
+| `23-aerial-ramp-profile.jpg` | 33.0 | High aerial: the hook profile, the steel truss tower behind it, red edge lights, a car on the approach. |
+| `24-aerial-approach-lights.jpg` | 39.0 | Aerial: red-lit approach lane, headlights, haze. |

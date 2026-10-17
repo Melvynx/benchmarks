@@ -128,6 +128,8 @@ async function respondingUrl(urls) {
   for (const url of urls) {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) })
+      // An unread body on a socket the server closes trips an undici assertion on Node 22.
+      await response.body?.cancel()
       if (response.ok) return url
     } catch {
       // Try the next loopback family.

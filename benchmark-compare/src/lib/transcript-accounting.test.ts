@@ -176,6 +176,37 @@ describe("transcript accounting", () => {
     expect(ledger.durationMs).toBe(120000)
   })
 
+  it("does not bill a resumed Claude Code session's earlier cost again", () => {
+    const root = mkdtempSync(join(tmpdir(), "benchmark-claude-resume-"))
+    const directory = join(root, "run", "data", "task")
+    const iteration = join(directory, "iterations", "1")
+    mkdirSync(iteration, { recursive: true })
+    const timing = (minute: number) => ({
+      started_at: `2026-10-17T00:0${minute}:00Z`,
+      completed_at: `2026-10-17T00:0${minute + 1}:00Z`,
+      duration_ms: 60000,
+    })
+    writeFileSync(
+      join(directory, "metadata.json"),
+      JSON.stringify({ model: "claude-opus-5-5", harness: "cc", effort: "medium", model_timing: timing(0) })
+    )
+    writeFileSync(join(iteration, "metadata.json"), JSON.stringify({ model_timing: timing(2) }))
+    writeFileSync(join(directory, "session-id.txt"), "same-session\n")
+    const result = (cost: number, output: number, sessionOutput: number) =>
+      JSON.stringify({
+        type: "result",
+        session_id: "same-session",
+        total_cost_usd: cost,
+        usage: { input_tokens: 10, output_tokens: output },
+        modelUsage: { "claude-opus-5-5": { inputTokens: 10, outputTokens: sessionOutput } },
+      })
+    writeFileSync(join(directory, "transcript.jsonl"), result(9, 1000, 1000))
+    writeFileSync(join(iteration, "transcript.jsonl"), result(12, 50, 1200))
+    const ledger = readTranscriptAccounting(directory)
+    expect(ledger.costUsd).toBe(12)
+    expect(ledger.transcripts.map((item) => item.costUsd)).toEqual([9, 3])
+  })
+
   it("prices the actual model on each attempt and uses reported cost in preference to estimates", () => {
     const root = mkdtempSync(join(tmpdir(), "benchmark-pricing-"))
     const directory = join(root, "run", "data", "task")
